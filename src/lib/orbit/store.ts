@@ -5,6 +5,7 @@ import {
 	readFile,
 	rename,
 	stat,
+	unlink,
 	writeFile,
 } from "node:fs/promises";
 import path from "node:path";
@@ -15,6 +16,8 @@ import {
 	type OrbitItem,
 	type OrbitSnapshot,
 	orbitItemSchema,
+	type UpdateNoteInput,
+	updateNoteInputSchema,
 } from "./schema";
 
 const VAULT_FOLDERS = [
@@ -250,6 +253,57 @@ export async function toggleOrbitTask(id: string) {
 		});
 		await atomicWrite(filePath, contents);
 		return readOrbitItem(filePath, vaultRoot);
+	}
+	throw new Error(`Orbit item not found: ${id}`);
+}
+
+export async function updateOrbitNote(id: string, input: UpdateNoteInput) {
+	const next = updateNoteInputSchema.parse(input);
+	const vaultRoot = await ensureVault();
+	const files = await findMarkdownFiles(vaultRoot);
+	for (const filePath of files) {
+		const raw = await readFile(filePath, "utf8");
+		const parsed = matter(raw);
+		if (String(parsed.data.id ?? path.relative(vaultRoot, filePath)) !== id)
+			continue;
+		if (parsed.data.type !== "note")
+			throw new Error("Only notes can be edited");
+		const contents = matter.stringify(
+			next.body ? `${next.body.trimEnd()}\n` : "",
+			{
+				...parsed.data,
+				title: next.title,
+				tags: next.tags,
+				updated: new Date().toISOString(),
+			},
+		);
+		await atomicWrite(filePath, contents);
+		return readOrbitItem(filePath, vaultRoot);
+	}
+	throw new Error(`Orbit item not found: ${id}`);
+}
+
+export async function archiveOrbitItem(id: string) {
+	const vaultRoot = await ensureVault();
+	const files = await findMarkdownFiles(vaultRoot);
+	for (const filePath of files) {
+		const raw = await readFile(filePath, "utf8");
+		const parsed = matter(raw);
+		if (String(parsed.data.id ?? path.relative(vaultRoot, filePath)) !== id)
+			continue;
+		if (spaceFromPath(path.relative(vaultRoot, filePath)) === "archive") {
+			return readOrbitItem(filePath, vaultRoot);
+		}
+		const archiveName = `${path.basename(filePath, ".md")}-${id.slice(0, 8)}.md`;
+		const archivePath = path.join(vaultRoot, "archive", archiveName);
+		const contents = matter.stringify(parsed.content, {
+			...parsed.data,
+			space: "archive",
+			updated: new Date().toISOString(),
+		});
+		await atomicWrite(archivePath, contents);
+		await unlink(filePath);
+		return readOrbitItem(archivePath, vaultRoot);
 	}
 	throw new Error(`Orbit item not found: ${id}`);
 }

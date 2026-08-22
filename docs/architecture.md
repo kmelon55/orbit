@@ -92,5 +92,7 @@ SQLite 파일을 지워도 Markdown에서 핵심 상태를 복원할 수 있어�
 - `src/lib/orbit/functions.ts`: 웹 UI용 server functions
 - `src/mcp/server.ts`: 외부 에이전트용 stdio MCP
 - `src/routes/index.tsx`: Today vertical slice
+- `src/routes/notes.tsx`: Markdown 노트 탐색, 편집, 미리보기, 보관
+- `src/components/ui/`: shadcn/ui 기반 공통 컴포넌트
 
 웹 UI와 MCP는 별도 저장 구현을 만들지 않고 `store.ts`를 공유한다.

@@ -11,9 +11,9 @@
 - [x] MCP capture/today/search
 - [x] 반응형 Today UI
 - [ ] Inbox, Projects, Areas, Resources 상세 화면
-- [ ] Markdown 편집기와 파일 이동
+- [x] Markdown 노트 목록, 편집기, GFM 미리보기와 archive 이동
 - [ ] 파일 watcher + SSE 갱신
-- [ ] 전체 텍스트 검색
+- [ ] vault 전체 텍스트 검색 (Notes 내부 검색은 구현됨)
 - [ ] 단일 사용자 인증 또는 trusted-proxy 계약
 
 완료 조건: AI 없이도 기록 → 파일 확인 → Today 실행 → 검색이 끊기지 않는다.

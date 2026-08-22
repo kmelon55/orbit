@@ -43,6 +43,12 @@ export const captureInputSchema = z.object({
 	due: z.string().optional(),
 });
 
+export const updateNoteInputSchema = z.object({
+	title: z.string().trim().min(1).max(160),
+	body: z.string().max(100_000),
+	tags: z.array(z.string().trim().min(1).max(40)).max(30),
+});
+
 export const orbitMutationSchema = z.discriminatedUnion("action", [
 	z.object({
 		action: z.literal("capture"),
@@ -52,11 +58,21 @@ export const orbitMutationSchema = z.discriminatedUnion("action", [
 		action: z.literal("toggle-task"),
 		id: z.string().min(1),
 	}),
+	z.object({
+		action: z.literal("update-note"),
+		id: z.string().min(1),
+		input: updateNoteInputSchema,
+	}),
+	z.object({
+		action: z.literal("archive-item"),
+		id: z.string().min(1),
+	}),
 ]);
 
 export type OrbitItem = z.infer<typeof orbitItemSchema>;
 export type OrbitItemType = z.infer<typeof orbitItemTypeSchema>;
 export type CaptureInput = z.infer<typeof captureInputSchema>;
+export type UpdateNoteInput = z.infer<typeof updateNoteInputSchema>;
 export type OrbitMutation = z.infer<typeof orbitMutationSchema>;
 
 export type OrbitSnapshot = {

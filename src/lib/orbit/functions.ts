@@ -9,7 +9,20 @@ export const loadOrbit = createServerFn({ method: "GET" }).handler(async () => {
 export const mutateOrbit = createServerFn({ method: "POST" })
 	.validator((input: unknown) => orbitMutationSchema.parse(input))
 	.handler(async ({ data }) => {
-		const { captureOrbitItem, toggleOrbitTask } = await import("./store");
-		if (data.action === "capture") return captureOrbitItem(data.input);
-		return toggleOrbitTask(data.id);
+		const {
+			archiveOrbitItem,
+			captureOrbitItem,
+			toggleOrbitTask,
+			updateOrbitNote,
+		} = await import("./store");
+		switch (data.action) {
+			case "capture":
+				return captureOrbitItem(data.input);
+			case "toggle-task":
+				return toggleOrbitTask(data.id);
+			case "update-note":
+				return updateOrbitNote(data.id, data.input);
+			case "archive-item":
+				return archiveOrbitItem(data.id);
+		}
 	});

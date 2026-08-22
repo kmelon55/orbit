@@ -1,93 +1,46 @@
-import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import {
-	Archive,
 	ArrowUp,
-	BookOpen,
 	CalendarDays,
 	Check,
-	ChevronDown,
 	Circle,
-	Clock3,
-	Command,
 	FileText,
-	FolderKanban,
 	Inbox,
-	LayoutGrid,
-	Link2,
-	Menu,
-	MoreHorizontal,
-	Plus,
-	Search,
-	Settings2,
-	Sparkles,
-	Tag,
-	X,
+	ListTodo,
 } from "lucide-react";
 import { type FormEvent, useMemo, useState } from "react";
 import { loadOrbit, mutateOrbit } from "#/lib/orbit/functions";
 import type { OrbitItem, OrbitItemType } from "#/lib/orbit/schema";
+import { AppShell } from "@/components/app-shell";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
 
 export const Route = createFileRoute("/")({
 	loader: () => loadOrbit(),
-	component: Home,
+	component: TodayPage,
 });
-
-const captureKinds: Array<{
-	value: OrbitItemType;
-	label: string;
-	icon: typeof FileText;
-}> = [
-	{ value: "note", label: "메모", icon: FileText },
-	{ value: "task", label: "할 일", icon: Check },
-	{ value: "event", label: "일정", icon: CalendarDays },
-	{ value: "link", label: "링크", icon: Link2 },
-];
 
 function formatTime(value?: string) {
 	if (!value) return "시간 미정";
-	const date = new Date(value);
-	if (Number.isNaN(date.getTime())) return value;
-	return new Intl.DateTimeFormat("ko-KR", {
-		hour: "numeric",
-		minute: "2-digit",
-	}).format(date);
+	const time = value.match(/T(\d{2}:\d{2})/)?.[1];
+	return time ?? value;
 }
 
-function formatDue(value?: string) {
-	if (!value) return "오늘 목록";
-	const date = new Date(value);
-	if (Number.isNaN(date.getTime())) return value;
-	return new Intl.DateTimeFormat("ko-KR", {
-		month: "short",
-		day: "numeric",
-	}).format(date);
-}
-
-function initials(value: string) {
-	return value.trim().slice(0, 1).toUpperCase() || "O";
-}
-
-function Home() {
+function TodayPage() {
 	const snapshot = Route.useLoaderData();
 	const router = useRouter();
 	const [capture, setCapture] = useState("");
-	const [kind, setKind] = useState<OrbitItemType>("note");
+	const [kind, setKind] =
+		useState<Extract<OrbitItemType, "note" | "task">>("note");
 	const [isSaving, setIsSaving] = useState(false);
-	const [sidebarOpen, setSidebarOpen] = useState(false);
-	const [notice, setNotice] = useState<string | null>(null);
-
-	const inboxItems = useMemo(
-		() => snapshot.items.filter((item) => item.space === "inbox").slice(0, 4),
-		[snapshot.items],
-	);
-	const upcomingEvents = useMemo(
+	const [message, setMessage] = useState<string | null>(null);
+	const recentNotes = useMemo(
 		() =>
 			snapshot.items
-				.filter((item) => item.type === "event" && item.start)
-				.sort((left, right) =>
-					(left.start ?? "").localeCompare(right.start ?? ""),
-				)
-				.slice(0, 3),
+				.filter((item) => item.type === "note" && item.space !== "archive")
+				.slice(0, 4),
 		[snapshot.items],
 	);
 
@@ -96,7 +49,7 @@ function Home() {
 		const title = capture.trim();
 		if (!title || isSaving) return;
 		setIsSaving(true);
-		setNotice(null);
+		setMessage(null);
 		try {
 			await mutateOrbit({
 				data: {
@@ -105,400 +58,232 @@ function Home() {
 				},
 			});
 			setCapture("");
-			setNotice("Inbox에 파일로 저장했어요.");
+			setMessage(
+				kind === "task" ? "할 일을 추가했습니다." : "노트를 만들었습니다.",
+			);
 			await router.invalidate();
 		} catch {
-			setNotice("저장하지 못했어요. 데이터 폴더 권한을 확인해 주세요.");
+			setMessage("저장하지 못했습니다. 데이터 폴더 권한을 확인해 주세요.");
 		} finally {
 			setIsSaving(false);
 		}
 	}
 
-	async function toggleTask(item: OrbitItem) {
-		setNotice(null);
-		try {
-			await mutateOrbit({ data: { action: "toggle-task", id: item.id } });
-			await router.invalidate();
-		} catch {
-			setNotice("작업 상태를 변경하지 못했어요.");
-		}
+	async function completeTask(item: OrbitItem) {
+		await mutateOrbit({ data: { action: "toggle-task", id: item.id } });
+		await router.invalidate();
 	}
 
 	return (
-		<div className="app-frame">
-			{sidebarOpen && (
-				<button
-					className="sidebar-backdrop"
-					type="button"
-					onClick={() => setSidebarOpen(false)}
-					aria-label="사이드바 닫기"
-				/>
-			)}
-			<aside className={`sidebar ${sidebarOpen ? "sidebar--open" : ""}`}>
-				<div className="brand-row">
-					<div className="brand-mark" aria-hidden="true">
-						<span />
+		<AppShell>
+			<main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-10 lg:py-12">
+				<header className="mb-8 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+					<div>
+						<p className="mb-2 text-xs font-medium text-muted-foreground">
+							{snapshot.displayDate.longLabel}
+						</p>
+						<h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+							Today
+						</h1>
+						<p className="mt-1.5 text-sm text-muted-foreground">
+							오늘 처리할 일과 기록을 한곳에서 봅니다.
+						</p>
 					</div>
-					<span className="brand-name">Orbit</span>
-					<button
-						className="mobile-close"
-						type="button"
-						onClick={() => setSidebarOpen(false)}
-						aria-label="사이드바 닫기"
-					>
-						<X size={18} />
-					</button>
-				</div>
-
-				<nav className="primary-nav" aria-label="워크스페이스">
-					<NavItem icon={LayoutGrid} label="Today" active />
-					<NavItem icon={Inbox} label="Inbox" count={snapshot.counts.inbox} />
-					<NavItem
-						icon={FolderKanban}
-						label="Projects"
-						count={snapshot.counts.projects}
-					/>
-					<NavItem icon={Circle} label="Areas" count={snapshot.counts.areas} />
-					<NavItem
-						icon={BookOpen}
-						label="Resources"
-						count={snapshot.counts.resources}
-					/>
-					<NavItem icon={Archive} label="Archive" />
-				</nav>
-
-				<div className="sidebar-spacer" />
-				<div className="agent-card">
-					<div className="agent-card__topline">
-						<span className="agent-dot" />
-						<span>Agent interface</span>
-					</div>
-					<strong>MCP ready</strong>
-					<p>Hermes와 원하는 에이전트가 같은 파일을 읽습니다.</p>
-					<button type="button">
-						연결 안내 <ArrowUp size={13} />
-					</button>
-				</div>
-				<button className="workspace-switcher" type="button">
-					<span className="avatar">K</span>
-					<span>
-						<strong>My Orbit</strong>
-						<small>Local workspace</small>
-					</span>
-					<MoreHorizontal size={17} />
-				</button>
-			</aside>
-
-			<section className="workspace">
-				<header className="topbar">
-					<button
-						className="mobile-menu"
-						type="button"
-						onClick={() => setSidebarOpen(true)}
-						aria-label="메뉴 열기"
-					>
-						<Menu size={20} />
-					</button>
-					<div className="breadcrumb">
-						<span>My Orbit</span>
-						<span>/</span>
-						<strong>Today</strong>
-					</div>
-					<div className="topbar-actions">
-						<button className="search-button" type="button">
-							<Search size={17} />
-							<span>검색</span>
-							<kbd>⌘ K</kbd>
-						</button>
-						<button className="icon-button" type="button" aria-label="설정">
-							<Settings2 size={18} />
-						</button>
-					</div>
+					<Badge variant="outline" className="w-fit font-normal">
+						<span className="mr-1 size-1.5 rounded-full bg-emerald-500" />
+						파일에 직접 저장
+					</Badge>
 				</header>
 
-				<main className="content">
-					<section className="hero-section">
-						<div>
-							<p className="eyebrow">{snapshot.displayDate.longLabel}</p>
-							<h1>좋은 아침이에요.</h1>
-							<p className="hero-copy">오늘 중요한 것만 궤도에 올려보세요.</p>
+				<form
+					onSubmit={handleCapture}
+					className="mb-10 rounded-lg border bg-card p-3 shadow-xs"
+				>
+					<div className="flex items-center gap-2">
+						<Input
+							value={capture}
+							onChange={(event) => setCapture(event.target.value)}
+							placeholder={
+								kind === "task"
+									? "해야 할 일을 입력하세요"
+									: "새 노트의 제목을 입력하세요"
+							}
+							aria-label="빠른 기록"
+							className="h-10 border-0 bg-transparent shadow-none focus-visible:ring-0"
+						/>
+						<Button
+							type="submit"
+							size="icon"
+							disabled={!capture.trim() || isSaving}
+						>
+							<ArrowUp />
+							<span className="sr-only">저장</span>
+						</Button>
+					</div>
+					<Separator className="my-2" />
+					<div className="flex items-center justify-between px-1">
+						<div className="flex gap-1">
+							<Button
+								type="button"
+								size="sm"
+								variant={kind === "note" ? "secondary" : "ghost"}
+								onClick={() => setKind("note")}
+							>
+								<FileText /> 노트
+							</Button>
+							<Button
+								type="button"
+								size="sm"
+								variant={kind === "task" ? "secondary" : "ghost"}
+								onClick={() => setKind("task")}
+							>
+								<ListTodo /> 할 일
+							</Button>
 						</div>
-						<div className="privacy-pill">
-							<span />
-							<span>Private · File first</span>
+						{message && (
+							<output className="text-xs text-muted-foreground">
+								{message}
+							</output>
+						)}
+					</div>
+				</form>
+
+				<div className="grid gap-10 lg:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.8fr)]">
+					<section>
+						<div className="mb-3 flex items-center justify-between">
+							<h2 className="text-sm font-medium">오늘 할 일</h2>
+							<span className="text-xs tabular-nums text-muted-foreground">
+								{snapshot.today.tasks.length}
+							</span>
 						</div>
-					</section>
-
-					<section className="capture-card" aria-label="빠른 기록">
-						<form onSubmit={handleCapture}>
-							<div className="capture-input-row">
-								<Plus size={20} />
-								<input
-									value={capture}
-									onChange={(event) => setCapture(event.target.value)}
-									placeholder="무엇이든 기록하세요…"
-									aria-label="기록할 내용"
-								/>
-								<button
-									className="capture-submit"
-									type="submit"
-									disabled={!capture.trim() || isSaving}
-								>
-									{isSaving ? (
-										<span className="saving-dot" />
-									) : (
-										<ArrowUp size={17} />
-									)}
-								</button>
-							</div>
-							<div className="capture-toolbar">
-								<div className="capture-kinds">
-									{captureKinds.map((option) => {
-										const Icon = option.icon;
-										return (
-											<button
-												key={option.value}
-												className={kind === option.value ? "is-selected" : ""}
-												type="button"
-												onClick={() => setKind(option.value)}
-											>
-												<Icon size={14} /> {option.label}
-											</button>
-										);
-									})}
-								</div>
-								<span className="capture-hint">
-									<Command size={13} /> Enter로 저장
-								</span>
-							</div>
-						</form>
-						{notice && <output className="notice">{notice}</output>}
-					</section>
-
-					<div className="dashboard-grid">
-						<section className="main-column">
-							<div className="section-heading">
-								<div>
-									<span className="heading-kicker">FOCUS</span>
-									<h2>오늘 할 일</h2>
-								</div>
-								<span className="item-count">
-									{snapshot.today.tasks.length}
-								</span>
-							</div>
-							<div className="task-list">
-								{snapshot.today.tasks.length > 0 ? (
-									snapshot.today.tasks.map((task) => (
-										<article className="task-row" key={task.id}>
-											<button
-												type="button"
-												className="task-check"
-												onClick={() => toggleTask(task)}
+						<div className="overflow-hidden rounded-lg border bg-card">
+							{snapshot.today.tasks.length > 0 ? (
+								snapshot.today.tasks.map((task, index) => (
+									<div key={task.id}>
+										{index > 0 && <Separator />}
+										<div className="flex min-h-16 items-center gap-3 px-4 py-3">
+											<Button
+												variant="outline"
+												size="icon-sm"
+												onClick={() => completeTask(task)}
 												aria-label={`${task.title} 완료`}
+												className="rounded-full text-transparent hover:text-foreground"
 											>
-												<Check size={13} />
-											</button>
-											<div className="task-copy">
-												<h3>{task.title}</h3>
-												<div className="task-meta">
-													<span>
-														<FolderKanban size={13} />{" "}
-														{task.project ??
-															(task.space === "inbox" ? "Inbox" : "Orbit")}
-													</span>
-													<span>
-														<Clock3 size={13} /> {formatDue(task.due)}
-													</span>
-												</div>
-											</div>
-											<button
-												className="row-menu"
-												type="button"
-												aria-label="작업 메뉴"
-											>
-												<MoreHorizontal size={18} />
-											</button>
-										</article>
-									))
-								) : (
-									<EmptyState
-										title="오늘은 비어 있어요"
-										body="Inbox에서 할 일을 만들거나 위에서 바로 기록하세요."
-									/>
-								)}
-							</div>
-
-							<div className="section-heading section-heading--recent">
-								<div>
-									<span className="heading-kicker">INBOX</span>
-									<h2>최근 기록</h2>
-								</div>
-								<button type="button">
-									모두 보기 <ArrowUp size={14} />
-								</button>
-							</div>
-							<div className="recent-grid">
-								{inboxItems.length > 0 ? (
-									inboxItems.map((item) => (
-										<InboxCard key={item.id} item={item} />
-									))
-								) : (
-									<EmptyState
-										title="Inbox가 깨끗해요"
-										body="생각, 링크, 할 일을 형식 없이 남겨보세요."
-										compact
-									/>
-								)}
-							</div>
-						</section>
-
-						<aside className="agenda-column">
-							<div className="section-heading">
-								<div>
-									<span className="heading-kicker">SCHEDULE</span>
-									<h2>다가오는 일정</h2>
-								</div>
-								<button
-									className="calendar-button"
-									type="button"
-									aria-label="캘린더 열기"
-								>
-									<CalendarDays size={16} />
-								</button>
-							</div>
-							<div className="date-card">
-								<div className="date-card__day">
-									<strong>{snapshot.displayDate.day}</strong>
-									<span>{snapshot.displayDate.month}</span>
-								</div>
-								<div>
-									<span>{snapshot.displayDate.weekday}</span>
-									<p>{snapshot.today.tasks.length}개의 할 일</p>
-								</div>
-								<ChevronDown size={16} />
-							</div>
-							<div className="timeline">
-								{upcomingEvents.length > 0 ? (
-									upcomingEvents.map((event) => (
-										<div className="timeline-event" key={event.id}>
-											<div className="timeline-time">
-												{formatTime(event.start)}
-											</div>
-											<div className="timeline-line">
-												<span />
-											</div>
-											<div className="event-card">
-												<span className="event-label">
-													{event.project ?? "EVENT"}
-												</span>
-												<h3>{event.title}</h3>
-												{event.body && <p>{event.body}</p>}
+												<Check />
+											</Button>
+											<div className="min-w-0 flex-1">
+												<p className="truncate text-sm font-medium">
+													{task.title}
+												</p>
+												<p className="mt-1 text-xs text-muted-foreground">
+													{task.project ??
+														(task.space === "inbox" ? "Inbox" : task.space)}
+												</p>
 											</div>
 										</div>
-									))
-								) : (
-									<div className="empty-agenda">
-										<CalendarDays size={19} />
-										<strong>예정된 일정이 없어요</strong>
-										<span>일정을 기록하면 여기에 나타납니다.</span>
 									</div>
-								)}
-							</div>
-							<div className="orbit-insight">
-								<div className="insight-icon">
-									<Sparkles size={16} />
+								))
+							) : (
+								<EmptyState icon={Circle} title="오늘 할 일이 없습니다" />
+							)}
+						</div>
+
+						<div className="mb-3 mt-10 flex items-center justify-between">
+							<h2 className="text-sm font-medium">최근 노트</h2>
+							<Link
+								to="/notes"
+								className="text-xs text-muted-foreground hover:text-foreground"
+							>
+								모두 보기
+							</Link>
+						</div>
+						<div className="grid gap-3 sm:grid-cols-2">
+							{recentNotes.length > 0 ? (
+								recentNotes.map((note) => (
+									<Link
+										key={note.id}
+										to="/notes"
+										className="rounded-lg border bg-card p-4 transition-colors hover:bg-muted/50"
+									>
+										<FileText className="mb-5 size-4 text-muted-foreground" />
+										<h3 className="truncate text-sm font-medium">
+											{note.title}
+										</h3>
+										<p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+											{note.body || "내용이 없는 노트"}
+										</p>
+									</Link>
+								))
+							) : (
+								<div className="sm:col-span-2">
+									<EmptyState icon={FileText} title="아직 노트가 없습니다" />
 								</div>
+							)}
+						</div>
+					</section>
+
+					<section>
+						<div className="mb-3 flex items-center justify-between">
+							<h2 className="text-sm font-medium">오늘 일정</h2>
+							<span className="text-xs tabular-nums text-muted-foreground">
+								{snapshot.today.events.length}
+							</span>
+						</div>
+						<div className="overflow-hidden rounded-lg border bg-card">
+							{snapshot.today.events.length > 0 ? (
+								snapshot.today.events.map((event, index) => (
+									<div key={event.id}>
+										{index > 0 && <Separator />}
+										<div className="flex gap-3 px-4 py-4">
+											<div className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-md bg-muted">
+												<CalendarDays className="size-4" />
+											</div>
+											<div>
+												<p className="text-sm font-medium">{event.title}</p>
+												<p className="mt-1 text-xs text-muted-foreground">
+													{formatTime(event.start)}
+												</p>
+											</div>
+										</div>
+									</div>
+								))
+							) : (
+								<EmptyState icon={CalendarDays} title="오늘 일정이 없습니다" />
+							)}
+						</div>
+
+						<div className="mt-6 rounded-lg border border-dashed p-4">
+							<div className="flex items-start gap-3">
+								<Inbox className="mt-0.5 size-4 text-muted-foreground" />
 								<div>
-									<span>ORBIT NOTE</span>
-									<p>
-										자동 분류는 선택 사항입니다. 원본 파일은 언제나 그대로
-										남아요.
+									<p className="text-sm font-medium">
+										Inbox {snapshot.counts.inbox}
+									</p>
+									<p className="mt-1 text-xs leading-5 text-muted-foreground">
+										분류되지 않은 파일입니다. 자동 정리는 아직 적용하지
+										않습니다.
 									</p>
 								</div>
 							</div>
-						</aside>
-					</div>
-				</main>
-				<footer className="statusbar">
-					<span>
-						<span className="status-dot" /> Files synced locally
-					</span>
-					<span className="vault-path">{snapshot.vaultPath}</span>
-				</footer>
-			</section>
-		</div>
-	);
-}
-
-function NavItem({
-	icon: Icon,
-	label,
-	count,
-	active = false,
-}: {
-	icon: typeof Inbox;
-	label: string;
-	count?: number;
-	active?: boolean;
-}) {
-	return (
-		<button
-			className={`nav-item ${active ? "nav-item--active" : ""}`}
-			type="button"
-		>
-			<Icon size={17} strokeWidth={active ? 2.2 : 1.8} />
-			<span>{label}</span>
-			{typeof count === "number" && <small>{count}</small>}
-		</button>
-	);
-}
-
-function InboxCard({ item }: { item: OrbitItem }) {
-	const Icon =
-		item.type === "link"
-			? Link2
-			: item.type === "task"
-				? Check
-				: item.type === "event"
-					? CalendarDays
-					: FileText;
-	return (
-		<article className="inbox-card">
-			<div className="inbox-card__icon">
-				<Icon size={16} />
-			</div>
-			<div className="inbox-card__copy">
-				<h3>{item.title}</h3>
-				<p>{item.body || `${item.type} · ${item.path}`}</p>
-			</div>
-			<div className="inbox-card__footer">
-				<span>
-					<Tag size={12} /> {item.tags[0] ?? "미분류"}
-				</span>
-				<span className="mini-avatar">{initials(item.title)}</span>
-			</div>
-		</article>
+						</div>
+					</section>
+				</div>
+			</main>
+		</AppShell>
 	);
 }
 
 function EmptyState({
+	icon: Icon,
 	title,
-	body,
-	compact = false,
 }: {
+	icon: typeof Circle;
 	title: string;
-	body: string;
-	compact?: boolean;
 }) {
 	return (
-		<div className={`empty-state ${compact ? "empty-state--compact" : ""}`}>
-			<div className="empty-state__icon">
-				<Circle size={17} />
-			</div>
-			<div>
-				<strong>{title}</strong>
-				<p>{body}</p>
-			</div>
+		<div className="flex min-h-28 flex-col items-center justify-center px-4 text-center">
+			<Icon className="mb-2 size-4 text-muted-foreground" />
+			<p className="text-xs text-muted-foreground">{title}</p>
 		</div>
 	);
 }

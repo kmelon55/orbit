@@ -23,12 +23,14 @@
 - Markdown/YAML vault 읽기
 - 메모, 할 일, 일정, 링크를 Inbox 파일로 캡처
 - 오늘 할 일 계산 및 완료 처리
+- Markdown 노트 목록, 검색, 편집, GFM 미리보기, 태그, 보관
 - 최근 Inbox와 예정 일정 표시
+- Neutral 기반 shadcn/ui와 진회색 다크모드
 - MCP `orbit_capture`, `orbit_today`, `orbit_search`
 - `ORBIT_DATA_DIR`로 데이터 위치 분리
 - 모바일 대응 Today 화면
 
-아직 없는 것: 로그인, AI 자동 분류, 변경 승인 화면, 전체 검색 UI, CalDAV 동기화, Git 자동 백업, SSE 파일 감시. 범위와 순서는 [로드맵](./docs/roadmap.md)에 정리되어 있습니다.
+아직 없는 것: 로그인, AI 자동 분류, 변경 승인 화면, vault 전체 검색, CalDAV 동기화, Git 자동 백업, SSE 파일 감시. 범위와 순서는 [로드맵](./docs/roadmap.md)에 정리되어 있습니다.
 
 ## 빠른 시작
 
