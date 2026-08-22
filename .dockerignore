@@ -1,0 +1,8 @@
+.git
+.github
+.tanstack
+.output
+node_modules
+data
+*.local
+.env
