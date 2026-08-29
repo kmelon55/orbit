@@ -3,13 +3,13 @@ import {
 	CalendarDays,
 	ChevronLeft,
 	ChevronRight,
-	Clock3,
 	ListTodo,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { formatDayKey } from "#/lib/orbit/para";
-import type { OrbitItem } from "#/lib/orbit/schema";
+import { type OrbitItem, orbitItemSchema } from "#/lib/orbit/schema";
+import { DatePicker, TimePicker } from "@/components/schedule-controls";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -23,12 +23,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 type ScheduleKind = "event" | "task";
-
-const TIME_OPTIONS = Array.from({ length: 48 }, (_, index) => {
-	const hour = Math.floor(index / 2);
-	const minute = index % 2 === 0 ? "00" : "30";
-	return `${String(hour).padStart(2, "0")}:${minute}`;
-});
 
 function parseDay(value: string) {
 	const [year, month, day] = value.split("-").map(Number);
@@ -125,11 +119,11 @@ function DateStrip({
 			</div>
 			<div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
 				<span className="text-sm">{dateLabel(value)}</span>
-				<Input
-					type="date"
+				<DatePicker
 					value={value}
-					onChange={(event) => onChange(event.target.value)}
-					className="h-7 w-36 border-0 p-0 text-xs shadow-none focus-visible:ring-0"
+					onChange={onChange}
+					label="날짜 직접 선택"
+					className="h-7 max-w-40 border-0 px-2 text-xs shadow-none"
 				/>
 			</div>
 		</div>
@@ -146,20 +140,15 @@ function TimeSelect({
 	label: string;
 }) {
 	return (
-		<label className="grid gap-1.5">
+		<div className="grid gap-1.5">
 			<span className="text-xs font-medium text-muted-foreground">{label}</span>
-			<select
+			<TimePicker
 				value={value}
-				onChange={(event) => onChange(event.target.value)}
-				className="h-9 rounded-lg border bg-background px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-			>
-				{TIME_OPTIONS.map((time) => (
-					<option key={time} value={time}>
-						{time}
-					</option>
-				))}
-			</select>
-		</label>
+				onChange={onChange}
+				label={label}
+				className="w-full justify-start"
+			/>
+		</div>
 	);
 }
 
@@ -170,6 +159,7 @@ export function ScheduleEditor({
 	item,
 	initialDate,
 	initialTime = "09:00",
+	onSaved,
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -177,6 +167,7 @@ export function ScheduleEditor({
 	item?: OrbitItem;
 	initialDate?: string;
 	initialTime?: string;
+	onSaved?: (item: OrbitItem) => void;
 }) {
 	const router = useRouter();
 	const today = formatDayKey();
@@ -257,41 +248,47 @@ export function ScheduleEditor({
 				return;
 			}
 
+			let saved: OrbitItem;
 			if (item) {
-				await mutateOrbit({
-					data: {
-						action: "file-item",
-						id: item.id,
-						input: {
-							title: trimmed,
-							body,
-							type: kind,
-							space: kind === "event" ? "event" : item.space,
-							folder: kind === "task" ? item.folder : undefined,
-							status: kind === "task" ? item.status : undefined,
-							start,
-							end,
-							due,
+				saved = orbitItemSchema.parse(
+					await mutateOrbit({
+						data: {
+							action: "file-item",
+							id: item.id,
+							input: {
+								title: trimmed,
+								body,
+								type: kind,
+								space: kind === "event" ? "event" : item.space,
+								folder: kind === "task" ? item.folder : undefined,
+								status: kind === "task" ? item.status : undefined,
+								start,
+								end,
+								due,
+							},
 						},
-					},
-				});
+					}),
+				);
 			} else {
-				await mutateOrbit({
-					data: {
-						action: "create-item",
-						input: {
-							title: trimmed,
-							body,
-							type: kind,
-							space: kind === "event" ? "event" : "inbox",
-							start,
-							end,
-							due,
+				saved = orbitItemSchema.parse(
+					await mutateOrbit({
+						data: {
+							action: "create-item",
+							input: {
+								title: trimmed,
+								body,
+								type: kind,
+								space: kind === "event" ? "event" : "inbox",
+								start,
+								end,
+								due,
+							},
 						},
-					},
-				});
+					}),
+				);
 			}
 			await router.invalidate();
+			onSaved?.(saved);
 			onOpenChange(false);
 		} catch {
 			setError("저장하지 못했습니다. 날짜와 파일 권한을 확인해 주세요.");
@@ -381,33 +378,29 @@ export function ScheduleEditor({
 								<span className="text-xs font-medium text-muted-foreground">
 									종료 날짜
 								</span>
-								<Input
-									aria-label="종료 날짜"
-									type="date"
+								<DatePicker
 									value={endDate}
 									min={startDate}
-									onChange={(event) => setEndDate(event.target.value)}
+									onChange={setEndDate}
+									label="종료 날짜"
+									className="w-full"
 								/>
 							</div>
 						</div>
 					) : (
-						<label className="grid gap-1.5">
-							<span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-								<Clock3 className="size-3.5" /> 시간 선택 (선택 사항)
+						<div className="grid gap-1.5">
+							<span className="text-xs font-medium text-muted-foreground">
+								시간 선택 (선택 사항)
 							</span>
-							<select
+							<TimePicker
 								value={taskTime}
-								onChange={(event) => setTaskTime(event.target.value)}
-								className="h-9 rounded-lg border bg-background px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-							>
-								<option value="">시간 없음</option>
-								{TIME_OPTIONS.map((time) => (
-									<option key={time} value={time}>
-										{time}
-									</option>
-								))}
-							</select>
-						</label>
+								onChange={setTaskTime}
+								label="할 일 시간"
+								placeholder="시간 없음"
+								allowEmpty
+								className="w-full"
+							/>
+						</div>
 					)}
 
 					<Textarea

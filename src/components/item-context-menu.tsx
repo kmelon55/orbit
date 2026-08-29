@@ -1,11 +1,13 @@
 import {
 	Archive,
+	CalendarDays,
 	Check,
 	Copy,
 	FileText,
 	Folder,
 	FolderInput,
 	Inbox,
+	ListTodo,
 	Plus,
 	Trash2,
 } from "lucide-react";
@@ -67,6 +69,7 @@ export function ItemContextMenu({
 	onArchive,
 	onDelete,
 	onToggleTask,
+	onConvert,
 	onMove,
 }: {
 	children: ReactElement;
@@ -79,11 +82,15 @@ export function ItemContextMenu({
 	onArchive?: () => void;
 	onDelete?: () => void;
 	onToggleTask?: () => void;
+	onConvert?: (kind: "task" | "event") => void;
 	onMove?: (space: OrbitSpace, folder?: string) => void;
 }) {
 	const showCreate = Boolean(onCreate);
 	const showItem = Boolean(item);
 	const showMove = Boolean(item && onMove);
+	const showConvert = Boolean(
+		item && onConvert && (item.type === "note" || item.type === "link"),
+	);
 	const canArchive = Boolean(item && onArchive && item.space !== "archive");
 
 	return (
@@ -113,6 +120,17 @@ export function ItemContextMenu({
 				) : null}
 				{showMove && item && onMove ? (
 					<MoveSubmenu item={item} snapshot={snapshot} onMove={onMove} />
+				) : null}
+				{showConvert && item && onConvert ? <ContextMenuSeparator /> : null}
+				{showConvert && onConvert ? (
+					<ContextMenuItem onSelect={closeThen(() => onConvert("task"))}>
+						<ListTodo /> 할 일로 전환...
+					</ContextMenuItem>
+				) : null}
+				{showConvert && onConvert ? (
+					<ContextMenuItem onSelect={closeThen(() => onConvert("event"))}>
+						<CalendarDays /> 일정으로 전환...
+					</ContextMenuItem>
 				) : null}
 				{item?.type === "task" && onToggleTask ? (
 					<ContextMenuItem onSelect={onToggleTask}>

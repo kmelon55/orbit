@@ -1,8 +1,9 @@
-import { ArrowUp, CalendarDays, FileText, Link2, ListTodo } from "lucide-react";
+import { ArrowUp, CalendarDays, FileText, ListTodo } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { formatDayKey, ITEM_TYPE_LABEL } from "#/lib/orbit/para";
 import type { OrbitItemType } from "#/lib/orbit/schema";
+import { DatePicker, TimePicker } from "@/components/schedule-controls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
@@ -11,7 +12,6 @@ const KINDS: { type: OrbitItemType; icon: typeof FileText }[] = [
 	{ type: "note", icon: FileText },
 	{ type: "task", icon: ListTodo },
 	{ type: "event", icon: CalendarDays },
-	{ type: "link", icon: Link2 },
 ];
 
 export function QuickCapture({
@@ -97,29 +97,26 @@ export function QuickCapture({
 			<Separator className="my-2" />
 			{kind === "task" || kind === "event" ? (
 				<div className="flex flex-wrap items-center gap-2 px-1 pb-2">
-					<Input
-						type="date"
+					<DatePicker
 						value={date}
-						onChange={(event) => setDate(event.target.value)}
-						aria-label={kind === "task" ? "마감 날짜" : "일정 날짜"}
-						className="h-8 w-36 text-xs"
+						onChange={setDate}
+						label={kind === "task" ? "마감 날짜" : "일정 날짜"}
+						className="h-8 w-auto max-w-44 px-2.5 text-xs"
 					/>
 					{kind === "event" ? (
 						<>
-							<Input
-								type="time"
+							<TimePicker
 								value={startTime}
-								onChange={(event) => setStartTime(event.target.value)}
-								aria-label="시작 시간"
-								className="h-8 w-28 text-xs"
+								onChange={setStartTime}
+								label="시작 시간"
+								className="h-8 w-24 px-2.5 text-xs"
 							/>
 							<span className="text-xs text-muted-foreground">–</span>
-							<Input
-								type="time"
+							<TimePicker
 								value={endTime}
-								onChange={(event) => setEndTime(event.target.value)}
-								aria-label="종료 시간"
-								className="h-8 w-28 text-xs"
+								onChange={setEndTime}
+								label="종료 시간"
+								className="h-8 w-24 px-2.5 text-xs"
 							/>
 						</>
 					) : (

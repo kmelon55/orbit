@@ -21,7 +21,7 @@ function InboxPage() {
 		<div className="flex h-full min-h-0 flex-col">
 			<div className="shrink-0 border-b border-border/50 bg-background/60 px-4 py-3 backdrop-blur-xl">
 				<QuickCapture
-					placeholder="링크, 할 일, 아이디어를 그냥 넣으세요"
+					placeholder="할 일, 일정, 아이디어를 그냥 넣으세요"
 					onSaved={() => void router.invalidate()}
 				/>
 			</div>

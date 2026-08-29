@@ -12,12 +12,13 @@ import type {
 	OrbitSnapshot,
 	OrbitSpace,
 } from "#/lib/orbit/schema";
+import { DatePicker, TimePicker } from "@/components/schedule-controls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
-const TYPES: OrbitItemType[] = ["note", "task", "event", "link"];
+const TYPES: OrbitItemType[] = ["note", "task", "event"];
 
 const DESTINATIONS: {
 	space: OrbitSpace;
@@ -94,6 +95,10 @@ export function FileItemForm({
 		space === "project" || space === "area" || space === "resource";
 	const folders = paraSpace ? snapshot.folders[space] : [];
 	const resolvedFolder = newFolder.trim() || folder || undefined;
+	const visibleTypes =
+		item.type === "link"
+			? ([...TYPES, "link"] satisfies OrbitItemType[])
+			: TYPES;
 
 	async function handleSubmit() {
 		if (!title.trim() || saving) return;
@@ -155,7 +160,7 @@ export function FileItemForm({
 			<div className="grid gap-1.5">
 				<span className="text-xs font-medium text-foreground/75">종류</span>
 				<div className="flex flex-wrap gap-1">
-					{TYPES.map((value) => (
+					{visibleTypes.map((value) => (
 						<Button
 							key={value}
 							type="button"
@@ -228,19 +233,22 @@ export function FileItemForm({
 			{type === "task" && (
 				<div className="grid gap-3 sm:grid-cols-2">
 					<Field label="마감 날짜">
-						<Input
-							type="date"
+						<DatePicker
 							value={due}
-							onChange={(event) => setDue(event.target.value)}
-							className="h-9"
+							onChange={setDue}
+							label="마감 날짜"
+							allowClear
+							className="w-full"
 						/>
 					</Field>
 					<Field label="시간 (선택)">
-						<Input
-							type="time"
+						<TimePicker
 							value={dueTime}
-							onChange={(event) => setDueTime(event.target.value)}
-							className="h-9"
+							onChange={setDueTime}
+							label="마감 시간"
+							placeholder="시간 없음"
+							allowEmpty
+							className="w-full"
 						/>
 					</Field>
 				</div>
@@ -249,40 +257,39 @@ export function FileItemForm({
 			{type === "event" && (
 				<div className="grid gap-3 sm:grid-cols-2">
 					<Field label="시작 날짜">
-						<Input
-							type="date"
+						<DatePicker
 							value={startDate}
-							onChange={(event) => {
-								setStartDate(event.target.value);
-								if (endDate < event.target.value)
-									setEndDate(event.target.value);
+							onChange={(value) => {
+								setStartDate(value);
+								if (endDate < value) setEndDate(value);
 							}}
-							className="h-9"
+							label="시작 날짜"
+							className="w-full"
 						/>
 					</Field>
 					<Field label="시작 시간">
-						<Input
-							type="time"
+						<TimePicker
 							value={startTime}
-							onChange={(event) => setStartTime(event.target.value)}
-							className="h-9"
+							onChange={setStartTime}
+							label="시작 시간"
+							className="w-full"
 						/>
 					</Field>
 					<Field label="종료 날짜">
-						<Input
-							type="date"
+						<DatePicker
 							value={endDate}
 							min={startDate}
-							onChange={(event) => setEndDate(event.target.value)}
-							className="h-9"
+							onChange={setEndDate}
+							label="종료 날짜"
+							className="w-full"
 						/>
 					</Field>
 					<Field label="종료 시간">
-						<Input
-							type="time"
+						<TimePicker
 							value={endTime}
-							onChange={(event) => setEndTime(event.target.value)}
-							className="h-9"
+							onChange={setEndTime}
+							label="종료 시간"
+							className="w-full"
 						/>
 					</Field>
 				</div>

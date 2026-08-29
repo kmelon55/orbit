@@ -21,6 +21,7 @@ import {
 } from "@/components/item-context-menu";
 import { NoteEditor } from "@/components/note-editor";
 import { NoteOrganizeTray } from "@/components/note-organize-tray";
+import { ScheduleEditor } from "@/components/schedule-editor";
 import { TaskCheck, taskTitleClass } from "@/components/task-check";
 import { Button } from "@/components/ui/button";
 import {
@@ -117,6 +118,11 @@ export function ItemWorkspace({
 	const [draggingId, setDraggingId] = useState<string | null>(null);
 	const [organizeMessage, setOrganizeMessage] = useState<string>();
 	const [confirm, setConfirm] = useState<ItemConfirmAction | null>(null);
+	const [scheduleEditor, setScheduleEditor] = useState<{
+		open: boolean;
+		kind: "task" | "event";
+		item?: OrbitItem;
+	}>({ open: false, kind: "task" });
 	const [savedById, setSavedById] = useState<Record<string, NoteDraft>>({});
 	const [saveErrors, setSaveErrors] = useState<Record<string, boolean>>({});
 	const selectedKey = selectedId ?? selected?.id ?? null;
@@ -370,6 +376,23 @@ export function ItemWorkspace({
 		if (item) void moveItem(item, space, folder);
 	}
 
+	async function openScheduleEditor(item: OrbitItem, kind: "task" | "event") {
+		await persistRef.current();
+		const currentDraft = item.id === selectedKey ? draftRef.current : undefined;
+		setScheduleEditor({
+			open: true,
+			kind,
+			item: currentDraft
+				? {
+						...item,
+						title: currentDraft.title || item.title,
+						body: currentDraft.body,
+						tags: parseTags(currentDraft.tags),
+					}
+				: item,
+		});
+	}
+
 	function itemMenu(item: OrbitItem) {
 		return {
 			item,
@@ -381,6 +404,8 @@ export function ItemWorkspace({
 			onDelete: () => setConfirm({ kind: "delete", item }),
 			onToggleTask:
 				item.type === "task" ? () => void taskToggle.toggle(item) : undefined,
+			onConvert: (kind: "task" | "event") =>
+				void openScheduleEditor(item, kind),
 			onMove: (space: OrbitSpace, folder?: string) =>
 				void moveItem(item, space, folder),
 		};
@@ -445,7 +470,7 @@ export function ItemWorkspace({
 										}}
 										onDragEnd={() => setDraggingId(null)}
 										className={cn(
-											"group/note flex min-w-0 items-start overflow-hidden rounded-xl transition-colors duration-200 ease-[var(--interaction-ease)]",
+											"group/note flex min-w-0 items-center overflow-hidden rounded-xl transition-colors duration-200 ease-[var(--interaction-ease)]",
 											item.id === selected?.id
 												? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
 												: "hover:bg-muted/70",
@@ -453,7 +478,7 @@ export function ItemWorkspace({
 										)}
 									>
 										<span
-											className="mt-2.5 ml-1 flex size-5 shrink-0 items-center justify-center text-muted-foreground/45 opacity-0 transition-opacity group-hover/note:opacity-100 group-focus-within/note:opacity-100"
+											className="ml-1 flex size-5 shrink-0 items-center justify-center text-muted-foreground/45 opacity-0 transition-opacity group-hover/note:opacity-100 group-focus-within/note:opacity-100"
 											aria-hidden="true"
 										>
 											<GripVertical className="size-3.5" />
@@ -463,7 +488,7 @@ export function ItemWorkspace({
 												checked={checked}
 												animate={taskToggle.isAnimating(item.id)}
 												disabled={taskToggle.isBusy(item.id)}
-												className="mt-1.5 ml-2"
+												className="ml-2"
 												onClick={() => void taskToggle.toggle(item)}
 												aria-label={`${item.title} 완료 전환`}
 											/>
@@ -544,6 +569,30 @@ export function ItemWorkspace({
 					void (next.kind === "delete"
 						? deleteItem(next.item)
 						: archiveItem(next.item));
+				}}
+			/>
+			<ScheduleEditor
+				open={scheduleEditor.open}
+				onOpenChange={(open) =>
+					setScheduleEditor((current) => ({ ...current, open }))
+				}
+				kind={scheduleEditor.kind}
+				item={scheduleEditor.item}
+				onSaved={(saved) => {
+					const previous = scheduleEditor.item;
+					if (
+						previous &&
+						clearSelectionAfterMove &&
+						saved.space !== previous.space
+					) {
+						cachedSelectedRef.current = undefined;
+						setSelectedId(null);
+						return;
+					}
+					if (saved.id === selectedKey) {
+						cachedSelectedRef.current = saved;
+						applyNote(saved, saved.id);
+					}
 				}}
 			/>
 		</>
