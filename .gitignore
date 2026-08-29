@@ -11,3 +11,7 @@ dist-ssr
 .vinxi
 __unconfig*
 todos.json
+
+# Vault contents are user data, never application source.
+/data/
+/vault/

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+  <defs><filter id="blur" x="-40%" y="-40%" width="180%" height="190%"><feGaussianBlur stdDeviation="1.45"/></filter><filter id="lift" x="-40%" y="-40%" width="180%" height="190%"><feDropShadow dx="0" dy="2" stdDeviation="1.45" flood-color="#171717" flood-opacity=".38"/></filter></defs>
+  <path d="M9.5 16V9.5a2.2 2.2 0 0 1 4.4 0V14 7.5a2.2 2.2 0 0 1 4.4 0V14 9.3a2.2 2.2 0 0 1 4.4 0V15v-2.4a2.2 2.2 0 0 1 4.4 0v5.2C27.1 24.8 23.2 28 17 28c-5.8 0-10-4.2-10-9v-1a2 2 0 0 1 2.5-2Z" stroke="#70E82B" stroke-width="4.5" opacity=".1" filter="url(#blur)" transform="translate(1 .75)"/>
+  <path d="M9.5 16V9.5a2.2 2.2 0 0 1 4.4 0V14 7.5a2.2 2.2 0 0 1 4.4 0V14 9.3a2.2 2.2 0 0 1 4.4 0V15v-2.4a2.2 2.2 0 0 1 4.4 0v5.2C27.1 24.8 23.2 28 17 28c-5.8 0-10-4.2-10-9v-1a2 2 0 0 1 2.5-2Z" stroke="#A970FF" stroke-width="4.5" opacity=".38" filter="url(#blur)"/>
+  <path d="M9.5 16V9.5a2.2 2.2 0 0 1 4.4 0V14 7.5a2.2 2.2 0 0 1 4.4 0V14 9.3a2.2 2.2 0 0 1 4.4 0V15v-2.4a2.2 2.2 0 0 1 4.4 0v5.2C27.1 24.8 23.2 28 17 28c-5.8 0-10-4.2-10-9v-1a2 2 0 0 1 2.5-2Z" fill="#202024" stroke="#C7A7FF" stroke-width="1.7" stroke-linejoin="round" filter="url(#lift)"/>
+</svg>

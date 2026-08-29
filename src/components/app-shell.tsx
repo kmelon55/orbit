@@ -1,87 +1,67 @@
-import { Link } from "@tanstack/react-router";
-import { CalendarCheck, FileText } from "lucide-react";
+import { useRouterState } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { ModeToggle } from "@/components/mode-toggle";
-import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import type { OrbitSnapshot } from "#/lib/orbit/schema";
+import { AppSidebar } from "@/components/app-sidebar";
+import {
+	SidebarInset,
+	SidebarProvider,
+	SidebarTrigger,
+} from "@/components/ui/sidebar";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
-const navigation = [
-	{ to: "/" as const, label: "Today", icon: CalendarCheck, exact: true },
-	{ to: "/notes" as const, label: "Notes", icon: FileText, exact: false },
-];
+function pageTitle(pathname: string) {
+	if (pathname === "/") return "Today";
+	if (pathname === "/inbox") return "Inbox";
+	if (pathname === "/tasks") return "Tasks";
+	if (pathname.startsWith("/calendar")) return "Calendar";
+	if (pathname === "/archive") return "Archive";
+	if (pathname.startsWith("/projects/")) {
+		return decodeURIComponent(pathname.slice("/projects/".length));
+	}
+	if (pathname === "/projects") return "Projects";
+	if (pathname.startsWith("/areas/")) {
+		return decodeURIComponent(pathname.slice("/areas/".length));
+	}
+	if (pathname === "/areas") return "Areas";
+	if (pathname.startsWith("/resources/")) {
+		return decodeURIComponent(pathname.slice("/resources/".length));
+	}
+	if (pathname === "/resources") return "Resources";
+	return "Orbit";
+}
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({
+	children,
+	snapshot,
+}: {
+	children: ReactNode;
+	snapshot: OrbitSnapshot;
+}) {
+	const pathname = useRouterState({
+		select: (state) => state.location.pathname,
+	});
+
 	return (
-		<div className="min-h-svh bg-background text-foreground md:grid md:grid-cols-[220px_minmax(0,1fr)]">
-			<aside className="sticky top-0 hidden h-svh flex-col border-r border-sidebar-border bg-sidebar p-3 md:flex">
-				<Link to="/" className="mb-5 flex h-10 items-center gap-2.5 px-2">
-					<span className="grid size-7 place-items-center rounded-md bg-primary text-primary-foreground">
-						<span className="size-2 rounded-full border-2 border-current" />
-					</span>
-					<span className="text-sm font-semibold tracking-tight">Orbit</span>
-				</Link>
-				<nav className="space-y-1" aria-label="주요 메뉴">
-					{navigation.map((item) => {
-						const Icon = item.icon;
-						return (
-							<Link
-								key={item.to}
-								to={item.to}
-								activeOptions={{ exact: item.exact }}
-								className={cn(
-									buttonVariants({ variant: "ghost" }),
-									"w-full justify-start text-muted-foreground",
-								)}
-								activeProps={{
-									className: cn(
-										buttonVariants({ variant: "secondary" }),
-										"w-full justify-start text-foreground",
-									),
-								}}
-							>
-								<Icon />
-								{item.label}
-							</Link>
-						);
-					})}
-				</nav>
-				<div className="mt-auto flex items-center justify-between border-t border-sidebar-border px-2 pt-3">
-					<div className="flex items-center gap-2 text-xs text-muted-foreground">
-						<span className="size-1.5 rounded-full bg-emerald-500" />
-						Local files
+		<TooltipProvider delayDuration={0}>
+			<SidebarProvider className="h-svh min-h-0 overflow-hidden bg-sidebar">
+				<AppSidebar snapshot={snapshot} />
+				<SidebarInset className="min-h-0 overflow-hidden border-border/70 bg-background md:border md:shadow-sm">
+					<header className="flex h-12 shrink-0 items-center gap-3 border-b border-border/60 bg-background/90 px-4 backdrop-blur-xl">
+						<SidebarTrigger className="-ml-1 text-muted-foreground" />
+						<div className="hidden h-4 w-px bg-border/80 sm:block" />
+						<div className="flex min-w-0 items-center gap-2 text-sm">
+							<span className="hidden text-muted-foreground md:inline">
+								Orbit
+							</span>
+							<span className="hidden text-muted-foreground md:inline">/</span>
+							<h1 className="truncate font-medium">{pageTitle(pathname)}</h1>
+						</div>
+					</header>
+					<div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
+						{children}
 					</div>
-					<ModeToggle />
-				</div>
-			</aside>
-
-			<div className="min-w-0">
-				<header className="sticky top-0 z-20 flex h-14 items-center border-b bg-background/90 px-4 backdrop-blur md:hidden">
-					<Link
-						to="/"
-						className="mr-auto flex items-center gap-2 text-sm font-semibold"
-					>
-						<span className="grid size-6 place-items-center rounded-md bg-primary text-primary-foreground">
-							<span className="size-1.5 rounded-full border border-current" />
-						</span>
-						Orbit
-					</Link>
-					<nav className="mr-1 flex items-center">
-						{navigation.map((item) => (
-							<Link
-								key={item.to}
-								to={item.to}
-								activeOptions={{ exact: item.exact }}
-								className="rounded-md px-2.5 py-1.5 text-xs text-muted-foreground"
-								activeProps={{ className: "bg-muted text-foreground" }}
-							>
-								{item.label}
-							</Link>
-						))}
-					</nav>
-					<ModeToggle />
-				</header>
-				{children}
-			</div>
-		</div>
+				</SidebarInset>
+			</SidebarProvider>
+		</TooltipProvider>
 	);
 }

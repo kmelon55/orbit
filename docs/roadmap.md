@@ -10,7 +10,7 @@
 - [x] Today task projection과 완료 처리
 - [x] MCP capture/today/search
 - [x] 반응형 Today UI
-- [ ] Inbox, Projects, Areas, Resources 상세 화면
+- [x] Inbox, Projects, Areas, Resources 상세 화면
 - [x] Markdown 노트 목록, 편집기, GFM 미리보기와 archive 이동
 - [ ] 파일 watcher + SSE 갱신
 - [ ] vault 전체 텍스트 검색 (Notes 내부 검색은 구현됨)
@@ -31,7 +31,7 @@
 
 ## v0.3 — Time and sync
 
-- [ ] 내부 Calendar 주/월 보기
+- [x] 내부 Calendar 월 보기
 - [ ] iCalendar import/export
 - [ ] CalDAV adapter
 - [ ] Apple Calendar 양방향 동기화
@@ -46,7 +46,8 @@
 - [ ] 제안 생성/조회/승인 도구
 - [ ] 최소 권한 API token
 - [ ] webhook/SSE event stream
-- [ ] Hermes 연결 가이드와 검증 fixture
+- [x] Hermes stdio MCP 연결 가이드
+- [ ] Hermes 검증 fixture
 
 완료 조건: 외부 에이전트가 읽기, 캡처, 변경 제안을 수행하고 사용자가 Orbit에서 승인할 수 있다.
 

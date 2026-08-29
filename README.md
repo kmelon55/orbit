@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./public/orbit.svg" width="72" alt="Orbit logo" />
+  <img src="./public/orbit.png" width="72" alt="Orbit logo" />
   <h1>Orbit</h1>
   <p><strong>Private by default. File first. Agent ready.</strong></p>
   <p>생각은 가볍게 기록하고, 실행과 지식은 한곳에서 관리하는 개인용 워크스페이스.</p>
@@ -22,13 +22,15 @@
 
 - Markdown/YAML vault 읽기
 - 메모, 할 일, 일정, 링크를 Inbox 파일로 캡처
+- Inbox에서 Projects / Areas / Resources / Archive로 분류
+- PARA 폴더 탐색과 폴더 안 노트 편집
 - 오늘 할 일 계산 및 완료 처리
+- 월간 캘린더와 일정 생성
 - Markdown 노트 목록, 검색, 편집, GFM 미리보기, 태그, 보관
-- 최근 Inbox와 예정 일정 표시
 - Neutral 기반 shadcn/ui와 진회색 다크모드
-- MCP `orbit_capture`, `orbit_today`, `orbit_search`
-- `ORBIT_DATA_DIR`로 데이터 위치 분리
-- 모바일 대응 Today 화면
+- MCP capture / today / inbox / list / read / file / calendar / search
+- `ORBIT_VAULT_DIR`로 앱 코드와 개인 vault 분리
+- 모바일 대응 내비게이션
 
 아직 없는 것: 로그인, AI 자동 분류, 변경 승인 화면, vault 전체 검색, CalDAV 동기화, Git 자동 백업, SSE 파일 감시. 범위와 순서는 [로드맵](./docs/roadmap.md)에 정리되어 있습니다.
 
@@ -44,16 +46,18 @@ cp .env.example .env
 pnpm dev
 ```
 
-기본 vault는 프로젝트의 `./data`입니다. 개인 데이터와 앱 코드를 분리하려면 `.env`에서 절대 경로를 지정하세요.
+기본 vault는 Git에서 제외되는 프로젝트의 `./vault`입니다. 실제 사용에서는 개인 데이터와 앱 코드를 완전히 분리하도록 `.env`에 절대 경로를 지정하세요.
 
 ```dotenv
-ORBIT_DATA_DIR=/data/orbit
+ORBIT_VAULT_DIR=/absolute/path/to/orbit-vault
 ```
+
+이전 `ORBIT_DATA_DIR`도 호환 목적으로 읽지만 새 설정에는 `ORBIT_VAULT_DIR`를 사용하세요.
 
 ## 파일 구조
 
 ```text
-/data/orbit/
+ORBIT_VAULT_DIR/
 ├── inbox/
 ├── projects/
 ├── areas/
@@ -88,7 +92,7 @@ README와 기본 파일 계약을 검토한다.
 Orbit MCP 서버는 stdio로 실행됩니다.
 
 ```bash
-ORBIT_DATA_DIR=/absolute/path/to/orbit-data pnpm mcp
+ORBIT_VAULT_DIR=/absolute/path/to/orbit-vault pnpm mcp
 ```
 
 MCP 클라이언트 설정 예시:
@@ -100,26 +104,47 @@ MCP 클라이언트 설정 예시:
       "command": "pnpm",
       "args": ["--dir", "/absolute/path/to/orbit", "mcp"],
       "env": {
-        "ORBIT_DATA_DIR": "/absolute/path/to/orbit-data"
+        "ORBIT_VAULT_DIR": "/absolute/path/to/orbit-vault"
       }
     }
   }
 }
 ```
 
-Hermes를 포함해 stdio MCP 서버를 지원하는 에이전트에서 같은 방식으로 연결할 수 있습니다. 구체적인 설정 키는 사용하는 클라이언트 문서를 확인해 주세요.
+Hermes에는 같은 stdio 서버를 붙이면 됩니다. `~/.hermes/config.yaml` 예시:
+
+```yaml
+mcp_servers:
+  orbit:
+    command: pnpm
+    args: ["--dir", "/absolute/path/to/orbit", "mcp"]
+    env:
+      ORBIT_VAULT_DIR: "/absolute/path/to/orbit-vault"
+```
+
+캡처는 `orbit_capture`로 Inbox에만 넣고, 정리는 `orbit_file`로 Projects / Areas / Resources / Archive에 옮기는 흐름을 권장합니다.
 
 ## Docker / Dokploy
 
 ```bash
 docker build -t orbit .
 docker run --rm -p 3000:3000 \
-  -e ORBIT_DATA_DIR=/data/orbit \
-  -v orbit-data:/data/orbit \
+  -e ORBIT_VAULT_DIR=/vault \
+  -v orbit-vault:/vault \
   orbit
 ```
 
-Dokploy에서는 이 저장소의 `Dockerfile`을 사용하고 `/data/orbit`를 영구 볼륨으로 연결하세요. 외부 공개 전에는 반드시 인증 프록시를 구성하세요.
+Dokploy에서는 이 저장소의 `Dockerfile`을 사용하고 `/vault`를 영구 볼륨 또는 서버 bind mount로 연결하세요. 배포 디렉터리와 vault를 분리해야 재배포가 개인 파일에 영향을 주지 않습니다. 외부 공개 전에는 반드시 인증 프록시를 구성하세요.
+
+## 저장과 백업
+
+GitHub API를 실시간 데이터베이스처럼 사용하지 않습니다. Orbit은 로컬 또는 서버 파일시스템의 vault를 유일한 원본으로 사용하고, Git과 S3 호환 스토리지는 비동기 백업 대상으로만 다룹니다.
+
+- Git: Markdown 변경 이력과 사람이 읽을 수 있는 복구 지점
+- S3 호환 스토리지: 삭제 방지 또는 불변 prefix를 사용하는 원격 스냅샷
+- 애플리케이션: GitHub나 S3 장애와 관계없이 vault에서 계속 읽고 쓰기
+
+파일 경로는 그대로 S3 object key로 옮길 수 있도록 `/` 구분자, NFC Unicode, 안전한 slug를 사용합니다. 권장 원격 prefix는 `vaults/<vault-name>/`입니다. 자세한 운영 방법은 [Vault와 백업 가이드](./docs/vault-and-backup.md)를 참고하세요.
 
 ## 개발
 

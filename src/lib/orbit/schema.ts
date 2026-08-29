@@ -18,6 +18,8 @@ export const orbitStatusSchema = z.enum([
 	"cancelled",
 ]);
 
+export const paraFolderSpaceSchema = z.enum(["project", "area", "resource"]);
+
 export const orbitItemSchema = z.object({
 	id: z.string().min(1),
 	title: z.string().min(1),
@@ -25,6 +27,7 @@ export const orbitItemSchema = z.object({
 	space: orbitSpaceSchema,
 	status: orbitStatusSchema.optional(),
 	project: z.string().optional(),
+	folder: z.string().optional(),
 	due: z.string().optional(),
 	start: z.string().optional(),
 	end: z.string().optional(),
@@ -41,6 +44,14 @@ export const captureInputSchema = z.object({
 	body: z.string().trim().max(20_000).default(""),
 	type: orbitItemTypeSchema.default("note"),
 	due: z.string().optional(),
+	start: z.string().optional(),
+	end: z.string().optional(),
+	url: z.string().url().optional(),
+});
+
+export const createItemInputSchema = captureInputSchema.extend({
+	space: orbitSpaceSchema.default("inbox"),
+	folder: z.string().trim().min(1).max(80).optional(),
 });
 
 export const updateNoteInputSchema = z.object({
@@ -49,10 +60,42 @@ export const updateNoteInputSchema = z.object({
 	tags: z.array(z.string().trim().min(1).max(40)).max(30),
 });
 
+export const fileItemInputSchema = z.object({
+	title: z.string().trim().min(1).max(160).optional(),
+	body: z.string().max(100_000).optional(),
+	type: orbitItemTypeSchema.optional(),
+	space: orbitSpaceSchema,
+	folder: z.string().trim().max(80).optional(),
+	due: z.string().optional(),
+	start: z.string().optional(),
+	end: z.string().optional(),
+	url: z.string().url().optional(),
+	tags: z.array(z.string().trim().min(1).max(40)).max(30).optional(),
+	status: orbitStatusSchema.optional(),
+});
+
+export const createFolderInputSchema = z.object({
+	space: paraFolderSpaceSchema,
+	name: z.string().trim().min(1).max(80),
+});
+
 export const orbitMutationSchema = z.discriminatedUnion("action", [
 	z.object({
 		action: z.literal("capture"),
 		input: captureInputSchema,
+	}),
+	z.object({
+		action: z.literal("create-item"),
+		input: createItemInputSchema,
+	}),
+	z.object({
+		action: z.literal("create-folder"),
+		input: createFolderInputSchema,
+	}),
+	z.object({
+		action: z.literal("file-item"),
+		id: z.string().min(1),
+		input: fileItemInputSchema,
 	}),
 	z.object({
 		action: z.literal("toggle-task"),
@@ -67,13 +110,27 @@ export const orbitMutationSchema = z.discriminatedUnion("action", [
 		action: z.literal("archive-item"),
 		id: z.string().min(1),
 	}),
+	z.object({
+		action: z.literal("delete-item"),
+		id: z.string().min(1),
+	}),
 ]);
 
 export type OrbitItem = z.infer<typeof orbitItemSchema>;
 export type OrbitItemType = z.infer<typeof orbitItemTypeSchema>;
+export type OrbitSpace = z.infer<typeof orbitSpaceSchema>;
 export type CaptureInput = z.infer<typeof captureInputSchema>;
+export type CreateItemInput = z.infer<typeof createItemInputSchema>;
 export type UpdateNoteInput = z.infer<typeof updateNoteInputSchema>;
+export type FileItemInput = z.infer<typeof fileItemInputSchema>;
+export type CreateFolderInput = z.infer<typeof createFolderInputSchema>;
 export type OrbitMutation = z.infer<typeof orbitMutationSchema>;
+
+export type OrbitFolder = {
+	space: "project" | "area" | "resource";
+	slug: string;
+	count: number;
+};
 
 export type OrbitSnapshot = {
 	items: OrbitItem[];
@@ -81,11 +138,18 @@ export type OrbitSnapshot = {
 		tasks: OrbitItem[];
 		events: OrbitItem[];
 	};
+	folders: {
+		project: OrbitFolder[];
+		area: OrbitFolder[];
+		resource: OrbitFolder[];
+	};
 	counts: {
 		inbox: number;
-		projects: number;
-		areas: number;
-		resources: number;
+		project: number;
+		area: number;
+		resource: number;
+		archive: number;
+		event: number;
 	};
 	vaultPath: string;
 	generatedAt: string;

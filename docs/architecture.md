@@ -18,7 +18,7 @@ AI Organizer, Calendar Sync, Git Backup은 이 코어 위의 어댑터다. 없�
 ## 2. Vault 규칙
 
 ```text
-ORBIT_DATA_DIR/
+ORBIT_VAULT_DIR/
 ├── inbox/       # 아직 정리되지 않은 모든 입력
 ├── projects/    # 완료 조건이 있는 유한한 결과물
 ├── areas/       # 지속적으로 관리하는 책임 영역
@@ -85,13 +85,23 @@ SQLite를 도입할 경우 다음 데이터만 허용한다.
 
 SQLite 파일을 지워도 Markdown에서 핵심 상태를 복원할 수 있어야 한다.
 
-## 7. 현재 모듈
+## 7. 저장소와 백업 경계
+
+GitHub API나 S3 API는 Orbit의 실시간 데이터베이스가 아니다. 웹 UI와 MCP는 같은 로컬 vault에 원자적으로 쓰고, Git snapshot과 S3 호환 백업은 해당 vault를 비동기로 복제한다. 백업 장애가 캡처와 편집을 막지 않아야 하며, 복원할 때도 Markdown/YAML만으로 핵심 상태가 재구성되어야 한다.
+
+`OrbitItem.path`는 로컬 상대 경로이면서 미래 object key다. 새 경로는 `/` 구분자와 Unicode NFC를 사용하며 `s3://<bucket>/vaults/<vault-name>/<item.path>`로 직접 매핑할 수 있다. S3 adapter를 추가하더라도 앱의 개별 저장 요청이 Git commit이나 원격 object PUT을 기다리게 만들지 않는다.
+
+## 8. 현재 모듈
 
 - `src/lib/orbit/schema.ts`: 공유 데이터 계약
 - `src/lib/orbit/store.ts`: filesystem 읽기/쓰기
+- `src/lib/orbit/vault-key.ts`: portable filename과 object key 계약
 - `src/lib/orbit/functions.ts`: 웹 UI용 server functions
 - `src/mcp/server.ts`: 외부 에이전트용 stdio MCP
 - `src/routes/index.tsx`: Today vertical slice
+- `src/routes/inbox.tsx`: 빠른 캡처와 PARA 분류
+- `src/routes/projects.tsx`, `areas.tsx`, `resources.tsx`, `archive.tsx`: PARA 폴더 탐색
+- `src/routes/calendar.tsx`: 월간 캘린더
 - `src/routes/notes.tsx`: Markdown 노트 탐색, 편집, 미리보기, 보관
 - `src/components/ui/`: shadcn/ui 기반 공통 컴포넌트
 

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+  <defs><filter id="blur" x="-40%" y="-40%" width="180%" height="190%"><feGaussianBlur stdDeviation="1.45"/></filter><filter id="lift" x="-40%" y="-40%" width="180%" height="190%"><feDropShadow dx="0" dy="2" stdDeviation="1.45" flood-color="#171717" flood-opacity=".38"/></filter></defs>
+  <path d="M5.45 4.2c-.72-.4-1.55.25-1.38 1.06l4.55 21.3c.2.96 1.47 1.18 1.99.35l4.82-7.72 10.21-2.34c.92-.21 1.08-1.46.26-1.92L5.45 4.2Z" stroke="#A970FF" stroke-width="4.5" opacity=".38" stroke-linejoin="round" filter="url(#blur)"/>
+  <path d="M5.45 4.2c-.72-.4-1.55.25-1.38 1.06l4.55 21.3c.2.96 1.47 1.18 1.99.35l4.82-7.72 10.21-2.34c.92-.21 1.08-1.46.26-1.92L5.45 4.2Z" fill="#202024" stroke="#C7A7FF" stroke-width="1.7" stroke-linejoin="round" filter="url(#lift)"/>
+</svg>

@@ -10,43 +10,194 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as NotesRouteImport } from './routes/notes'
+import { Route as ArchiveRouteImport } from './routes/archive'
+import { Route as AreasRouteImport } from './routes/areas'
+import { Route as CalendarRouteImport } from './routes/calendar'
+import { Route as InboxRouteImport } from './routes/inbox'
+import { Route as ProjectsRouteImport } from './routes/projects'
+import { Route as ResourcesRouteImport } from './routes/resources'
+import { Route as TasksRouteImport } from './routes/tasks'
+import { Route as AreasIndexRouteImport } from './routes/areas.index'
+import { Route as AreasFolderRouteImport } from './routes/areas.$folder'
+import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
+import { Route as ProjectsFolderRouteImport } from './routes/projects.$folder'
+import { Route as ResourcesIndexRouteImport } from './routes/resources.index'
+import { Route as ResourcesFolderRouteImport } from './routes/resources.$folder'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const NotesRoute = NotesRouteImport.update({
-  id: '/notes',
-  path: '/notes',
+const ArchiveRoute = ArchiveRouteImport.update({
+  id: '/archive',
+  path: '/archive',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AreasRoute = AreasRouteImport.update({
+  id: '/areas',
+  path: '/areas',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CalendarRoute = CalendarRouteImport.update({
+  id: '/calendar',
+  path: '/calendar',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InboxRoute = InboxRouteImport.update({
+  id: '/inbox',
+  path: '/inbox',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectsRoute = ProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResourcesRoute = ResourcesRouteImport.update({
+  id: '/resources',
+  path: '/resources',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TasksRoute = TasksRouteImport.update({
+  id: '/tasks',
+  path: '/tasks',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AreasIndexRoute = AreasIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AreasRoute,
+} as any)
+const AreasFolderRoute = AreasFolderRouteImport.update({
+  id: '/$folder',
+  path: '/$folder',
+  getParentRoute: () => AreasRoute,
+} as any)
+const ProjectsIndexRoute = ProjectsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ProjectsRoute,
+} as any)
+const ProjectsFolderRoute = ProjectsFolderRouteImport.update({
+  id: '/$folder',
+  path: '/$folder',
+  getParentRoute: () => ProjectsRoute,
+} as any)
+const ResourcesIndexRoute = ResourcesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ResourcesRoute,
+} as any)
+const ResourcesFolderRoute = ResourcesFolderRouteImport.update({
+  id: '/$folder',
+  path: '/$folder',
+  getParentRoute: () => ResourcesRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/notes': typeof NotesRoute
+  '/archive': typeof ArchiveRoute
+  '/areas': typeof AreasRouteWithChildren
+  '/calendar': typeof CalendarRoute
+  '/inbox': typeof InboxRoute
+  '/projects': typeof ProjectsRouteWithChildren
+  '/resources': typeof ResourcesRouteWithChildren
+  '/tasks': typeof TasksRoute
+  '/areas/$folder': typeof AreasFolderRoute
+  '/projects/$folder': typeof ProjectsFolderRoute
+  '/resources/$folder': typeof ResourcesFolderRoute
+  '/areas/': typeof AreasIndexRoute
+  '/projects/': typeof ProjectsIndexRoute
+  '/resources/': typeof ResourcesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/notes': typeof NotesRoute
+  '/archive': typeof ArchiveRoute
+  '/calendar': typeof CalendarRoute
+  '/inbox': typeof InboxRoute
+  '/tasks': typeof TasksRoute
+  '/areas/$folder': typeof AreasFolderRoute
+  '/projects/$folder': typeof ProjectsFolderRoute
+  '/resources/$folder': typeof ResourcesFolderRoute
+  '/areas': typeof AreasIndexRoute
+  '/projects': typeof ProjectsIndexRoute
+  '/resources': typeof ResourcesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/notes': typeof NotesRoute
+  '/archive': typeof ArchiveRoute
+  '/areas': typeof AreasRouteWithChildren
+  '/calendar': typeof CalendarRoute
+  '/inbox': typeof InboxRoute
+  '/projects': typeof ProjectsRouteWithChildren
+  '/resources': typeof ResourcesRouteWithChildren
+  '/tasks': typeof TasksRoute
+  '/areas/$folder': typeof AreasFolderRoute
+  '/projects/$folder': typeof ProjectsFolderRoute
+  '/resources/$folder': typeof ResourcesFolderRoute
+  '/areas/': typeof AreasIndexRoute
+  '/projects/': typeof ProjectsIndexRoute
+  '/resources/': typeof ResourcesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/notes'
+  fullPaths:
+    | '/'
+    | '/archive'
+    | '/areas'
+    | '/calendar'
+    | '/inbox'
+    | '/projects'
+    | '/resources'
+    | '/tasks'
+    | '/areas/$folder'
+    | '/projects/$folder'
+    | '/resources/$folder'
+    | '/areas/'
+    | '/projects/'
+    | '/resources/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/notes'
-  id: '__root__' | '/' | '/notes'
+  to:
+    | '/'
+    | '/archive'
+    | '/calendar'
+    | '/inbox'
+    | '/tasks'
+    | '/areas/$folder'
+    | '/projects/$folder'
+    | '/resources/$folder'
+    | '/areas'
+    | '/projects'
+    | '/resources'
+  id:
+    | '__root__'
+    | '/'
+    | '/archive'
+    | '/areas'
+    | '/calendar'
+    | '/inbox'
+    | '/projects'
+    | '/resources'
+    | '/tasks'
+    | '/areas/$folder'
+    | '/projects/$folder'
+    | '/resources/$folder'
+    | '/areas/'
+    | '/projects/'
+    | '/resources/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  NotesRoute: typeof NotesRoute
+  ArchiveRoute: typeof ArchiveRoute
+  AreasRoute: typeof AreasRouteWithChildren
+  CalendarRoute: typeof CalendarRoute
+  InboxRoute: typeof InboxRoute
+  ProjectsRoute: typeof ProjectsRouteWithChildren
+  ResourcesRoute: typeof ResourcesRouteWithChildren
+  TasksRoute: typeof TasksRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -58,19 +209,149 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/notes': {
-      id: '/notes'
-      path: '/notes'
-      fullPath: '/notes'
-      preLoaderRoute: typeof NotesRouteImport
+    '/archive': {
+      id: '/archive'
+      path: '/archive'
+      fullPath: '/archive'
+      preLoaderRoute: typeof ArchiveRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/areas': {
+      id: '/areas'
+      path: '/areas'
+      fullPath: '/areas'
+      preLoaderRoute: typeof AreasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/calendar': {
+      id: '/calendar'
+      path: '/calendar'
+      fullPath: '/calendar'
+      preLoaderRoute: typeof CalendarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/inbox': {
+      id: '/inbox'
+      path: '/inbox'
+      fullPath: '/inbox'
+      preLoaderRoute: typeof InboxRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects': {
+      id: '/projects'
+      path: '/projects'
+      fullPath: '/projects'
+      preLoaderRoute: typeof ProjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/resources': {
+      id: '/resources'
+      path: '/resources'
+      fullPath: '/resources'
+      preLoaderRoute: typeof ResourcesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tasks': {
+      id: '/tasks'
+      path: '/tasks'
+      fullPath: '/tasks'
+      preLoaderRoute: typeof TasksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/areas/': {
+      id: '/areas/'
+      path: '/'
+      fullPath: '/areas/'
+      preLoaderRoute: typeof AreasIndexRouteImport
+      parentRoute: typeof AreasRoute
+    }
+    '/areas/$folder': {
+      id: '/areas/$folder'
+      path: '/$folder'
+      fullPath: '/areas/$folder'
+      preLoaderRoute: typeof AreasFolderRouteImport
+      parentRoute: typeof AreasRoute
+    }
+    '/projects/': {
+      id: '/projects/'
+      path: '/'
+      fullPath: '/projects/'
+      preLoaderRoute: typeof ProjectsIndexRouteImport
+      parentRoute: typeof ProjectsRoute
+    }
+    '/projects/$folder': {
+      id: '/projects/$folder'
+      path: '/$folder'
+      fullPath: '/projects/$folder'
+      preLoaderRoute: typeof ProjectsFolderRouteImport
+      parentRoute: typeof ProjectsRoute
+    }
+    '/resources/': {
+      id: '/resources/'
+      path: '/'
+      fullPath: '/resources/'
+      preLoaderRoute: typeof ResourcesIndexRouteImport
+      parentRoute: typeof ResourcesRoute
+    }
+    '/resources/$folder': {
+      id: '/resources/$folder'
+      path: '/$folder'
+      fullPath: '/resources/$folder'
+      preLoaderRoute: typeof ResourcesFolderRouteImport
+      parentRoute: typeof ResourcesRoute
     }
   }
 }
 
+interface AreasRouteChildren {
+  AreasFolderRoute: typeof AreasFolderRoute
+  AreasIndexRoute: typeof AreasIndexRoute
+}
+
+const AreasRouteChildren: AreasRouteChildren = {
+  AreasFolderRoute: AreasFolderRoute,
+  AreasIndexRoute: AreasIndexRoute,
+}
+
+const AreasRouteWithChildren = AreasRoute._addFileChildren(AreasRouteChildren)
+
+interface ProjectsRouteChildren {
+  ProjectsFolderRoute: typeof ProjectsFolderRoute
+  ProjectsIndexRoute: typeof ProjectsIndexRoute
+}
+
+const ProjectsRouteChildren: ProjectsRouteChildren = {
+  ProjectsFolderRoute: ProjectsFolderRoute,
+  ProjectsIndexRoute: ProjectsIndexRoute,
+}
+
+const ProjectsRouteWithChildren = ProjectsRoute._addFileChildren(
+  ProjectsRouteChildren,
+)
+
+interface ResourcesRouteChildren {
+  ResourcesFolderRoute: typeof ResourcesFolderRoute
+  ResourcesIndexRoute: typeof ResourcesIndexRoute
+}
+
+const ResourcesRouteChildren: ResourcesRouteChildren = {
+  ResourcesFolderRoute: ResourcesFolderRoute,
+  ResourcesIndexRoute: ResourcesIndexRoute,
+}
+
+const ResourcesRouteWithChildren = ResourcesRoute._addFileChildren(
+  ResourcesRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  NotesRoute: NotesRoute,
+  ArchiveRoute: ArchiveRoute,
+  AreasRoute: AreasRouteWithChildren,
+  CalendarRoute: CalendarRoute,
+  InboxRoute: InboxRoute,
+  ProjectsRoute: ProjectsRouteWithChildren,
+  ResourcesRoute: ResourcesRouteWithChildren,
+  TasksRoute: TasksRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
