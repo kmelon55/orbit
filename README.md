@@ -134,7 +134,14 @@ docker run --rm -p 3000:3000 \
   orbit
 ```
 
-Dokploy에서는 이 저장소의 `Dockerfile`을 사용하고 `/vault`를 영구 볼륨 또는 서버 bind mount로 연결하세요. 배포 디렉터리와 vault를 분리해야 재배포가 개인 파일에 영향을 주지 않습니다. 외부 공개 전에는 반드시 인증 프록시를 구성하세요.
+Dokploy에서는 GitHub 저장소와 배포 브랜치를 연결한 뒤 다음 값만 설정하면 됩니다.
+
+- Build Type: `Dockerfile` (`Dockerfile`, context `/`)
+- Volume Mount: `orbit-vault` → `/vault`
+- Domain Container Port: `3000`
+- Autodeploy: `On Push`
+
+배포 디렉터리와 vault를 분리해야 재배포가 개인 파일에 영향을 주지 않습니다. 외부 공개 전에는 Dokploy Basic Auth나 Cloudflare Access 같은 인증 프록시를 반드시 구성하세요.
 
 ## 저장과 백업
 
