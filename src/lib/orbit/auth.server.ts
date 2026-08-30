@@ -203,13 +203,12 @@ export function assertSameOriginRequest() {
 		?.split(",")[0]
 		?.trim();
 	const host = forwardedHost || request.headers.get("host");
-	const forwardedProtocol = request.headers
-		.get("x-forwarded-proto")
-		?.split(",")[0]
-		?.trim();
-	const protocol =
-		forwardedProtocol || new URL(request.url).protocol.slice(0, -1);
-	if (!host || new URL(origin).origin !== `${protocol}://${host}`) {
+	const fetchSite = request.headers.get("sec-fetch-site");
+	if (
+		!host ||
+		new URL(origin).host !== host ||
+		(fetchSite && fetchSite !== "same-origin" && fetchSite !== "same-site")
+	) {
 		throw new Error("허용되지 않은 요청입니다.");
 	}
 }
