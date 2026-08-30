@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import LZString from "lz-string";
 import {
 	archiveOrbitItem,
 	createOrbitCanvas,
@@ -198,6 +199,55 @@ test("Excalidraw files are listed and saved without changing their path", async 
 				(canvas) => canvas.path === renamed.canvas.path,
 			)?.title,
 			"새 이름",
+		);
+
+		const compressedPath = path.join(
+			vault,
+			"whiteboards",
+			"obsidian.excalidraw.md",
+		);
+		const compressedDocument = JSON.stringify({
+			type: "excalidraw",
+			version: 2,
+			elements: [{ id: "obsidian-shape" }],
+			appState: {},
+			files: {},
+		});
+		await writeFile(
+			compressedPath,
+			`---\nexcalidraw-plugin: parsed\n---\n\n# Excalidraw Data\n\n## Drawing\n\`\`\`compressed-json\n${LZString.compressToBase64(compressedDocument)}\n\`\`\`\n%%\n`,
+		);
+		const compressedCanvas = (await getOrbitSnapshot()).canvases.find(
+			(canvas) => canvas.path === "whiteboards/obsidian.excalidraw.md",
+		);
+		assert.equal(compressedCanvas?.elementCount, 1);
+		const loadedCompressed = await getOrbitCanvas(
+			"whiteboards/obsidian.excalidraw.md",
+		);
+		assert.equal(JSON.parse(loadedCompressed.document).elements.length, 1);
+
+		await saveOrbitCanvas(
+			loadedCompressed.path,
+			JSON.stringify({
+				type: "excalidraw",
+				version: 2,
+				elements: [{ id: "saved-obsidian-shape" }],
+				appState: {},
+				files: {},
+			}),
+		);
+		const savedCompressedMarkdown = await readFile(compressedPath, "utf8");
+		assert.ok(savedCompressedMarkdown.includes("# Excalidraw Data"));
+		assert.ok(savedCompressedMarkdown.includes("```compressed-json"));
+		const savedPayload = savedCompressedMarkdown.match(
+			/```compressed-json\s*([\s\S]*?)\s*```/,
+		)?.[1];
+		assert.ok(savedPayload);
+		assert.equal(
+			JSON.parse(
+				LZString.decompressFromBase64(savedPayload.replace(/[\r\n]/g, "")),
+			).elements[0].id,
+			"saved-obsidian-shape",
 		);
 	} finally {
 		if (previousVault === undefined) delete process.env.ORBIT_VAULT_DIR;

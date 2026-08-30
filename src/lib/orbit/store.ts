@@ -10,6 +10,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import matter from "gray-matter";
+import LZString from "lz-string";
 import {
 	type CaptureInput,
 	type CreateFolderInput,
@@ -177,11 +178,25 @@ async function findCanvasFiles(directory: string): Promise<string[]> {
 	return nested.flat();
 }
 
+const COMPRESSED_CANVAS_BLOCK =
+	/(```compressed-json[^\S\r\n]*\r?\n)([\s\S]*?)(\r?\n```)/i;
+const JSON_CANVAS_BLOCK = /(```json[^\S\r\n]*\r?\n)([\s\S]*?)(\r?\n```)/i;
+
+function canvasDocumentSource(raw: string, format: OrbitCanvas["format"]) {
+	if (format !== "excalidraw.md") return raw;
+	const compressed = raw.match(COMPRESSED_CANVAS_BLOCK)?.[2];
+	if (compressed !== undefined) {
+		const document = LZString.decompressFromBase64(
+			compressed.replace(/[\r\n]/g, ""),
+		);
+		if (!document) throw new Error("Invalid compressed Excalidraw document");
+		return document.slice(0, document.lastIndexOf("}") + 1);
+	}
+	return raw.match(JSON_CANVAS_BLOCK)?.[2] ?? raw;
+}
+
 function canvasJson(raw: string, format: OrbitCanvas["format"]) {
-	const source =
-		format === "excalidraw.md"
-			? (raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1] ?? raw)
-			: raw;
+	const source = canvasDocumentSource(raw, format);
 	const value = JSON.parse(source) as {
 		elements?: unknown[];
 		files?: Record<string, unknown>;
@@ -446,11 +461,25 @@ function replaceCanvasDocument(
 	document: string,
 ) {
 	if (format !== "excalidraw.md") return `${document.trim()}\n`;
-	const match = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-	if (!match || match.index === undefined) return `${document.trim()}\n`;
-	const start = match.index + match[0].indexOf(match[1] ?? "");
-	const end = start + (match[1]?.length ?? 0);
-	return `${raw.slice(0, start)}${document.trim()}${raw.slice(end)}`;
+	if (COMPRESSED_CANVAS_BLOCK.test(raw)) {
+		const compressed = LZString.compressToBase64(document.trim())
+			.match(/.{1,256}/g)
+			?.join("\n\n");
+		if (!compressed) throw new Error("Could not compress Excalidraw document");
+		return raw.replace(
+			COMPRESSED_CANVAS_BLOCK,
+			(_match, opening: string, _current: string, closing: string) =>
+				`${opening}${compressed}${closing}`,
+		);
+	}
+	if (JSON_CANVAS_BLOCK.test(raw)) {
+		return raw.replace(
+			JSON_CANVAS_BLOCK,
+			(_match, opening: string, _current: string, closing: string) =>
+				`${opening}${document.trim()}${closing}`,
+		);
+	}
+	return `${document.trim()}\n`;
 }
 
 export async function saveOrbitCanvas(objectKey: string, document: string) {
