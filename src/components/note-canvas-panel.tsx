@@ -59,6 +59,7 @@ export function NoteCanvasPanel({
 	const titleSaveRunningRef = useRef(false);
 
 	useEffect(() => {
+		if (import.meta.env.SSR) return;
 		let active = true;
 		void import("@excalidraw/excalidraw").then((module) => {
 			if (!active) return;

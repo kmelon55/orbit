@@ -49,6 +49,7 @@ function WhiteboardsPage() {
 	const saveTimer = useRef<number | undefined>(undefined);
 
 	useEffect(() => {
+		if (import.meta.env.SSR) return;
 		let active = true;
 		void import("@excalidraw/excalidraw").then((module) => {
 			if (active) {
