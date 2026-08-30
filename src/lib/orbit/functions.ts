@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
 import { orbitAuthMiddleware } from "./auth";
 import { orbitMutationSchema } from "./schema";
 
@@ -20,8 +21,11 @@ export const mutateOrbit = createServerFn({ method: "POST" })
 			createOrbitItem,
 			deleteOrbitItem,
 			fileOrbitItem,
+			renameOrbitCanvas,
 			toggleOrbitTask,
 			updateOrbitNote,
+			saveOrbitCanvas,
+			createOrbitCanvas,
 		} = await import("./store");
 		switch (data.action) {
 			case "capture":
@@ -40,5 +44,21 @@ export const mutateOrbit = createServerFn({ method: "POST" })
 				return archiveOrbitItem(data.id);
 			case "delete-item":
 				return deleteOrbitItem(data.id);
+			case "save-canvas":
+				return saveOrbitCanvas(data.path, data.document);
+			case "create-canvas":
+				return createOrbitCanvas(data.title);
+			case "rename-canvas":
+				return renameOrbitCanvas(data.path, data.title);
 		}
+	});
+
+export const loadOrbitCanvas = createServerFn({ method: "GET" })
+	.middleware([orbitAuthMiddleware])
+	.validator((input: unknown) =>
+		z.object({ path: z.string().min(1) }).parse(input),
+	)
+	.handler(async ({ data }) => {
+		const { getOrbitCanvas } = await import("./store");
+		return getOrbitCanvas(data.path);
 	});

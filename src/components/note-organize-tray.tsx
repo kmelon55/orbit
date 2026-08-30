@@ -135,13 +135,13 @@ export function NoteOrganizeTray({
 						const key = targetKey(target.space);
 						const current =
 							movingItem?.space === target.space && !movingItem.folder;
-						const folders = PARA_SPACES.some(
-							(space) => space.space === target.space,
-						)
-							? snapshot.folders[
-									target.space as "project" | "area" | "resource"
-								]
-							: [];
+						const folders =
+							PARA_SPACES.some((space) => space.space === target.space) ||
+							target.space === "archive"
+								? snapshot.folders[
+										target.space as "project" | "area" | "resource" | "archive"
+									]
+								: [];
 
 						return (
 							<fieldset

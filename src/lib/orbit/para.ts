@@ -1,6 +1,7 @@
 import type { OrbitItem, OrbitItemType, OrbitSpace } from "./schema";
 
 export type ParaSpaceId = "project" | "area" | "resource";
+export type FolderSpaceId = ParaSpaceId | "archive";
 
 export type NavSpace = {
 	id: "inbox" | "project" | "area" | "resource" | "archive" | "event";
@@ -112,7 +113,8 @@ export function folderOf(item: OrbitItem) {
 	if (
 		(parts[0] === "projects" ||
 			parts[0] === "areas" ||
-			parts[0] === "resources") &&
+			parts[0] === "resources" ||
+			parts[0] === "archive") &&
 		parts.length >= 3
 	) {
 		return parts[1];
@@ -126,7 +128,7 @@ export function itemsInSpace(items: OrbitItem[], space: OrbitSpace) {
 
 export function itemsInFolder(
 	items: OrbitItem[],
-	space: ParaSpaceId,
+	space: FolderSpaceId,
 	folder: string,
 ) {
 	return items.filter(
@@ -134,12 +136,24 @@ export function itemsInFolder(
 	);
 }
 
-export function unfiledInSpace(items: OrbitItem[], space: ParaSpaceId) {
+export function unfiledInSpace(items: OrbitItem[], space: FolderSpaceId) {
 	return items.filter((item) => item.space === space && !folderOf(item));
 }
 
 export function formatUpdated(value: string) {
 	return value.replace("T", " ").slice(0, 16).replaceAll("-", ".");
+}
+
+export function formatDateTime(value: string) {
+	const date = new Date(value);
+	if (Number.isNaN(date.getTime())) return formatUpdated(value);
+	return new Intl.DateTimeFormat("ko-KR", {
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+		hour: "2-digit",
+		minute: "2-digit",
+	}).format(date);
 }
 
 export function formatDayKey(date = new Date()) {

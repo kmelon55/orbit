@@ -1,82 +1,55 @@
-import { Link, useRouter } from "@tanstack/react-router";
-import { FolderPlus, Plus } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { useRouter } from "@tanstack/react-router";
+import { FolderClosed, FolderOpen, FolderPlus, Plus } from "lucide-react";
+import { type FormEvent, useMemo, useState } from "react";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import {
+	type FolderSpaceId,
 	itemsInFolder,
-	itemsInSpace,
-	PARA_SPACES,
-	type ParaSpaceId,
+	spaceConfig,
 	unfiledInSpace,
 } from "#/lib/orbit/para";
-import type { OrbitItem, OrbitSnapshot, OrbitSpace } from "#/lib/orbit/schema";
-import { FileItemForm } from "@/components/file-item-form";
-import {
-	ConfirmItemDialog,
-	type ItemConfirmAction,
-	ItemContextMenu,
-} from "@/components/item-context-menu";
+import type { OrbitSnapshot } from "#/lib/orbit/schema";
+import { ItemContextMenu } from "@/components/item-context-menu";
 import { ItemWorkspace } from "@/components/item-workspace";
 import { Button } from "@/components/ui/button";
-import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogHeader,
-	DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 
-function spaceMeta(space: ParaSpaceId) {
-	const meta = PARA_SPACES.find((item) => item.id === space);
-	if (!meta) throw new Error(`Unknown PARA space: ${space}`);
-	return meta;
-}
+const UNFILED = "__unfiled__" as const;
+type FolderSelection = string | typeof UNFILED | null;
 
-function ItemRow({
-	item,
-	onSelect,
-	menu,
-}: {
-	item: OrbitItem;
-	onSelect: () => void;
-	menu?: Omit<Parameters<typeof ItemContextMenu>[0], "children">;
-}) {
-	const row = (
-		<button
-			type="button"
-			onClick={onSelect}
-			className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-muted/50"
-		>
-			<div className="min-w-0">
-				<p className="truncate text-sm font-medium">{item.title}</p>
-				<p className="mt-0.5 truncate text-xs text-muted-foreground">
-					{item.body || item.path}
-				</p>
-			</div>
-			<span className="shrink-0 text-xs text-muted-foreground">
-				{item.type}
-			</span>
-		</button>
-	);
-	return menu ? <ItemContextMenu {...menu}>{row}</ItemContextMenu> : row;
-}
-
-export function SpaceIndexPage({
+function UnifiedFolderWorkspace({
 	snapshot,
 	space,
+	initialFolder,
 }: {
 	snapshot: OrbitSnapshot;
-	space: ParaSpaceId;
+	space: FolderSpaceId;
+	initialFolder?: string;
 }) {
-	const meta = spaceMeta(space);
 	const router = useRouter();
+	const meta = spaceConfig(space);
+	if (!meta) throw new Error(`Unknown folder space: ${space}`);
 	const folders = snapshot.folders[space];
 	const unfiled = unfiledInSpace(snapshot.items, space);
+	const [selectedFolder, setSelectedFolder] = useState<FolderSelection>(
+		initialFolder ?? null,
+	);
+	const [showFolders, setShowFolders] = useState(!initialFolder);
 	const [name, setName] = useState("");
 	const [saving, setSaving] = useState(false);
-	const [filing, setFiling] = useState<OrbitItem | null>(null);
-	const [confirm, setConfirm] = useState<ItemConfirmAction | null>(null);
+
+	const items = useMemo(() => {
+		if (selectedFolder === null) return [];
+		if (selectedFolder === UNFILED) return unfiled;
+		return itemsInFolder(snapshot.items, space, selectedFolder);
+	}, [selectedFolder, snapshot.items, space, unfiled]);
+
+	function openFolder(folder: FolderSelection) {
+		setSelectedFolder(folder);
+		setShowFolders(false);
+	}
 
 	async function createFolder(event: FormEvent) {
 		event.preventDefault();
@@ -89,198 +62,168 @@ export function SpaceIndexPage({
 			});
 			setName("");
 			await router.invalidate();
-			if (created && "slug" in created && meta.folderHref) {
-				await router.navigate({
-					to: meta.folderHref,
-					params: { folder: created.slug },
-				});
-			}
+			if (created && "slug" in created) openFolder(created.slug);
 		} finally {
 			setSaving(false);
 		}
 	}
 
 	async function createNote(folder?: string) {
-		const created = await mutateOrbit({
+		await mutateOrbit({
 			data: {
 				action: "create-item",
 				input: { title: "새 노트", type: "note", body: "", space, folder },
 			},
 		});
 		await router.invalidate();
-		if (folder && created && "id" in created && meta.folderHref) {
-			await router.navigate({
-				to: meta.folderHref,
-				params: { folder },
-			});
-		}
 	}
 
-	async function archiveItem(item: OrbitItem) {
-		await mutateOrbit({ data: { action: "archive-item", id: item.id } });
-		await router.invalidate();
-	}
+	const navigator = (
+		<div className="flex h-full min-h-0 flex-col bg-sidebar/35">
+			<header className="shrink-0 border-b border-border/50 px-4 py-4">
+				<p className="text-xs font-semibold tracking-[0.16em] text-muted-foreground uppercase">
+					{meta.label}
+				</p>
+				<h2 className="mt-1 text-lg font-semibold tracking-tight">
+					{meta.korean}
+				</h2>
+				<p className="mt-1 text-xs leading-5 text-muted-foreground">
+					{meta.hint}
+				</p>
+			</header>
+			<form onSubmit={createFolder} className="flex shrink-0 gap-1.5 p-3">
+				<div className="relative min-w-0 flex-1">
+					<FolderPlus className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+					<Input
+						value={name}
+						onChange={(event) => setName(event.target.value)}
+						placeholder="새 폴더"
+						className="h-9 bg-background/80 pl-8 text-sm"
+					/>
+				</div>
+				<Button
+					type="submit"
+					size="icon-sm"
+					disabled={!name.trim() || saving}
+					aria-label="폴더 만들기"
+				>
+					<Plus />
+				</Button>
+			</form>
+			<ScrollArea className="min-h-0 flex-1">
+				<div className="space-y-1 px-2 pb-3">
+					{folders.map((folder) => (
+						<ItemContextMenu
+							key={folder.slug}
+							createLabel="노트 추가"
+							onCreate={() => void createNote(folder.slug)}
+							onOpen={() => openFolder(folder.slug)}
+						>
+							<button
+								type="button"
+								onClick={() => openFolder(folder.slug)}
+								className={cn(
+									"group/folder flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors",
+									selectedFolder === folder.slug
+										? "bg-sidebar-accent text-sidebar-accent-foreground"
+										: "hover:bg-muted/70",
+								)}
+							>
+								<FolderClosed className="size-8 shrink-0 fill-amber-300/55 text-amber-600/80 transition-transform group-hover/folder:scale-105 dark:fill-amber-400/20 dark:text-amber-300/80" />
+								<span className="min-w-0 flex-1">
+									<span className="block truncate text-sm font-medium">
+										{folder.slug}
+									</span>
+									<span className="mt-0.5 block text-xs text-muted-foreground">
+										{folder.count}개 항목
+									</span>
+								</span>
+							</button>
+						</ItemContextMenu>
+					))}
+					{unfiled.length > 0 ? (
+						<ItemContextMenu
+							createLabel="노트 추가"
+							onCreate={() => void createNote()}
+							onOpen={() => openFolder(UNFILED)}
+						>
+							<button
+								type="button"
+								onClick={() => openFolder(UNFILED)}
+								className={cn(
+									"group/folder flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors",
+									selectedFolder === UNFILED
+										? "bg-sidebar-accent text-sidebar-accent-foreground"
+										: "hover:bg-muted/70",
+								)}
+							>
+								<FolderOpen className="size-8 shrink-0 text-muted-foreground/70 transition-transform group-hover/folder:scale-105" />
+								<span className="min-w-0 flex-1">
+									<span className="block truncate text-sm font-medium">
+										폴더 없음
+									</span>
+									<span className="mt-0.5 block text-xs text-muted-foreground">
+										{unfiled.length}개 항목
+									</span>
+								</span>
+							</button>
+						</ItemContextMenu>
+					) : null}
+					{folders.length === 0 && unfiled.length === 0 ? (
+						<div className="px-3 py-10 text-center text-sm leading-6 text-muted-foreground">
+							폴더를 만들거나 여기에 노트를 정리해 보세요.
+						</div>
+					) : null}
+				</div>
+			</ScrollArea>
+		</div>
+	);
 
-	async function deleteItem(item: OrbitItem) {
-		await mutateOrbit({ data: { action: "delete-item", id: item.id } });
-		await router.invalidate();
-	}
-
-	async function moveItem(
-		item: OrbitItem,
-		nextSpace: OrbitSpace,
-		folder?: string,
-	) {
-		await mutateOrbit({
-			data: {
-				action: "file-item",
-				id: item.id,
-				input: { space: nextSpace, folder },
-			},
-		});
-		await router.invalidate();
-	}
+	const folderName =
+		selectedFolder === UNFILED ? "폴더 없음" : (selectedFolder ?? meta.korean);
+	const selectedFolderName =
+		selectedFolder && selectedFolder !== UNFILED ? selectedFolder : undefined;
 
 	return (
-		<>
-			<ItemContextMenu onCreate={() => void createNote()}>
-				<div className="h-full overflow-auto px-6 py-6 lg:px-8">
-					<header className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-						<div>
-							<p className="text-xs font-semibold tracking-[0.18em] text-muted-foreground uppercase">
-								PARA · {meta.korean}
-							</p>
-							<p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-								{meta.hint}
-							</p>
-						</div>
-						<Button variant="outline" onClick={() => void createNote()}>
-							<Plus /> 루트에 노트
-						</Button>
-					</header>
-
-					<form
-						onSubmit={createFolder}
-						className="orbit-card mb-8 flex flex-col gap-2 p-3 sm:flex-row sm:items-center"
-					>
-						<div className="grid size-11 place-items-center rounded-xl bg-muted">
-							<FolderPlus className="size-5" />
-						</div>
-						<Input
-							value={name}
-							onChange={(event) => setName(event.target.value)}
-							placeholder={`${meta.korean} 폴더 이름`}
-							className="h-10 border-0 bg-transparent shadow-none focus-visible:ring-0"
-						/>
-						<Button type="submit" disabled={!name.trim() || saving}>
-							폴더 만들기
-						</Button>
-					</form>
-
-					<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-						{folders.map((folder) => (
-							<ItemContextMenu
-								key={folder.slug}
-								createLabel="노트 추가"
-								onCreate={() => void createNote(folder.slug)}
-								onOpen={() => {
-									if (!meta.folderHref) return;
-									void router.navigate({
-										to: meta.folderHref,
-										params: { folder: folder.slug },
-									});
-								}}
-							>
-								<Link
-									to={meta.folderHref ?? meta.href}
-									params={{ folder: folder.slug }}
-									className="orbit-card orbit-card-hover p-4"
-								>
-									<p className="text-sm font-semibold">{folder.slug}</p>
-									<p className="mt-1 text-xs text-muted-foreground">
-										{folder.count}개 항목
-									</p>
-								</Link>
-							</ItemContextMenu>
-						))}
-						{folders.length === 0 && (
-							<div className="rounded-2xl border border-dashed p-6 text-sm leading-6 text-muted-foreground sm:col-span-2">
-								아직 폴더가 없습니다. Inbox에서 분류하거나 위에서 폴더를
-								만드세요.
-							</div>
-						)}
-					</div>
-
-					{unfiled.length > 0 && (
-						<section className="mt-10">
-							<h2 className="mb-3 text-sm font-semibold">폴더 없는 항목</h2>
-							<div className="orbit-card overflow-hidden">
-								{unfiled.map((item, index) => (
-									<div key={item.id}>
-										{index > 0 && <div className="h-px bg-border" />}
-										<ItemRow
-											item={item}
-											onSelect={() => setFiling(item)}
-											menu={{
-												item,
-												snapshot,
-												onCreate: () => void createNote(),
-												onOpen: () => setFiling(item),
-												onFile: () => setFiling(item),
-												onArchive: () => setConfirm({ kind: "archive", item }),
-												onDelete: () => setConfirm({ kind: "delete", item }),
-												onMove: (nextSpace, folder) =>
-													void moveItem(item, nextSpace, folder),
-											}}
-										/>
-									</div>
-								))}
-							</div>
-						</section>
-					)}
-				</div>
-			</ItemContextMenu>
-			<Dialog
-				open={filing !== null}
-				onOpenChange={(open) => {
-					if (!open) setFiling(null);
-				}}
-			>
-				<DialogContent>
-					<DialogHeader>
-						<DialogTitle>폴더로 옮기기</DialogTitle>
-						<DialogDescription>
-							이 공간의 폴더를 고르거나 새로 만들 수 있습니다.
-						</DialogDescription>
-					</DialogHeader>
-					{filing && (
-						<FileItemForm
-							item={filing}
-							snapshot={snapshot}
-							onDone={async () => {
-								setFiling(null);
-								await router.invalidate();
-							}}
-						/>
-					)}
-				</DialogContent>
-			</Dialog>
-			<ConfirmItemDialog
-				action={confirm}
-				onOpenChange={(open) => {
-					if (!open) setConfirm(null);
-				}}
-				onConfirm={() => {
-					if (!confirm) return;
-					const next = confirm;
-					setConfirm(null);
-					void (next.kind === "delete"
-						? deleteItem(next.item)
-						: archiveItem(next.item));
-				}}
-			/>
-		</>
+		<ItemWorkspace
+			snapshot={snapshot}
+			items={items}
+			heading={folderName}
+			description={
+				selectedFolder === null
+					? "폴더를 선택하세요"
+					: `${meta.label} · ${items.length}개`
+			}
+			create={
+				selectedFolder === null
+					? undefined
+					: { space, folder: selectedFolderName }
+			}
+			disableCreate={selectedFolder === null}
+			emptyTitle={
+				selectedFolder === null ? "폴더를 선택하세요" : "빈 폴더입니다"
+			}
+			emptyDescription={
+				selectedFolder === null
+					? "왼쪽에서 폴더를 열면 항목 목록과 편집기가 이어집니다."
+					: "새 노트를 만들면 이 폴더에 바로 저장됩니다."
+			}
+			navigator={navigator}
+			showNavigator={showFolders}
+			onShowNavigator={() => setShowFolders(true)}
+			scopeKey={`${space}:${selectedFolder ?? "root"}`}
+		/>
 	);
+}
+
+export function SpaceIndexPage({
+	snapshot,
+	space,
+}: {
+	snapshot: OrbitSnapshot;
+	space: Exclude<FolderSpaceId, "archive">;
+}) {
+	return <UnifiedFolderWorkspace snapshot={snapshot} space={space} />;
 }
 
 export function SpaceFolderPage({
@@ -289,30 +232,18 @@ export function SpaceFolderPage({
 	folder,
 }: {
 	snapshot: OrbitSnapshot;
-	space: ParaSpaceId;
+	space: Exclude<FolderSpaceId, "archive">;
 	folder: string;
 }) {
-	const meta = spaceMeta(space);
-	const items = itemsInFolder(snapshot.items, space, folder);
 	return (
-		<ItemWorkspace
+		<UnifiedFolderWorkspace
 			snapshot={snapshot}
-			items={items}
-			heading={folder}
-			description={`${meta.label} · ${items.length}개`}
-			create={{ space, folder }}
+			space={space}
+			initialFolder={folder}
 		/>
 	);
 }
 
 export function ArchivePage({ snapshot }: { snapshot: OrbitSnapshot }) {
-	return (
-		<ItemWorkspace
-			snapshot={snapshot}
-			items={itemsInSpace(snapshot.items, "archive")}
-			heading="Archive"
-			description="지금은 쓰지 않는 항목"
-			create={{ space: "archive" }}
-		/>
-	);
+	return <UnifiedFolderWorkspace snapshot={snapshot} space="archive" />;
 }

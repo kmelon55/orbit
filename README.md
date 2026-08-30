@@ -31,8 +31,20 @@
 - MCP capture / today / inbox / list / read / file / calendar / search
 - `ORBIT_VAULT_DIR`로 앱 코드와 개인 vault 분리
 - 모바일 대응 내비게이션
+- Excalidraw 화이트보드 파일 열기·자동 저장
 
 아직 없는 것: 다중 사용자 계정, AI 자동 분류, 변경 승인 화면, vault 전체 검색, CalDAV 동기화, Git 자동 백업, SSE 파일 감시. 범위와 순서는 [로드맵](./docs/roadmap.md)에 정리되어 있습니다.
+
+## Obsidian vault 가져오기
+
+원본 vault는 변경하지 않고 Orbit vault로 복사합니다. `ORBIT_VAULT_DIR`를 지정하면 해당 위치에 저장하며, 같은 파일을 다시 실행하면 중복을 건너뜁니다.
+
+```bash
+pnpm migrate:obsidian -- /Users/kimgyeongmo/Documents/Second-Brain --dry-run
+pnpm migrate:obsidian -- /Users/kimgyeongmo/Documents/Second-Brain
+```
+
+`Project`, `Area`, `Resource`, `Archive`, `Draft`, `Spaces`, `Wish list`, `Excalidraw` 폴더를 Orbit의 Projects, Areas, Resources, Archive, Inbox, Resources, Resources, Whiteboards로 매핑합니다. `.md`, `.excalidraw`, `.excalidraw.md`와 첨부파일을 보존하며 작성일·수정일은 YAML과 파일 메타데이터에서 채웁니다. 원본에 파일이 내려와 있지 않으면 importer가 중단하고 아무것도 쓰지 않습니다.
 
 ## 빠른 시작
 

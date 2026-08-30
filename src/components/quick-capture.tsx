@@ -14,6 +14,17 @@ const KINDS: { type: OrbitItemType; icon: typeof FileText }[] = [
 	{ type: "event", icon: CalendarDays },
 ];
 
+function addHour(value: string) {
+	const [hour, minute] = value.split(":").map(Number);
+	const next = (hour * 60 + minute + 60) % (24 * 60);
+	return `${String(Math.floor(next / 60)).padStart(2, "0")}:${String(next % 60).padStart(2, "0")}`;
+}
+
+function nextDay(value: string) {
+	const [year, month, day] = value.split("-").map(Number);
+	return formatDayKey(new Date(year, month - 1, day + 1));
+}
+
 export function QuickCapture({
 	onSaved,
 	placeholder = "생각나는 것을 일단 적어두세요",
@@ -24,6 +35,7 @@ export function QuickCapture({
 	const [capture, setCapture] = useState("");
 	const [kind, setKind] = useState<OrbitItemType>("note");
 	const [date, setDate] = useState(() => formatDayKey());
+	const [endDate, setEndDate] = useState(() => formatDayKey());
 	const [startTime, setStartTime] = useState("09:00");
 	const [endTime, setEndTime] = useState("10:00");
 	const [isSaving, setIsSaving] = useState(false);
@@ -33,6 +45,13 @@ export function QuickCapture({
 		event.preventDefault();
 		const title = capture.trim();
 		if (!title || isSaving) return;
+		if (
+			kind === "event" &&
+			(endDate < date || (endDate === date && endTime <= startTime))
+		) {
+			setMessage("종료는 시작보다 뒤여야 합니다.");
+			return;
+		}
 		setIsSaving(true);
 		setMessage(null);
 		try {
@@ -42,7 +61,7 @@ export function QuickCapture({
 					: kind === "event"
 						? {
 								start: `${date}T${startTime}:00`,
-								end: `${date}T${endTime}:00`,
+								end: `${endDate}T${endTime}:00`,
 							}
 						: {};
 			await mutateOrbit({
@@ -96,31 +115,65 @@ export function QuickCapture({
 			</div>
 			<Separator className="my-2" />
 			{kind === "task" || kind === "event" ? (
-				<div className="flex flex-wrap items-center gap-2 px-1 pb-2">
-					<DatePicker
-						value={date}
-						onChange={setDate}
-						label={kind === "task" ? "마감 날짜" : "일정 날짜"}
-						className="h-8 w-auto max-w-44 px-2.5 text-xs"
-					/>
+				<div className="grid gap-2 px-1 pb-2">
 					{kind === "event" ? (
 						<>
-							<TimePicker
-								value={startTime}
-								onChange={setStartTime}
-								label="시작 시간"
-								className="h-8 w-24 px-2.5 text-xs"
-							/>
-							<span className="text-xs text-muted-foreground">–</span>
-							<TimePicker
-								value={endTime}
-								onChange={setEndTime}
-								label="종료 시간"
-								className="h-8 w-24 px-2.5 text-xs"
-							/>
+							<div className="grid items-center gap-2 sm:grid-cols-[2.5rem_minmax(0,1fr)_minmax(0,0.8fr)]">
+								<span className="text-xs font-medium text-muted-foreground">
+									시작
+								</span>
+								<DatePicker
+									value={date}
+									onChange={(value) => {
+										setDate(value);
+										if (endDate < value) setEndDate(value);
+									}}
+									label="시작 날짜"
+									className="h-8 w-full px-2.5 text-xs"
+								/>
+								<TimePicker
+									value={startTime}
+									onChange={(value) => {
+										setStartTime(value);
+										if (endDate === date && endTime <= value) {
+											const nextEndTime = addHour(value);
+											setEndTime(nextEndTime);
+											if (nextEndTime <= value) setEndDate(nextDay(date));
+										}
+									}}
+									label="시작 시간"
+									className="h-8 w-full px-2.5 text-xs"
+								/>
+							</div>
+							<div className="grid items-center gap-2 sm:grid-cols-[2.5rem_minmax(0,1fr)_minmax(0,0.8fr)]">
+								<span className="text-xs font-medium text-muted-foreground">
+									종료
+								</span>
+								<DatePicker
+									value={endDate}
+									min={date}
+									onChange={setEndDate}
+									label="종료 날짜"
+									className="h-8 w-full px-2.5 text-xs"
+								/>
+								<TimePicker
+									value={endTime}
+									onChange={setEndTime}
+									label="종료 시간"
+									className="h-8 w-full px-2.5 text-xs"
+								/>
+							</div>
 						</>
 					) : (
-						<span className="text-xs text-muted-foreground">마감 날짜</span>
+						<div className="flex flex-wrap items-center gap-2">
+							<DatePicker
+								value={date}
+								onChange={setDate}
+								label="마감 날짜"
+								className="h-8 w-auto max-w-44 px-2.5 text-xs"
+							/>
+							<span className="text-xs text-muted-foreground">마감 날짜</span>
+						</div>
 					)}
 				</div>
 			) : null}

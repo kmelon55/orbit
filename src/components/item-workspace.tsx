@@ -1,27 +1,49 @@
 import { useRouter } from "@tanstack/react-router";
 import {
 	Archive,
+	ChevronLeft,
 	FileText,
 	FolderInput,
 	GripVertical,
-	PanelRightOpen,
 	Plus,
 	Search,
-	Tags,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+	type ReactNode,
+	startTransition,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { mutateOrbit } from "#/lib/orbit/functions";
-import { ITEM_TYPE_LABEL } from "#/lib/orbit/para";
-import type { OrbitItem, OrbitSnapshot, OrbitSpace } from "#/lib/orbit/schema";
+import {
+	formatDateTime,
+	formatDayKey,
+	ITEM_TYPE_LABEL,
+} from "#/lib/orbit/para";
+import type {
+	OrbitCanvas,
+	OrbitItem,
+	OrbitSnapshot,
+	OrbitSpace,
+} from "#/lib/orbit/schema";
+import { orbitItemSchema } from "#/lib/orbit/schema";
 import { FileItemForm } from "@/components/file-item-form";
 import {
 	ConfirmItemDialog,
 	type ItemConfirmAction,
 	ItemContextMenu,
 } from "@/components/item-context-menu";
+import type {
+	NoteEditorAnchor,
+	NoteEditorHandle,
+} from "@/components/note-editor";
 import { NoteEditor } from "@/components/note-editor";
+import { NoteLinkPicker } from "@/components/note-link-picker";
+import { NoteMetadataEditor } from "@/components/note-metadata-editor";
 import { NoteOrganizeTray } from "@/components/note-organize-tray";
-import { ScheduleEditor } from "@/components/schedule-editor";
 import { TaskCheck, taskTitleClass } from "@/components/task-check";
 import { Button } from "@/components/ui/button";
 import {
@@ -75,6 +97,60 @@ function draftsEqual(left: NoteDraft, right: NoteDraft) {
 	);
 }
 
+function linkedCanvasPaths(body: string) {
+	const paths: string[] = [];
+	for (const match of body.matchAll(/#\/canvas\/([^\s)"']+)/g)) {
+		try {
+			paths.push(decodeURIComponent(match[1]));
+		} catch {
+			paths.push(match[1]);
+		}
+	}
+	return Array.from(new Set(paths));
+}
+
+function firstLinkedCanvas(body: string, canvases: OrbitCanvas[]) {
+	const linked = linkedCanvasPaths(body)
+		.map((path) => canvases.find((canvas) => canvas.path === path))
+		.find((canvas): canvas is OrbitCanvas => Boolean(canvas));
+	if (linked) return linked;
+
+	const legacyLabels = Array.from(
+		body.matchAll(/(?:^|\n)\/?(?:Whiteboard|화이트보드)\s*·\s*([^\n]+)/gi),
+		(match) => match[1]?.trim(),
+	).filter((label): label is string => Boolean(label));
+	return legacyLabels
+		.map((label) =>
+			canvases.find(
+				(canvas) =>
+					label === canvas.title ||
+					label.startsWith(canvas.title) ||
+					canvas.title.startsWith(label),
+			),
+		)
+		.find((canvas): canvas is OrbitCanvas => Boolean(canvas));
+}
+
+function normalizeLegacyCanvasLinks(body: string, canvases: OrbitCanvas[]) {
+	return body.replace(
+		/^\/?(?:Whiteboard|화이트보드)\s*·\s*([^\n]+)$/gim,
+		(original, rawLabel: string) => {
+			const label = rawLabel.trim();
+			const canvas = canvases.find(
+				(entry) =>
+					label === entry.title ||
+					label.startsWith(entry.title) ||
+					entry.title.startsWith(label),
+			);
+			if (!canvas) return original;
+			return (
+				`[Whiteboard · ${canvas.title.replace(/[[\]]/g, "")}]` +
+				`(#/canvas/${encodeURIComponent(canvas.path)})`
+			);
+		},
+	);
+}
+
 export function ItemWorkspace({
 	snapshot,
 	items,
@@ -84,6 +160,13 @@ export function ItemWorkspace({
 	initialSelectedId,
 	hideInboxTarget = false,
 	clearSelectionAfterMove = false,
+	navigator,
+	showNavigator = false,
+	onShowNavigator,
+	scopeKey,
+	disableCreate = false,
+	emptyTitle,
+	emptyDescription,
 }: {
 	snapshot: OrbitSnapshot;
 	items: OrbitItem[];
@@ -93,52 +176,109 @@ export function ItemWorkspace({
 	initialSelectedId?: string;
 	hideInboxTarget?: boolean;
 	clearSelectionAfterMove?: boolean;
+	navigator?: ReactNode;
+	showNavigator?: boolean;
+	onShowNavigator?: () => void;
+	scopeKey?: string;
+	disableCreate?: boolean;
+	emptyTitle?: string;
+	emptyDescription?: string;
 }) {
 	const router = useRouter();
 	const taskToggle = useTaskToggle();
 	useEffect(() => {
 		taskToggle.sync(snapshot.items);
 	}, [snapshot.items, taskToggle.sync]);
+	useEffect(() => {
+		const refreshCanvases = () => {
+			void router.invalidate();
+		};
+		window.addEventListener("orbit:canvas-renamed", refreshCanvases);
+		return () =>
+			window.removeEventListener("orbit:canvas-renamed", refreshCanvases);
+	}, [router]);
 	const initialItem =
 		items.find((item) => item.id === initialSelectedId) ?? items[0];
 	const [selectedId, setSelectedId] = useState<string | null>(
 		initialItem?.id ?? null,
 	);
+	const scopeKeyRef = useRef(scopeKey);
+	const scopeChanged =
+		scopeKey !== undefined && scopeKeyRef.current !== scopeKey;
 	const cachedSelectedRef = useRef<OrbitItem | undefined>(initialItem);
 	const selectedFromList = items.find((item) => item.id === selectedId);
-	const selected =
-		selectedFromList ??
-		(cachedSelectedRef.current?.id === selectedId
-			? cachedSelectedRef.current
-			: items[0]);
-	const [draft, setDraft] = useState(() => noteDraft(selected));
+	const selected = scopeChanged
+		? items[0]
+		: (selectedFromList ??
+			(cachedSelectedRef.current?.id === selectedId
+				? cachedSelectedRef.current
+				: items[0]));
+	const initialStoredDraft = noteDraft(selected);
+	const [draft, setDraft] = useState(() => ({
+		...initialStoredDraft,
+		body: normalizeLegacyCanvasLinks(
+			initialStoredDraft.body,
+			snapshot.canvases,
+		),
+	}));
 	const [query, setQuery] = useState("");
 	const [filing, setFiling] = useState<OrbitItem | null>(null);
 	const [organizeOpen, setOrganizeOpen] = useState(false);
 	const [draggingId, setDraggingId] = useState<string | null>(null);
 	const [organizeMessage, setOrganizeMessage] = useState<string>();
 	const [confirm, setConfirm] = useState<ItemConfirmAction | null>(null);
-	const [scheduleEditor, setScheduleEditor] = useState<{
-		open: boolean;
-		kind: "task" | "event";
-		item?: OrbitItem;
-	}>({ open: false, kind: "task" });
+	const [linkPickerAnchor, setLinkPickerAnchor] =
+		useState<NoteEditorAnchor | null>(null);
 	const [savedById, setSavedById] = useState<Record<string, NoteDraft>>({});
 	const [saveErrors, setSaveErrors] = useState<Record<string, boolean>>({});
 	const selectedKey = selectedId ?? selected?.id ?? null;
+	const selectedKeyRef = useRef<string | null>(selectedKey);
+	selectedKeyRef.current = selectedKey;
 	const draftRef = useRef(draft);
 	const localDraftsRef = useRef<Record<string, NoteDraft>>(
 		selected ? { [selected.id]: draft } : {},
 	);
 	const lastSavedByIdRef = useRef<Record<string, NoteDraft>>(
-		selected ? { [selected.id]: noteDraft(selected) } : {},
+		selected ? { [selected.id]: initialStoredDraft } : {},
 	);
 	const saveQueuesRef = useRef<Map<string, Promise<void>>>(new Map());
 	const persistRef = useRef<() => Promise<void>>(async () => {});
+	const editorRef = useRef<NoteEditorHandle>(null);
 	const savedByIdRef = useRef(savedById);
-	draftRef.current = draft;
+	const updateDraftTitle = useCallback((title: string) => {
+		const id = selectedKeyRef.current;
+		const next = { ...draftRef.current, title };
+		draftRef.current = next;
+		if (id) localDraftsRef.current[id] = next;
+		startTransition(() => {
+			setDraft((current) => (selectedKeyRef.current === id ? next : current));
+		});
+	}, []);
+	const updateDraftTags = useCallback((tags: string) => {
+		const id = selectedKeyRef.current;
+		const next = { ...draftRef.current, tags };
+		draftRef.current = next;
+		if (id) localDraftsRef.current[id] = next;
+		startTransition(() => {
+			setDraft((current) => (selectedKeyRef.current === id ? next : current));
+		});
+	}, []);
+	const updateDraftBody = useCallback((body: string) => {
+		const id = selectedKeyRef.current;
+		const next = { ...draftRef.current, body };
+		draftRef.current = next;
+		if (id) localDraftsRef.current[id] = next;
+		startTransition(() => {
+			setDraft((current) => (selectedKeyRef.current === id ? next : current));
+		});
+	}, []);
+	const latestLocalDraft = selectedKey
+		? localDraftsRef.current[selectedKey]
+		: undefined;
+	draftRef.current = latestLocalDraft ?? draft;
 	savedByIdRef.current = savedById;
-	if (selectedKey) localDraftsRef.current[selectedKey] = draft;
+	if (selectedKey && !latestLocalDraft)
+		localDraftsRef.current[selectedKey] = draft;
 	if (selected) {
 		cachedSelectedRef.current = {
 			...selected,
@@ -147,10 +287,6 @@ export function ItemWorkspace({
 			tags: parseTags(draft.tags),
 		};
 	}
-
-	useEffect(() => {
-		if (!selectedId && items[0]) setSelectedId(items[0].id);
-	}, [items, selectedId]);
 
 	const visibleItems = useMemo(
 		() =>
@@ -275,15 +411,45 @@ export function ItemWorkspace({
 		return () => window.clearTimeout(timer);
 	}, [draft, persistSnapshot, selectedKey]);
 
-	function applyNote(item: OrbitItem | undefined, id: string) {
-		const serverDraft = noteDraft(item);
-		const baseline =
-			localDraftsRef.current[id] ?? savedByIdRef.current[id] ?? serverDraft;
-		localDraftsRef.current[id] = baseline;
-		lastSavedByIdRef.current[id] ??= serverDraft;
-		setDraft(baseline);
-		setSelectedId(id);
-	}
+	const applyNote = useCallback(
+		(item: OrbitItem | undefined, id: string) => {
+			const storedDraft = noteDraft(item);
+			const serverDraft = {
+				...storedDraft,
+				body: normalizeLegacyCanvasLinks(storedDraft.body, snapshot.canvases),
+			};
+			const baseline =
+				localDraftsRef.current[id] ?? savedByIdRef.current[id] ?? serverDraft;
+			localDraftsRef.current[id] = baseline;
+			lastSavedByIdRef.current[id] ??= storedDraft;
+			cachedSelectedRef.current = item;
+			selectedKeyRef.current = id;
+			draftRef.current = baseline;
+			setLinkPickerAnchor(null);
+			setDraft(baseline);
+			setSelectedId(id);
+		},
+		[snapshot.canvases],
+	);
+
+	useEffect(() => {
+		if (scopeKeyRef.current === scopeKey) {
+			if (!selectedId && items[0]) applyNote(items[0], items[0].id);
+			return;
+		}
+		scopeKeyRef.current = scopeKey;
+		void persistRef.current();
+		const next = items[0];
+		if (next) {
+			applyNote(next, next.id);
+			return;
+		}
+		cachedSelectedRef.current = undefined;
+		selectedKeyRef.current = null;
+		draftRef.current = noteDraft();
+		setDraft(noteDraft());
+		setSelectedId(null);
+	}, [applyNote, items, scopeKey, selectedId]);
 
 	function chooseItem(id: string) {
 		if (id === selectedKey) return;
@@ -292,7 +458,50 @@ export function ItemWorkspace({
 		applyNote(item, id);
 	}
 
+	async function openLinkedNote(id: string) {
+		if (id === selectedKeyRef.current) return;
+		await persistRef.current();
+		const item = snapshot.items.find((entry) => entry.id === id);
+		if (item) applyNote(item, id);
+	}
+
+	async function attachCanvas(canvas: OrbitSnapshot["canvases"][number]) {
+		const href = `#/canvas/${encodeURIComponent(canvas.path)}`;
+		if (!draftRef.current.body.includes(href)) {
+			const inserted = editorRef.current?.insertCanvas(
+				canvas.title,
+				canvas.path,
+			);
+			const fallback =
+				`${draftRef.current.body.trimEnd()}\n\n[Whiteboard · ${canvas.title.replace(/[[\]]/g, "")}](${href})`.trim();
+			const next = { ...draftRef.current, body: inserted ?? fallback };
+			updateDraftBody(next.body);
+			const id = selectedKeyRef.current;
+			if (id) await persistSnapshot(id, next);
+		}
+	}
+
+	async function openOrCreateCanvas() {
+		const linked = firstLinkedCanvas(draftRef.current.body, snapshot.canvases);
+		if (linked) {
+			if (!draftRef.current.body.includes("#/canvas/")) {
+				await attachCanvas(linked);
+			}
+			return;
+		}
+		const result = await mutateOrbit({
+			data: {
+				action: "create-canvas",
+				title: `${draftRef.current.title.trim() || "노트"} 보드`,
+			},
+		});
+		if (!result || !("canvas" in result)) return;
+		await attachCanvas(result.canvas);
+		await router.invalidate();
+	}
+
 	async function createItem() {
+		if (disableCreate) return;
 		await persistRef.current();
 		const created = await mutateOrbit({
 			data: create
@@ -312,7 +521,7 @@ export function ItemWorkspace({
 					},
 		});
 		await router.invalidate();
-		if (created && "id" in created) {
+		if (created && "type" in created && "space" in created) {
 			applyNote(created, created.id);
 		}
 	}
@@ -376,45 +585,75 @@ export function ItemWorkspace({
 		if (item) void moveItem(item, space, folder);
 	}
 
-	async function openScheduleEditor(item: OrbitItem, kind: "task" | "event") {
+	async function convertItem(item: OrbitItem, kind: "note" | "task" | "event") {
+		if (item.type === kind) return;
 		await persistRef.current();
-		const currentDraft = item.id === selectedKey ? draftRef.current : undefined;
-		setScheduleEditor({
-			open: true,
-			kind,
-			item: currentDraft
-				? {
-						...item,
-						title: currentDraft.title || item.title,
-						body: currentDraft.body,
-						tags: parseTags(currentDraft.tags),
-					}
-				: item,
-		});
+		const scheduleValue = item.start ?? item.due;
+		const eventStart = scheduleValue ?? formatDayKey();
+		const saved = orbitItemSchema.parse(
+			await mutateOrbit({
+				data: {
+					action: "file-item",
+					id: item.id,
+					input: {
+						type: kind,
+						space:
+							kind === "event"
+								? "event"
+								: item.space === "event"
+									? "inbox"
+									: item.space,
+						folder:
+							kind === "event" || item.space === "event"
+								? undefined
+								: item.folder,
+						status: kind === "task" ? item.status : undefined,
+						due: kind === "task" ? scheduleValue : null,
+						start: kind === "event" ? eventStart : null,
+						end: kind === "event" ? (item.end ?? eventStart) : null,
+					},
+				},
+			}),
+		);
+		await router.invalidate();
+		cachedSelectedRef.current = saved;
+		applyNote(saved, saved.id);
 	}
 
 	function itemMenu(item: OrbitItem) {
 		return {
 			item,
 			snapshot,
-			onCreate: () => void createItem(),
+			onCreate: disableCreate ? undefined : () => void createItem(),
 			onOpen: () => void chooseItem(item.id),
 			onFile: () => setFiling(item),
 			onArchive: () => setConfirm({ kind: "archive", item }),
 			onDelete: () => setConfirm({ kind: "delete", item }),
 			onToggleTask:
 				item.type === "task" ? () => void taskToggle.toggle(item) : undefined,
-			onConvert: (kind: "task" | "event") =>
-				void openScheduleEditor(item, kind),
+			onConvert: (kind: "note" | "task" | "event") =>
+				void convertItem(item, kind),
 			onMove: (space: OrbitSpace, folder?: string) =>
 				void moveItem(item, space, folder),
 		};
 	}
 
 	const listPane = (
-		<ItemContextMenu onCreate={() => void createItem()}>
+		<ItemContextMenu
+			onCreate={disableCreate ? undefined : () => void createItem()}
+		>
 			<div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-sidebar/30">
 				<div className="flex h-14 shrink-0 items-center justify-between gap-2 px-3">
+					{navigator ? (
+						<Button
+							variant="ghost"
+							size="icon-sm"
+							onClick={onShowNavigator}
+							aria-label="폴더 목록"
+						>
+							<ChevronLeft />
+						</Button>
+					) : null}
 					<div className="min-w-0 flex-1 overflow-hidden">
 						<p className="truncate text-sm font-medium">{heading}</p>
 						<p className="truncate text-xs text-muted-foreground">
@@ -422,21 +661,15 @@ export function ItemWorkspace({
 						</p>
 					</div>
 					<div className="flex shrink-0 items-center gap-1">
-						<Button
-							variant={organizeOpen ? "secondary" : "ghost"}
-							size="icon-sm"
-							onClick={() => setOrganizeOpen((open) => !open)}
-							aria-label="정리함 열기"
-						>
-							<PanelRightOpen />
-						</Button>
-						<Button
-							size="icon-sm"
-							onClick={() => void createItem()}
-							aria-label="새 노트"
-						>
-							<Plus />
-						</Button>
+						{disableCreate ? null : (
+							<Button
+								size="icon-sm"
+								onClick={() => void createItem()}
+								aria-label="새 노트"
+							>
+								<Plus />
+							</Button>
+						)}
 					</div>
 				</div>
 				<div className="px-3 pb-3">
@@ -509,6 +742,10 @@ export function ItemWorkspace({
 											<p className="mt-0.5 truncate text-xs text-muted-foreground">
 												{item.body || ITEM_TYPE_LABEL[item.type]}
 											</p>
+											<p className="mt-1 truncate text-[10px] text-muted-foreground/75">
+												수정 {formatDateTime(item.updated)} · 작성{" "}
+												{formatDateTime(item.created)}
+											</p>
 										</button>
 									</li>
 								</ItemContextMenu>
@@ -523,6 +760,21 @@ export function ItemWorkspace({
 				</ScrollArea>
 			</div>
 		</ItemContextMenu>
+	);
+	const navigationPane = navigator ? (
+		<div className="h-full overflow-hidden">
+			<div
+				className={cn(
+					"flex h-full w-[200%] transition-transform duration-300 ease-[var(--interaction-ease)]",
+					showNavigator ? "translate-x-0" : "-translate-x-1/2",
+				)}
+			>
+				<div className="h-full w-1/2 min-w-0">{navigator}</div>
+				<div className="h-full w-1/2 min-w-0">{listPane}</div>
+			</div>
+		</div>
+	) : (
+		listPane
 	);
 
 	const dialogs = (
@@ -571,52 +823,86 @@ export function ItemWorkspace({
 						: archiveItem(next.item));
 				}}
 			/>
-			<ScheduleEditor
-				open={scheduleEditor.open}
-				onOpenChange={(open) =>
-					setScheduleEditor((current) => ({ ...current, open }))
-				}
-				kind={scheduleEditor.kind}
-				item={scheduleEditor.item}
-				onSaved={(saved) => {
-					const previous = scheduleEditor.item;
-					if (
-						previous &&
-						clearSelectionAfterMove &&
-						saved.space !== previous.space
-					) {
-						cachedSelectedRef.current = undefined;
-						setSelectedId(null);
-						return;
+			{selected ? (
+				<NoteLinkPicker
+					items={snapshot.items}
+					currentId={selected.id}
+					open={linkPickerAnchor !== null}
+					anchor={linkPickerAnchor}
+					onOpenChange={(open) => {
+						if (!open) setLinkPickerAnchor(null);
+					}}
+					onSelect={(item) =>
+						editorRef.current?.insertLink(
+							item.title,
+							`#/note/${encodeURIComponent(item.id)}`,
+						)
 					}
-					if (saved.id === selectedKey) {
-						cachedSelectedRef.current = saved;
-						applyNote(saved, saved.id);
-					}
-				}}
-			/>
+				/>
+			) : null}
 		</>
 	);
 
 	if (!selected) {
-		return (
-			<>
-				<ItemContextMenu onCreate={() => void createItem()}>
-					<div className="grid h-full place-items-center p-8 text-center">
-						<div>
-							<div className="mx-auto mb-4 grid size-12 place-items-center rounded-xl bg-muted">
-								<FileText className="size-5 text-muted-foreground" />
-							</div>
-							<h2 className="text-sm font-medium">아직 항목이 없습니다</h2>
-							<p className="mt-1.5 text-sm text-muted-foreground">
-								우클릭하거나 아래 버튼으로 새 노트를 만드세요.
-							</p>
+		const emptyPane = (
+			<ItemContextMenu
+				onCreate={disableCreate ? undefined : () => void createItem()}
+			>
+				<div className="grid h-full place-items-center p-8 text-center">
+					<div>
+						<div className="mx-auto mb-4 grid size-12 place-items-center rounded-xl bg-muted">
+							<FileText className="size-5 text-muted-foreground" />
+						</div>
+						<h2 className="text-sm font-medium">
+							{emptyTitle ?? "아직 항목이 없습니다"}
+						</h2>
+						<p className="mt-1.5 text-sm text-muted-foreground">
+							{emptyDescription ??
+								"우클릭하거나 아래 버튼으로 새 노트를 만드세요."}
+						</p>
+						{disableCreate ? null : (
 							<Button className="mt-4" onClick={() => void createItem()}>
 								<Plus /> 새 노트
 							</Button>
-						</div>
+						)}
 					</div>
-				</ItemContextMenu>
+				</div>
+			</ItemContextMenu>
+		);
+		if (navigator) {
+			return (
+				<div className="relative h-full min-h-0 overflow-hidden">
+					<ResizablePanelGroup
+						id="orbit-notes"
+						orientation="horizontal"
+						className="h-full"
+					>
+						<ResizablePanel
+							id="orbit-note-list"
+							defaultSize="28%"
+							minSize="18%"
+							maxSize="46%"
+							className="min-w-0 overflow-hidden"
+						>
+							{navigationPane}
+						</ResizablePanel>
+						<ResizableHandle withHandle />
+						<ResizablePanel
+							id="orbit-note-editor"
+							defaultSize="72%"
+							minSize="40%"
+							className="min-w-0 overflow-hidden"
+						>
+							{emptyPane}
+						</ResizablePanel>
+					</ResizablePanelGroup>
+					{dialogs}
+				</div>
+			);
+		}
+		return (
+			<>
+				{emptyPane}
 				{dialogs}
 			</>
 		);
@@ -629,6 +915,23 @@ export function ItemWorkspace({
 					<p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
 						{selected.path}
 					</p>
+					{selected.type !== "link" ? (
+						<select
+							value={selected.type}
+							onChange={(event) =>
+								void convertItem(
+									selected,
+									event.target.value as "note" | "task" | "event",
+								)
+							}
+							aria-label="항목 종류"
+							className="h-8 rounded-md border border-border bg-background px-2 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+						>
+							<option value="note">노트</option>
+							<option value="task">할 일</option>
+							<option value="event">일정</option>
+						</select>
+					) : null}
 					{saveErrors[selected.id] ? (
 						<output className="shrink-0 text-xs text-destructive">
 							자동 저장 실패
@@ -653,39 +956,29 @@ export function ItemWorkspace({
 					) : null}
 				</header>
 			</ItemContextMenu>
-			<div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto">
-				<div className="mx-auto flex w-full max-w-3xl min-w-0 flex-1 flex-col px-6 pt-6">
-					<Input
-						value={draft.title}
-						onChange={(event) => {
-							setDraft((current) => ({
-								...current,
-								title: event.target.value,
-							}));
-						}}
-						placeholder="제목 없음"
-						className="h-auto rounded-none border-0 bg-transparent px-0 text-3xl font-semibold tracking-tight shadow-none focus-visible:ring-0"
+			<div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
+				<div className="mx-auto w-full max-w-[52rem] min-w-0 pr-6 pl-16 pt-6">
+					<NoteMetadataEditor
+						key={selected.id}
+						title={draft.title}
+						tags={draft.tags}
+						onTitleChange={updateDraftTitle}
+						onTagsChange={updateDraftTags}
 					/>
-					<div className="mt-2 mb-4 flex items-center gap-2">
-						<Tags className="size-3.5 shrink-0 text-muted-foreground" />
-						<Input
-							value={draft.tags}
-							onChange={(event) => {
-								setDraft((current) => ({
-									...current,
-									tags: event.target.value,
-								}));
-							}}
-							placeholder="태그"
-							className="h-7 border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0"
-						/>
+					<div className="mt-3 mb-5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+						<span>작성 {formatDateTime(selected.created)}</span>
+						<span>수정 {formatDateTime(selected.updated)}</span>
 					</div>
+				</div>
+				<div className="mx-auto flex w-full max-w-[52rem] min-w-0 flex-1 flex-col pr-6 pl-16">
 					<NoteEditor
+						ref={editorRef}
 						noteId={selected.id}
 						markdown={draft.body}
-						onChange={(body) => {
-							setDraft((current) => ({ ...current, body }));
-						}}
+						onChange={updateDraftBody}
+						onOpenNote={(id) => void openLinkedNote(id)}
+						onRequestNoteLink={setLinkPickerAnchor}
+						onRequestCanvas={() => void openOrCreateCanvas()}
 					/>
 				</div>
 			</div>
@@ -706,7 +999,7 @@ export function ItemWorkspace({
 					maxSize="46%"
 					className="min-w-0 overflow-hidden"
 				>
-					{listPane}
+					{navigationPane}
 				</ResizablePanel>
 				<ResizableHandle withHandle />
 				<ResizablePanel

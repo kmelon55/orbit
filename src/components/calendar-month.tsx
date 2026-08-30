@@ -13,7 +13,7 @@ const HOUR_START = 6;
 const HOUR_END = 23;
 const HOUR_HEIGHT = 52;
 
-type CalendarView = "week" | "month";
+type CalendarView = "day" | "week" | "month";
 type EditorState = {
 	open: boolean;
 	kind: "event" | "task";
@@ -91,6 +91,28 @@ function daySpan(item: OrbitItem) {
 	);
 }
 
+function spansMultipleDays(item: OrbitItem) {
+	return Boolean(
+		item.type === "event" &&
+			item.start &&
+			item.end &&
+			item.end.slice(0, 10) > item.start.slice(0, 10),
+	);
+}
+
+function visibleDayKeys(item: OrbitItem) {
+	const startKey = itemDayKey(item);
+	if (!startKey || !spansMultipleDays(item)) return startKey ? [startKey] : [];
+	const endKey = item.end?.slice(0, 10) ?? startKey;
+	const cursor = new Date(`${startKey}T00:00:00`);
+	const keys: string[] = [];
+	while (formatDayKey(cursor) <= endKey && keys.length < 367) {
+		keys.push(formatDayKey(cursor));
+		cursor.setDate(cursor.getDate() + 1);
+	}
+	return keys;
+}
+
 function moveScheduledItem(item: OrbitItem, target: DragTarget): OrbitItem {
 	if (item.type === "task") {
 		const currentTime = timeOf(item.due);
@@ -137,6 +159,15 @@ function weekLabel(date: Date) {
 		day: "numeric",
 	});
 	return `${start.getFullYear()}년 ${formatter.format(start)} – ${formatter.format(end)}`;
+}
+
+function dayLabel(date: Date) {
+	return new Intl.DateTimeFormat("ko-KR", {
+		year: "numeric",
+		month: "long",
+		day: "numeric",
+		weekday: "short",
+	}).format(date);
 }
 
 function CalendarEvent({
@@ -216,6 +247,31 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 	useEffect(() => {
 		setLocalItems(snapshot.items);
 	}, [snapshot.items]);
+	useEffect(() => {
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.metaKey || event.ctrlKey || event.altKey) return;
+			const target = event.target;
+			if (
+				target instanceof HTMLElement &&
+				(target.isContentEditable ||
+					target.matches("input, textarea, select, [role='textbox']"))
+			)
+				return;
+			const next =
+				event.key === "1"
+					? "day"
+					: event.key === "2"
+						? "week"
+						: event.key === "3"
+							? "month"
+							: null;
+			if (!next) return;
+			event.preventDefault();
+			setView(next);
+		};
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, []);
 	const today = formatDayKey();
 	const dated = useMemo(
 		() =>
@@ -229,16 +285,16 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 	const byDay = useMemo(() => {
 		const map = new Map<string, OrbitItem[]>();
 		for (const item of dated) {
-			const day = itemDayKey(item);
-			if (!day) continue;
-			const items = map.get(day) ?? [];
-			items.push(item);
-			items.sort((left, right) =>
-				(left.start ?? left.due ?? "").localeCompare(
-					right.start ?? right.due ?? "",
-				),
-			);
-			map.set(day, items);
+			for (const day of visibleDayKeys(item)) {
+				const items = map.get(day) ?? [];
+				items.push(item);
+				items.sort((left, right) =>
+					(left.start ?? left.due ?? "").localeCompare(
+						right.start ?? right.due ?? "",
+					),
+				);
+				map.set(day, items);
+			}
 		}
 		return map;
 	}, [dated]);
@@ -259,9 +315,11 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 
 	function move(amount: number) {
 		setCursor((current) =>
-			view === "week"
-				? addDays(current, amount * 7)
-				: addMonths(current, amount),
+			view === "day"
+				? addDays(current, amount)
+				: view === "week"
+					? addDays(current, amount * 7)
+					: addMonths(current, amount),
 		);
 	}
 
@@ -362,7 +420,7 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 							variant="ghost"
 							size="icon-sm"
 							onClick={() => move(-1)}
-							aria-label={view === "week" ? "이전 주" : "이전 달"}
+							aria-label={`이전 ${view === "day" ? "날" : view === "week" ? "주" : "달"}`}
 						>
 							<ChevronLeft />
 						</Button>
@@ -370,13 +428,17 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 							variant="ghost"
 							size="icon-sm"
 							onClick={() => move(1)}
-							aria-label={view === "week" ? "다음 주" : "다음 달"}
+							aria-label={`다음 ${view === "day" ? "날" : view === "week" ? "주" : "달"}`}
 						>
 							<ChevronRight />
 						</Button>
 					</div>
 					<h2 className="min-w-0 flex-1 truncate text-sm font-semibold">
-						{view === "week" ? weekLabel(cursor) : monthLabel(cursor)}
+						{view === "day"
+							? dayLabel(cursor)
+							: view === "week"
+								? weekLabel(cursor)
+								: monthLabel(cursor)}
 					</h2>
 					<span className="hidden text-xs text-muted-foreground xl:inline">
 						카드를 드래그해 일정 변경
@@ -389,7 +451,7 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 						오늘
 					</Button>
 					<div className="flex rounded-lg bg-muted p-0.5">
-						{(["week", "month"] as const).map((value) => (
+						{(["day", "week", "month"] as const).map((value, index) => (
 							<Button
 								key={value}
 								type="button"
@@ -402,7 +464,10 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 								)}
 								onClick={() => setView(value)}
 							>
-								{value === "week" ? "주" : "월"}
+								{value === "day" ? "일" : value === "week" ? "주" : "월"}
+								<span className="ml-1 text-[10px] text-muted-foreground">
+									{index + 1}
+								</span>
 							</Button>
 						))}
 					</div>
@@ -416,9 +481,10 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 					</div>
 				) : null}
 
-				{view === "week" ? (
+				{view !== "month" ? (
 					<WeekView
 						cursor={cursor}
+						dayCount={view === "day" ? 1 : 7}
 						byDay={byDay}
 						today={today}
 						onCreate={openNew}
@@ -461,6 +527,7 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 
 function WeekView({
 	cursor,
+	dayCount,
 	byDay,
 	today,
 	onCreate,
@@ -473,6 +540,7 @@ function WeekView({
 	onDrop,
 }: {
 	cursor: Date;
+	dayCount: 1 | 7;
 	byDay: Map<string, OrbitItem[]>;
 	today: string;
 	onCreate: (date: string, time?: string) => void;
@@ -487,8 +555,10 @@ function WeekView({
 	onDragPreview: (target: DragTarget | null) => void;
 	onDrop: (target: DragTarget, transferredId?: string) => void;
 }) {
-	const days = Array.from({ length: 7 }, (_, index) =>
-		addDays(startOfWeek(cursor), index),
+	const start = dayCount === 1 ? new Date(cursor) : startOfWeek(cursor);
+	start.setHours(0, 0, 0, 0);
+	const days = Array.from({ length: dayCount }, (_, index) =>
+		addDays(start, index),
 	);
 	const hours = Array.from(
 		{ length: HOUR_END - HOUR_START },
@@ -514,10 +584,15 @@ function WeekView({
 
 	return (
 		<div className="min-h-0 flex-1 overflow-auto">
-			<div className="min-w-[760px]">
-				<div className="sticky top-0 z-20 grid grid-cols-[56px_repeat(7,minmax(96px,1fr))] border-b bg-background/95 backdrop-blur">
+			<div className={dayCount === 1 ? "min-w-[440px]" : "min-w-[760px]"}>
+				<div
+					className="sticky top-0 z-20 grid border-b bg-background/95 backdrop-blur"
+					style={{
+						gridTemplateColumns: `56px repeat(${dayCount}, minmax(96px, 1fr))`,
+					}}
+				>
 					<div className="border-r" />
-					{days.map((day, index) => {
+					{days.map((day) => {
 						const key = formatDayKey(day);
 						return (
 							<button
@@ -527,7 +602,7 @@ function WeekView({
 								onClick={() => onCreate(key)}
 							>
 								<span className="block text-[11px] text-muted-foreground">
-									{WEEKDAYS[index]}
+									{WEEKDAYS[(day.getDay() + 6) % 7]}
 								</span>
 								<span
 									className={cn(
@@ -542,14 +617,20 @@ function WeekView({
 					})}
 				</div>
 
-				<div className="grid grid-cols-[56px_repeat(7,minmax(96px,1fr))] border-b">
+				<div
+					className="grid border-b"
+					style={{
+						gridTemplateColumns: `56px repeat(${dayCount}, minmax(96px, 1fr))`,
+					}}
+				>
 					<div className="border-r px-2 py-2 text-[10px] text-muted-foreground">
 						종일
 					</div>
 					{days.map((day) => {
 						const key = formatDayKey(day);
 						const allDay = (byDay.get(key) ?? []).filter(
-							(item) => !timeOf(item.start ?? item.due),
+							(item) =>
+								!timeOf(item.start ?? item.due) || spansMultipleDays(item),
 						);
 						return (
 							// biome-ignore lint/a11y/noStaticElementInteractions: Calendar cells are native drop targets; items remain keyboard-editable.
@@ -602,7 +683,12 @@ function WeekView({
 					})}
 				</div>
 
-				<div className="grid grid-cols-[56px_repeat(7,minmax(96px,1fr))]">
+				<div
+					className="grid"
+					style={{
+						gridTemplateColumns: `56px repeat(${dayCount}, minmax(96px, 1fr))`,
+					}}
+				>
 					<div className="relative border-r" style={{ height: calendarHeight }}>
 						{hours.map((hour) => (
 							<span
@@ -616,8 +702,9 @@ function WeekView({
 					</div>
 					{days.map((day) => {
 						const key = formatDayKey(day);
-						const timed = (byDay.get(key) ?? []).filter((item) =>
-							timeOf(item.start ?? item.due),
+						const timed = (byDay.get(key) ?? []).filter(
+							(item) =>
+								timeOf(item.start ?? item.due) && !spansMultipleDays(item),
 						);
 						return (
 							// biome-ignore lint/a11y/noStaticElementInteractions: Timeline columns accept native schedule drops.

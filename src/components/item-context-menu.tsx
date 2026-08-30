@@ -82,15 +82,13 @@ export function ItemContextMenu({
 	onArchive?: () => void;
 	onDelete?: () => void;
 	onToggleTask?: () => void;
-	onConvert?: (kind: "task" | "event") => void;
+	onConvert?: (kind: "note" | "task" | "event") => void;
 	onMove?: (space: OrbitSpace, folder?: string) => void;
 }) {
 	const showCreate = Boolean(onCreate);
 	const showItem = Boolean(item);
 	const showMove = Boolean(item && onMove);
-	const showConvert = Boolean(
-		item && onConvert && (item.type === "note" || item.type === "link"),
-	);
+	const showConvert = Boolean(item && onConvert && item.type !== "link");
 	const canArchive = Boolean(item && onArchive && item.space !== "archive");
 
 	return (
@@ -122,12 +120,17 @@ export function ItemContextMenu({
 					<MoveSubmenu item={item} snapshot={snapshot} onMove={onMove} />
 				) : null}
 				{showConvert && item && onConvert ? <ContextMenuSeparator /> : null}
-				{showConvert && onConvert ? (
+				{showConvert && onConvert && item?.type !== "note" ? (
+					<ContextMenuItem onSelect={closeThen(() => onConvert("note"))}>
+						<FileText /> 노트로 전환
+					</ContextMenuItem>
+				) : null}
+				{showConvert && onConvert && item?.type !== "task" ? (
 					<ContextMenuItem onSelect={closeThen(() => onConvert("task"))}>
 						<ListTodo /> 할 일로 전환...
 					</ContextMenuItem>
 				) : null}
-				{showConvert && onConvert ? (
+				{showConvert && onConvert && item?.type !== "event" ? (
 					<ContextMenuItem onSelect={closeThen(() => onConvert("event"))}>
 						<CalendarDays /> 일정으로 전환...
 					</ContextMenuItem>
@@ -184,7 +187,8 @@ function MoveSubmenu({
 					const folders =
 						target.space === "project" ||
 						target.space === "area" ||
-						target.space === "resource"
+						target.space === "resource" ||
+						target.space === "archive"
 							? (snapshot?.folders[target.space] ?? [])
 							: [];
 					if (folders.length === 0) {

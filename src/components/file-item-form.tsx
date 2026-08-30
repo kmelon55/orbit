@@ -91,9 +91,12 @@ export function FileItemForm({
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
-	const paraSpace =
-		space === "project" || space === "area" || space === "resource";
-	const folders = paraSpace ? snapshot.folders[space] : [];
+	const folderSpace =
+		space === "project" ||
+		space === "area" ||
+		space === "resource" ||
+		space === "archive";
+	const folders = folderSpace ? snapshot.folders[space] : [];
 	const resolvedFolder = newFolder.trim() || folder || undefined;
 	const visibleTypes =
 		item.type === "link"
@@ -102,8 +105,11 @@ export function FileItemForm({
 
 	async function handleSubmit() {
 		if (!title.trim() || saving) return;
-		if (type === "event" && endDate === startDate && endTime <= startTime) {
-			setError("종료 시간은 시작 시간보다 뒤여야 합니다.");
+		if (
+			type === "event" &&
+			(endDate < startDate || (endDate === startDate && endTime <= startTime))
+		) {
+			setError("종료는 시작보다 뒤여야 합니다.");
 			return;
 		}
 		setSaving(true);
@@ -126,7 +132,7 @@ export function FileItemForm({
 						body,
 						type,
 						space: type === "event" && space !== "archive" ? "event" : space,
-						folder: paraSpace ? resolvedFolder : undefined,
+						folder: folderSpace ? resolvedFolder : undefined,
 						due:
 							type === "task" && due
 								? dueTime
@@ -203,7 +209,7 @@ export function FileItemForm({
 				</div>
 			</div>
 
-			{paraSpace && (
+			{folderSpace && (
 				<div className="grid gap-3 sm:grid-cols-2">
 					<Field label="폴더">
 						<select

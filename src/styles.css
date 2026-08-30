@@ -226,9 +226,12 @@
 
 .orbit-note-editor {
 	min-height: 12rem;
+	max-width: 100%;
 }
 
 .orbit-note-editor .milkdown {
+	min-width: 0;
+	max-width: 100%;
 	--crepe-color-background: transparent;
 	--crepe-color-on-background: var(--foreground);
 	--crepe-color-surface: var(--card);
@@ -255,7 +258,61 @@
 }
 
 .orbit-note-editor .milkdown .ProseMirror {
+	min-width: 0;
+	max-width: 100%;
+	overflow-wrap: anywhere;
 	padding: 0 0 4rem;
+	color: color-mix(in oklch, var(--foreground) 94%, white 6%);
+	font-size: 1.05rem;
+	font-weight: 450;
+	line-height: 1.72;
+}
+
+.orbit-note-editor .milkdown-block-handle .operation-item {
+	width: 24px;
+	height: 24px;
+	padding: 3px;
+}
+
+.orbit-note-editor .milkdown-block-handle .operation-item svg {
+	width: 18px;
+	height: 18px;
+}
+
+.orbit-note-editor .milkdown .ProseMirror :is(h1, h2, h3, h4, h5, h6) {
+	color: var(--foreground);
+	font-weight: 650;
+}
+
+.orbit-note-editor .milkdown .crepe-placeholder::before {
+	color: color-mix(in oklch, var(--muted-foreground) 82%, transparent);
+}
+
+.orbit-note-editor .milkdown .ProseMirror a[href^="#/note/"] {
+	color: color-mix(in oklch, var(--foreground) 76%, #4f7cff 24%);
+	font-weight: 600;
+	text-decoration-color: color-mix(in oklch, currentColor 50%, transparent);
+	text-decoration-thickness: 1.5px;
+	text-underline-offset: 3px;
+}
+
+.orbit-note-editor .milkdown .ProseMirror a[href^="#/canvas/"] {
+	display: inline-flex;
+	align-items: center;
+	margin: 0.1rem 0;
+	border: 1px solid color-mix(in oklch, var(--border) 82%, var(--foreground));
+	border-radius: 0.55rem;
+	background: color-mix(in oklch, var(--muted) 76%, transparent);
+	padding: 0.15rem 0.5rem;
+	color: var(--foreground);
+	font-size: 0;
+	font-weight: 600;
+	text-decoration: none;
+}
+
+.orbit-note-editor .milkdown .ProseMirror a[href^="#/canvas/"]::before {
+	content: "Whiteboard";
+	font-size: 0.9rem;
 }
 
 @media (pointer: fine) {

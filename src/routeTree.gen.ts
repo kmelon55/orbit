@@ -18,6 +18,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as ResourcesRouteImport } from './routes/resources'
 import { Route as TasksRouteImport } from './routes/tasks'
+import { Route as WhiteboardsRouteImport } from './routes/whiteboards'
 import { Route as AreasIndexRouteImport } from './routes/areas.index'
 import { Route as AreasFolderRouteImport } from './routes/areas.$folder'
 import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
@@ -70,6 +71,11 @@ const TasksRoute = TasksRouteImport.update({
   path: '/tasks',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WhiteboardsRoute = WhiteboardsRouteImport.update({
+  id: '/whiteboards',
+  path: '/whiteboards',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AreasIndexRoute = AreasIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -111,6 +117,7 @@ export interface FileRoutesByFullPath {
   '/projects': typeof ProjectsRouteWithChildren
   '/resources': typeof ResourcesRouteWithChildren
   '/tasks': typeof TasksRoute
+  '/whiteboards': typeof WhiteboardsRoute
   '/areas/$folder': typeof AreasFolderRoute
   '/projects/$folder': typeof ProjectsFolderRoute
   '/resources/$folder': typeof ResourcesFolderRoute
@@ -125,6 +132,7 @@ export interface FileRoutesByTo {
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
   '/tasks': typeof TasksRoute
+  '/whiteboards': typeof WhiteboardsRoute
   '/areas/$folder': typeof AreasFolderRoute
   '/projects/$folder': typeof ProjectsFolderRoute
   '/resources/$folder': typeof ResourcesFolderRoute
@@ -143,6 +151,7 @@ export interface FileRoutesById {
   '/projects': typeof ProjectsRouteWithChildren
   '/resources': typeof ResourcesRouteWithChildren
   '/tasks': typeof TasksRoute
+  '/whiteboards': typeof WhiteboardsRoute
   '/areas/$folder': typeof AreasFolderRoute
   '/projects/$folder': typeof ProjectsFolderRoute
   '/resources/$folder': typeof ResourcesFolderRoute
@@ -162,6 +171,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/resources'
     | '/tasks'
+    | '/whiteboards'
     | '/areas/$folder'
     | '/projects/$folder'
     | '/resources/$folder'
@@ -176,6 +186,7 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/login'
     | '/tasks'
+    | '/whiteboards'
     | '/areas/$folder'
     | '/projects/$folder'
     | '/resources/$folder'
@@ -193,6 +204,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/resources'
     | '/tasks'
+    | '/whiteboards'
     | '/areas/$folder'
     | '/projects/$folder'
     | '/resources/$folder'
@@ -211,6 +223,7 @@ export interface RootRouteChildren {
   ProjectsRoute: typeof ProjectsRouteWithChildren
   ResourcesRoute: typeof ResourcesRouteWithChildren
   TasksRoute: typeof TasksRoute
+  WhiteboardsRoute: typeof WhiteboardsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -276,6 +289,13 @@ declare module '@tanstack/react-router' {
       path: '/tasks'
       fullPath: '/tasks'
       preLoaderRoute: typeof TasksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/whiteboards': {
+      id: '/whiteboards'
+      path: '/whiteboards'
+      fullPath: '/whiteboards'
+      preLoaderRoute: typeof WhiteboardsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/areas/': {
@@ -373,6 +393,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProjectsRoute: ProjectsRouteWithChildren,
   ResourcesRoute: ResourcesRouteWithChildren,
   TasksRoute: TasksRoute,
+  WhiteboardsRoute: WhiteboardsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

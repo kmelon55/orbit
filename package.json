@@ -20,13 +20,15 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "pnpm check && pnpm typecheck && pnpm test:unit",
-		"test:unit": "tsx --test src/lib/orbit/*.test.ts",
+    "test:unit": "tsx --test src/lib/orbit/*.test.ts",
     "mcp": "tsx src/mcp/server.ts",
+    "migrate:obsidian": "tsx scripts/import-obsidian-vault.ts",
     "format": "biome format",
     "lint": "biome lint",
     "check": "biome check"
   },
   "dependencies": {
+    "@excalidraw/excalidraw": "^0.18.1",
     "@fontsource-variable/geist": "^5.3.0",
     "@milkdown/crepe": "^7.22.1",
     "@milkdown/kit": "^7.22.1",

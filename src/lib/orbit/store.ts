@@ -18,6 +18,7 @@ import {
 	createItemInputSchema,
 	type FileItemInput,
 	fileItemInputSchema,
+	type OrbitCanvas,
 	type OrbitFolder,
 	type OrbitItem,
 	type OrbitSnapshot,
@@ -39,6 +40,7 @@ const VAULT_FOLDERS = [
 	"resources",
 	"events",
 	"archive",
+	"whiteboards",
 ] as const;
 
 const PARA_VAULT: Record<"project" | "area" | "resource", string> = {
@@ -99,7 +101,8 @@ function folderFromPath(relativePath: string) {
 	if (
 		(parts[0] === "projects" ||
 			parts[0] === "areas" ||
-			parts[0] === "resources") &&
+			parts[0] === "resources" ||
+			parts[0] === "archive") &&
 		parts.length >= 3
 	) {
 		return parts[1];
@@ -121,7 +124,8 @@ function destinationDir(space: OrbitSpace, folder?: string) {
 		return folder ? path.join(root, folder) : root;
 	}
 	if (space === "event") return "events";
-	if (space === "archive") return "archive";
+	if (space === "archive")
+		return folder ? path.join("archive", folder) : "archive";
 	return "inbox";
 }
 
@@ -142,11 +146,110 @@ async function findMarkdownFiles(directory: string): Promise<string[]> {
 			if (entry.name.startsWith(".")) return [];
 			const entryPath = path.join(directory, entry.name);
 			if (entry.isDirectory()) return findMarkdownFiles(entryPath);
-			if (entry.isFile() && entry.name.endsWith(".md")) return [entryPath];
+			if (
+				entry.isFile() &&
+				entry.name.endsWith(".md") &&
+				!entry.name.endsWith(".excalidraw.md")
+			)
+				return [entryPath];
 			return [];
 		}),
 	);
 	return nested.flat();
+}
+
+async function findCanvasFiles(directory: string): Promise<string[]> {
+	const entries = await readdir(directory, { withFileTypes: true });
+	const nested = await Promise.all(
+		entries.map(async (entry) => {
+			if (entry.name.startsWith(".")) return [];
+			const entryPath = path.join(directory, entry.name);
+			if (entry.isDirectory()) return findCanvasFiles(entryPath);
+			if (
+				entry.isFile() &&
+				(entry.name.endsWith(".excalidraw") ||
+					entry.name.endsWith(".excalidraw.md"))
+			)
+				return [entryPath];
+			return [];
+		}),
+	);
+	return nested.flat();
+}
+
+function canvasJson(raw: string, format: OrbitCanvas["format"]) {
+	const source =
+		format === "excalidraw.md"
+			? (raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1] ?? raw)
+			: raw;
+	const value = JSON.parse(source) as {
+		elements?: unknown[];
+		files?: Record<string, unknown>;
+		orbitTitle?: unknown;
+	};
+	if (!Array.isArray(value.elements))
+		throw new Error("Invalid Excalidraw document");
+	return { ...value, elements: value.elements, files: value.files ?? {} };
+}
+
+function canvasFormat(filePath: string): OrbitCanvas["format"] {
+	return filePath.endsWith(".excalidraw.md") ? "excalidraw.md" : "excalidraw";
+}
+
+const EMPTY_CANVAS = {
+	type: "excalidraw",
+	version: 2,
+	source: "https://excalidraw.com",
+	elements: [],
+	appState: { viewBackgroundColor: "#ffffff" },
+	files: {},
+};
+
+async function readOrbitCanvas(filePath: string, vaultRoot: string) {
+	const [raw, fileStats] = await Promise.all([
+		readFile(filePath, "utf8"),
+		stat(filePath),
+	]);
+	const format = canvasFormat(filePath);
+	const document = canvasJson(raw, format);
+	const relativePath = toVaultObjectKey(vaultRoot, filePath);
+	const basename = path.basename(filePath);
+	const fallbackTitle = basename
+		.replace(/\.excalidraw(?:\.md)?$/i, "")
+		.replace(/-[0-9a-f]{8}$/i, "");
+	const title =
+		typeof document.orbitTitle === "string" && document.orbitTitle.trim()
+			? document.orbitTitle.trim()
+			: fallbackTitle;
+	return {
+		id: relativePath,
+		title,
+		path: relativePath,
+		created: fileStats.birthtime.toISOString(),
+		updated: fileStats.mtime.toISOString(),
+		elementCount: document.elements.length,
+		fileCount: Object.keys(document.files ?? {}).length,
+		format,
+	};
+}
+
+async function listOrbitCanvases(vaultRoot: string) {
+	const files = await findCanvasFiles(vaultRoot);
+	const canvases = await Promise.all(
+		files.map(async (file) => {
+			try {
+				return await readOrbitCanvas(file, vaultRoot);
+			} catch {
+				console.warn(
+					`[orbit] Skipping invalid canvas: ${toVaultObjectKey(vaultRoot, file)}`,
+				);
+				return null;
+			}
+		}),
+	);
+	return canvases
+		.filter((canvas): canvas is NonNullable<typeof canvas> => canvas !== null)
+		.sort((left, right) => right.updated.localeCompare(left.updated));
 }
 
 async function listImmediateFolders(directory: string) {
@@ -240,12 +343,11 @@ async function collectFolders(
 	vaultRoot: string,
 	items: OrbitItem[],
 ): Promise<OrbitSnapshot["folders"]> {
-	const spaces = ["project", "area", "resource"] as const;
+	const spaces = ["project", "area", "resource", "archive"] as const;
 	const folders = {} as OrbitSnapshot["folders"];
 	for (const space of spaces) {
-		const dirNames = await listImmediateFolders(
-			path.join(vaultRoot, PARA_VAULT[space]),
-		);
+		const root = space === "archive" ? "archive" : PARA_VAULT[space];
+		const dirNames = await listImmediateFolders(path.join(vaultRoot, root));
 		const counted = new Map<string, number>();
 		for (const name of dirNames) counted.set(name, 0);
 		for (const item of items) {
@@ -284,6 +386,7 @@ export async function getOrbitSnapshot(): Promise<OrbitSnapshot> {
 
 	return {
 		items,
+		canvases: await listOrbitCanvases(vaultRoot),
 		today: { tasks, events },
 		folders: await collectFolders(vaultRoot, items),
 		counts: {
@@ -312,6 +415,127 @@ export async function getOrbitSnapshot(): Promise<OrbitSnapshot> {
 				.format(now)
 				.toUpperCase(),
 		},
+	};
+}
+
+function canvasPath(vaultRoot: string, objectKey: string) {
+	const parts = splitVaultObjectKey(objectKey);
+	if (
+		parts.length === 0 ||
+		(!objectKey.endsWith(".excalidraw") &&
+			!objectKey.endsWith(".excalidraw.md"))
+	) {
+		throw new Error("Invalid Excalidraw path");
+	}
+	const filePath = path.join(vaultRoot, ...parts);
+	assertInsideVault(vaultRoot, filePath);
+	return filePath;
+}
+
+export async function getOrbitCanvas(objectKey: string) {
+	const vaultRoot = await ensureVault();
+	const filePath = canvasPath(vaultRoot, objectKey);
+	const raw = await readFile(filePath, "utf8");
+	const format = canvasFormat(filePath);
+	return { path: objectKey, document: JSON.stringify(canvasJson(raw, format)) };
+}
+
+function replaceCanvasDocument(
+	raw: string,
+	format: OrbitCanvas["format"],
+	document: string,
+) {
+	if (format !== "excalidraw.md") return `${document.trim()}\n`;
+	const match = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+	if (!match || match.index === undefined) return `${document.trim()}\n`;
+	const start = match.index + match[0].indexOf(match[1] ?? "");
+	const end = start + (match[1]?.length ?? 0);
+	return `${raw.slice(0, start)}${document.trim()}${raw.slice(end)}`;
+}
+
+export async function saveOrbitCanvas(objectKey: string, document: string) {
+	const vaultRoot = await ensureVault();
+	const filePath = canvasPath(vaultRoot, objectKey);
+	const format = canvasFormat(filePath);
+	const nextDocument = canvasJson(document, "excalidraw");
+	const current = await readFile(filePath, "utf8");
+	const currentDocument = canvasJson(current, format);
+	const withMetadata = JSON.stringify({
+		...nextDocument,
+		...(typeof currentDocument.orbitTitle === "string"
+			? { orbitTitle: currentDocument.orbitTitle }
+			: {}),
+	});
+	await atomicWrite(
+		filePath,
+		replaceCanvasDocument(current, format, withMetadata),
+	);
+	return readOrbitCanvas(filePath, vaultRoot);
+}
+
+export async function createOrbitCanvas(title: string) {
+	const vaultRoot = await ensureVault();
+	const directory = path.join(vaultRoot, "whiteboards");
+	const id = randomUUID();
+	const filePath = await uniqueFilePath(
+		directory,
+		`${toVaultSlug(title)}-${id.slice(0, 8)}.excalidraw`,
+	);
+	const document = { ...EMPTY_CANVAS, orbitTitle: title.trim() };
+	await atomicWrite(filePath, `${JSON.stringify(document, null, 2)}\n`);
+	const canvas = await readOrbitCanvas(filePath, vaultRoot);
+	return { canvas, document };
+}
+
+function replaceCanvasLinks(raw: string, canvasPath: string, title: string) {
+	return raw.replace(
+		/\[(?:Whiteboard|화이트보드)\s*·\s*[^\]\n]*\]\(#\/canvas\/([^)]+)\)/gi,
+		(original, encodedPath: string) => {
+			let linkedPath = encodedPath;
+			try {
+				linkedPath = decodeURIComponent(encodedPath);
+			} catch {
+				// Keep the original encoded value for comparison.
+			}
+			if (linkedPath !== canvasPath) return original;
+			const label = title.replace(/[[\]]/g, "");
+			return `[Whiteboard · ${label}](#/canvas/${encodeURIComponent(canvasPath)})`;
+		},
+	);
+}
+
+export async function renameOrbitCanvas(objectKey: string, title: string) {
+	const vaultRoot = await ensureVault();
+	const sourcePath = canvasPath(vaultRoot, objectKey);
+	const format = canvasFormat(sourcePath);
+	const raw = await readFile(sourcePath, "utf8");
+	const document = canvasJson(raw, format);
+	const nextTitle = title.trim();
+	const renamedDocument = JSON.stringify({
+		...document,
+		orbitTitle: nextTitle,
+	});
+	await atomicWrite(
+		sourcePath,
+		replaceCanvasDocument(raw, format, renamedDocument),
+	);
+
+	const noteFiles = await findMarkdownFiles(vaultRoot);
+	let updatedNotes = 0;
+	await Promise.all(
+		noteFiles.map(async (filePath) => {
+			const note = await readFile(filePath, "utf8");
+			const updated = replaceCanvasLinks(note, objectKey, nextTitle);
+			if (updated === note) return;
+			await atomicWrite(filePath, updated);
+			updatedNotes += 1;
+		}),
+	);
+
+	return {
+		canvas: await readOrbitCanvas(sourcePath, vaultRoot),
+		previousPath: objectKey,
+		updatedNotes,
 	};
 }
 
@@ -430,7 +654,7 @@ export async function createOrbitFolder(input: CreateFolderInput) {
 	const parsed = createFolderInputSchema.parse(input);
 	const vaultRoot = await ensureVault();
 	const slug = toVaultSlug(parsed.name);
-	const directory = path.join(vaultRoot, PARA_VAULT[parsed.space], slug);
+	const directory = path.join(vaultRoot, destinationDir(parsed.space), slug);
 	assertInsideVault(vaultRoot, directory);
 	await mkdir(directory, { recursive: true });
 	return { space: parsed.space, slug, count: 0 };
@@ -484,16 +708,26 @@ export async function fileOrbitItem(id: string, input: FileItemInput) {
 				status: status as OrbitItem["status"],
 				project,
 				due:
-					next.due ??
-					(current.due ? normalizeScheduleDate(current.due, "") : undefined),
+					next.due === null
+						? undefined
+						: (next.due ??
+							(current.due
+								? normalizeScheduleDate(current.due, "")
+								: undefined)),
 				start:
-					next.start ??
-					(current.start
-						? normalizeScheduleDate(current.start, "")
-						: undefined),
+					next.start === null
+						? undefined
+						: (next.start ??
+							(current.start
+								? normalizeScheduleDate(current.start, "")
+								: undefined)),
 				end:
-					next.end ??
-					(current.end ? normalizeScheduleDate(current.end, "") : undefined),
+					next.end === null
+						? undefined
+						: (next.end ??
+							(current.end
+								? normalizeScheduleDate(current.end, "")
+								: undefined)),
 				url:
 					next.url ??
 					(typeof current.url === "string" ? current.url : undefined),
@@ -556,7 +790,8 @@ export async function updateOrbitNote(id: string, input: UpdateNoteInput) {
 }
 
 export async function archiveOrbitItem(id: string) {
-	return fileOrbitItem(id, { space: "archive" });
+	const item = await getOrbitItem(id);
+	return fileOrbitItem(id, { space: "archive", folder: item?.folder });
 }
 
 export async function deleteOrbitItem(id: string) {

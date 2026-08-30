@@ -15,6 +15,7 @@ function pageTitle(pathname: string) {
 	if (pathname === "/tasks") return "Tasks";
 	if (pathname.startsWith("/calendar")) return "Calendar";
 	if (pathname === "/archive") return "Archive";
+	if (pathname.startsWith("/whiteboards")) return "Whiteboards";
 	if (pathname.startsWith("/projects/")) {
 		return decodeURIComponent(pathname.slice("/projects/".length));
 	}

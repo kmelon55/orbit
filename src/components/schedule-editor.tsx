@@ -1,11 +1,6 @@
 import { useRouter } from "@tanstack/react-router";
-import {
-	CalendarDays,
-	ChevronLeft,
-	ChevronRight,
-	ListTodo,
-} from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { CalendarDays, ListTodo } from "lucide-react";
+import { useEffect, useState } from "react";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { formatDayKey } from "#/lib/orbit/para";
 import { type OrbitItem, orbitItemSchema } from "#/lib/orbit/schema";
@@ -20,20 +15,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
 
 type ScheduleKind = "event" | "task";
-
-function parseDay(value: string) {
-	const [year, month, day] = value.split("-").map(Number);
-	return new Date(year, month - 1, day);
-}
-
-function addDays(value: string, amount: number) {
-	const date = parseDay(value);
-	date.setDate(date.getDate() + amount);
-	return formatDayKey(date);
-}
 
 function timeOf(value: string | undefined, fallback: string) {
 	return value?.match(/T(\d{2}:\d{2})/)?.[1] ?? fallback;
@@ -49,107 +32,9 @@ function addHour(value: string) {
 	return `${String(Math.floor(next / 60)).padStart(2, "0")}:${String(next % 60).padStart(2, "0")}`;
 }
 
-function dateLabel(value: string) {
-	return new Intl.DateTimeFormat("ko-KR", {
-		month: "short",
-		day: "numeric",
-		weekday: "short",
-	}).format(parseDay(value));
-}
-
-function DateStrip({
-	value,
-	onChange,
-}: {
-	value: string;
-	onChange: (value: string) => void;
-}) {
-	const days = useMemo(
-		() => Array.from({ length: 7 }, (_, index) => addDays(value, index - 3)),
-		[value],
-	);
-
-	return (
-		<div className="space-y-2">
-			<div className="flex items-center gap-1">
-				<Button
-					type="button"
-					variant="ghost"
-					size="icon-sm"
-					onClick={() => onChange(addDays(value, -7))}
-					aria-label="일주일 전"
-				>
-					<ChevronLeft />
-				</Button>
-				<div className="grid min-w-0 flex-1 grid-cols-7 gap-1">
-					{days.map((day) => {
-						const parsed = parseDay(day);
-						const selected = day === value;
-						return (
-							<button
-								key={day}
-								type="button"
-								onClick={() => onChange(day)}
-								className={cn(
-									"grid min-w-0 place-items-center rounded-lg px-1 py-2 text-xs transition-colors",
-									selected
-										? "bg-foreground text-background"
-										: "text-muted-foreground hover:bg-muted hover:text-foreground",
-								)}
-							>
-								<span>
-									{["일", "월", "화", "수", "목", "금", "토"][parsed.getDay()]}
-								</span>
-								<span className="mt-1 text-sm font-semibold">
-									{parsed.getDate()}
-								</span>
-							</button>
-						);
-					})}
-				</div>
-				<Button
-					type="button"
-					variant="ghost"
-					size="icon-sm"
-					onClick={() => onChange(addDays(value, 7))}
-					aria-label="일주일 후"
-				>
-					<ChevronRight />
-				</Button>
-			</div>
-			<div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
-				<span className="text-sm">{dateLabel(value)}</span>
-				<DatePicker
-					value={value}
-					onChange={onChange}
-					label="날짜 직접 선택"
-					className="h-7 max-w-40 border-0 px-2 text-xs shadow-none"
-				/>
-			</div>
-		</div>
-	);
-}
-
-function TimeSelect({
-	value,
-	onChange,
-	label,
-}: {
-	value: string;
-	onChange: (value: string) => void;
-	label: string;
-}) {
-	return (
-		<div className="grid gap-1.5">
-			<span className="text-xs font-medium text-muted-foreground">{label}</span>
-			<TimePicker
-				value={value}
-				onChange={onChange}
-				label={label}
-				className="w-full justify-start"
-			/>
-		</div>
-	);
+function nextDay(value: string) {
+	const [year, month, day] = value.split("-").map(Number);
+	return formatDayKey(new Date(year, month - 1, day + 1));
 }
 
 export function ScheduleEditor({
@@ -207,11 +92,10 @@ export function ScheduleEditor({
 		if (!trimmed || saving) return;
 		if (
 			kind === "event" &&
-			!allDay &&
-			endDate === startDate &&
-			endTime <= startTime
+			(endDate < startDate ||
+				(!allDay && endDate === startDate && endTime <= startTime))
 		) {
-			setError("종료 시간은 시작 시간보다 뒤여야 합니다.");
+			setError("종료는 시작보다 뒤여야 합니다.");
 			return;
 		}
 		setSaving(true);
@@ -259,12 +143,17 @@ export function ScheduleEditor({
 								title: trimmed,
 								body,
 								type: kind,
-								space: kind === "event" ? "event" : item.space,
+								space:
+									kind === "event"
+										? "event"
+										: item.space === "event"
+											? "inbox"
+											: item.space,
 								folder: kind === "task" ? item.folder : undefined,
 								status: kind === "task" ? item.status : undefined,
-								start,
-								end,
-								due,
+								start: kind === "event" ? start : null,
+								end: kind === "event" ? end : null,
+								due: kind === "task" ? due : null,
 							},
 						},
 					}),
@@ -329,19 +218,6 @@ export function ScheduleEditor({
 						className="h-11 text-base"
 					/>
 
-					<div>
-						<p className="mb-2 text-xs font-medium text-muted-foreground">
-							{kind === "event" ? "시작 날짜" : "마감 날짜"}
-						</p>
-						<DateStrip
-							value={startDate}
-							onChange={(value) => {
-								setStartDate(value);
-								if (endDate < value) setEndDate(value);
-							}}
-						/>
-					</div>
-
 					{kind === "event" ? (
 						<div className="grid gap-3">
 							<div className="flex items-center justify-between rounded-lg border px-3 py-2">
@@ -360,46 +236,88 @@ export function ScheduleEditor({
 									{allDay ? "켜짐" : "꺼짐"}
 								</Button>
 							</div>
-							{!allDay ? (
-								<div className="grid grid-cols-2 gap-3">
-									<TimeSelect
-										label="시작"
-										value={startTime}
-										onChange={setStartTime}
+							<div className="grid gap-2 rounded-xl border p-3">
+								<div className="grid items-center gap-2 sm:grid-cols-[3rem_minmax(0,1fr)_minmax(0,0.9fr)]">
+									<span className="text-xs font-semibold text-muted-foreground">
+										시작
+									</span>
+									<DatePicker
+										value={startDate}
+										onChange={(value) => {
+											setStartDate(value);
+											if (endDate < value) setEndDate(value);
+										}}
+										label="시작 날짜"
+										className="w-full"
 									/>
-									<TimeSelect
-										label="종료"
-										value={endTime}
-										onChange={setEndTime}
-									/>
+									{!allDay ? (
+										<TimePicker
+											value={startTime}
+											onChange={(value) => {
+												setStartTime(value);
+												if (endDate === startDate && endTime <= value) {
+													const nextEndTime = addHour(value);
+													setEndTime(nextEndTime);
+													if (nextEndTime <= value)
+														setEndDate(nextDay(startDate));
+												}
+											}}
+											label="시작 시간"
+											className="w-full"
+										/>
+									) : null}
 								</div>
-							) : null}
+								<div className="grid items-center gap-2 sm:grid-cols-[3rem_minmax(0,1fr)_minmax(0,0.9fr)]">
+									<span className="text-xs font-semibold text-muted-foreground">
+										종료
+									</span>
+									<DatePicker
+										value={endDate}
+										min={startDate}
+										onChange={setEndDate}
+										label="종료 날짜"
+										className="w-full"
+									/>
+									{!allDay ? (
+										<TimePicker
+											value={endTime}
+											onChange={setEndTime}
+											label="종료 시간"
+											className="w-full"
+										/>
+									) : null}
+								</div>
+							</div>
+							<p className="text-xs text-muted-foreground">
+								종료 날짜를 바꾸면 여러 날에 걸친 일정으로 저장됩니다.
+							</p>
+						</div>
+					) : (
+						<div className="grid gap-3 sm:grid-cols-2">
 							<div className="grid gap-1.5">
 								<span className="text-xs font-medium text-muted-foreground">
-									종료 날짜
+									마감 날짜
 								</span>
 								<DatePicker
-									value={endDate}
-									min={startDate}
-									onChange={setEndDate}
-									label="종료 날짜"
+									value={startDate}
+									onChange={setStartDate}
+									label="마감 날짜"
 									className="w-full"
 								/>
 							</div>
-						</div>
-					) : (
-						<div className="grid gap-1.5">
-							<span className="text-xs font-medium text-muted-foreground">
-								시간 선택 (선택 사항)
-							</span>
-							<TimePicker
-								value={taskTime}
-								onChange={setTaskTime}
-								label="할 일 시간"
-								placeholder="시간 없음"
-								allowEmpty
-								className="w-full"
-							/>
+							<div className="grid gap-1.5">
+								<span className="text-xs font-medium text-muted-foreground">
+									시간 (선택)
+								</span>
+								<TimePicker
+									value={taskTime}
+									onChange={setTaskTime}
+									label="할 일 시간"
+									placeholder="시간 없음"
+									allowEmpty
+									className="w-full"
+								/>
+							</div>
 						</div>
 					)}
 

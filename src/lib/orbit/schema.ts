@@ -18,7 +18,12 @@ export const orbitStatusSchema = z.enum([
 	"cancelled",
 ]);
 
-export const paraFolderSpaceSchema = z.enum(["project", "area", "resource"]);
+export const paraFolderSpaceSchema = z.enum([
+	"project",
+	"area",
+	"resource",
+	"archive",
+]);
 
 export const orbitItemSchema = z.object({
 	id: z.string().min(1),
@@ -66,9 +71,9 @@ export const fileItemInputSchema = z.object({
 	type: orbitItemTypeSchema.optional(),
 	space: orbitSpaceSchema,
 	folder: z.string().trim().max(80).optional(),
-	due: z.string().optional(),
-	start: z.string().optional(),
-	end: z.string().optional(),
+	due: z.string().nullable().optional(),
+	start: z.string().nullable().optional(),
+	end: z.string().nullable().optional(),
 	url: z.string().url().optional(),
 	tags: z.array(z.string().trim().min(1).max(40)).max(30).optional(),
 	status: orbitStatusSchema.optional(),
@@ -114,6 +119,20 @@ export const orbitMutationSchema = z.discriminatedUnion("action", [
 		action: z.literal("delete-item"),
 		id: z.string().min(1),
 	}),
+	z.object({
+		action: z.literal("save-canvas"),
+		path: z.string().min(1).max(500),
+		document: z.string().min(2).max(20_000_000),
+	}),
+	z.object({
+		action: z.literal("create-canvas"),
+		title: z.string().trim().min(1).max(160),
+	}),
+	z.object({
+		action: z.literal("rename-canvas"),
+		path: z.string().min(1).max(500),
+		title: z.string().trim().min(1).max(160),
+	}),
 ]);
 
 export type OrbitItem = z.infer<typeof orbitItemSchema>;
@@ -126,14 +145,26 @@ export type FileItemInput = z.infer<typeof fileItemInputSchema>;
 export type CreateFolderInput = z.infer<typeof createFolderInputSchema>;
 export type OrbitMutation = z.infer<typeof orbitMutationSchema>;
 
+export type OrbitCanvas = {
+	id: string;
+	title: string;
+	path: string;
+	created: string;
+	updated: string;
+	elementCount: number;
+	fileCount: number;
+	format: "excalidraw" | "excalidraw.md";
+};
+
 export type OrbitFolder = {
-	space: "project" | "area" | "resource";
+	space: "project" | "area" | "resource" | "archive";
 	slug: string;
 	count: number;
 };
 
 export type OrbitSnapshot = {
 	items: OrbitItem[];
+	canvases: OrbitCanvas[];
 	today: {
 		tasks: OrbitItem[];
 		events: OrbitItem[];
@@ -142,6 +173,7 @@ export type OrbitSnapshot = {
 		project: OrbitFolder[];
 		area: OrbitFolder[];
 		resource: OrbitFolder[];
+		archive: OrbitFolder[];
 	};
 	counts: {
 		inbox: number;
