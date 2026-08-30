@@ -14,6 +14,7 @@ import { Route as ArchiveRouteImport } from './routes/archive'
 import { Route as AreasRouteImport } from './routes/areas'
 import { Route as CalendarRouteImport } from './routes/calendar'
 import { Route as InboxRouteImport } from './routes/inbox'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as ResourcesRouteImport } from './routes/resources'
 import { Route as TasksRouteImport } from './routes/tasks'
@@ -47,6 +48,11 @@ const CalendarRoute = CalendarRouteImport.update({
 const InboxRoute = InboxRouteImport.update({
   id: '/inbox',
   path: '/inbox',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectsRoute = ProjectsRouteImport.update({
@@ -101,6 +107,7 @@ export interface FileRoutesByFullPath {
   '/areas': typeof AreasRouteWithChildren
   '/calendar': typeof CalendarRoute
   '/inbox': typeof InboxRoute
+  '/login': typeof LoginRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/resources': typeof ResourcesRouteWithChildren
   '/tasks': typeof TasksRoute
@@ -116,6 +123,7 @@ export interface FileRoutesByTo {
   '/archive': typeof ArchiveRoute
   '/calendar': typeof CalendarRoute
   '/inbox': typeof InboxRoute
+  '/login': typeof LoginRoute
   '/tasks': typeof TasksRoute
   '/areas/$folder': typeof AreasFolderRoute
   '/projects/$folder': typeof ProjectsFolderRoute
@@ -131,6 +139,7 @@ export interface FileRoutesById {
   '/areas': typeof AreasRouteWithChildren
   '/calendar': typeof CalendarRoute
   '/inbox': typeof InboxRoute
+  '/login': typeof LoginRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/resources': typeof ResourcesRouteWithChildren
   '/tasks': typeof TasksRoute
@@ -149,6 +158,7 @@ export interface FileRouteTypes {
     | '/areas'
     | '/calendar'
     | '/inbox'
+    | '/login'
     | '/projects'
     | '/resources'
     | '/tasks'
@@ -164,6 +174,7 @@ export interface FileRouteTypes {
     | '/archive'
     | '/calendar'
     | '/inbox'
+    | '/login'
     | '/tasks'
     | '/areas/$folder'
     | '/projects/$folder'
@@ -178,6 +189,7 @@ export interface FileRouteTypes {
     | '/areas'
     | '/calendar'
     | '/inbox'
+    | '/login'
     | '/projects'
     | '/resources'
     | '/tasks'
@@ -195,6 +207,7 @@ export interface RootRouteChildren {
   AreasRoute: typeof AreasRouteWithChildren
   CalendarRoute: typeof CalendarRoute
   InboxRoute: typeof InboxRoute
+  LoginRoute: typeof LoginRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
   ResourcesRoute: typeof ResourcesRouteWithChildren
   TasksRoute: typeof TasksRoute
@@ -235,6 +248,13 @@ declare module '@tanstack/react-router' {
       path: '/inbox'
       fullPath: '/inbox'
       preLoaderRoute: typeof InboxRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/projects': {
@@ -349,6 +369,7 @@ const rootRouteChildren: RootRouteChildren = {
   AreasRoute: AreasRouteWithChildren,
   CalendarRoute: CalendarRoute,
   InboxRoute: InboxRoute,
+  LoginRoute: LoginRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
   ResourcesRoute: ResourcesRouteWithChildren,
   TasksRoute: TasksRoute,

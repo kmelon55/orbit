@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { SpaceIndexPage } from "@/components/space-browser";
-import { Route as RootRoute } from "./__root";
+import { useOrbitSnapshot } from "./__root";
 
 export const Route = createFileRoute("/areas/")({
 	component: AreasIndex,
 });
 
 function AreasIndex() {
-	const snapshot = RootRoute.useLoaderData();
+	const snapshot = useOrbitSnapshot();
 	return <SpaceIndexPage snapshot={snapshot} space="area" />;
 }

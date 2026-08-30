@@ -20,7 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useTaskToggle } from "@/hooks/use-task-toggle";
 import { cn } from "@/lib/utils";
-import { Route as RootRoute } from "./__root";
+import { useOrbitSnapshot } from "./__root";
 
 export const Route = createFileRoute("/")({
 	component: TodayPage,
@@ -32,7 +32,7 @@ function formatTime(value?: string) {
 }
 
 function TodayPage() {
-	const snapshot = RootRoute.useLoaderData();
+	const snapshot = useOrbitSnapshot();
 	const router = useRouter();
 	const [editor, setEditor] = useState<{
 		open: boolean;

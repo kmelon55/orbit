@@ -1,12 +1,16 @@
 import { createServerFn } from "@tanstack/react-start";
+import { orbitAuthMiddleware } from "./auth";
 import { orbitMutationSchema } from "./schema";
 
-export const loadOrbit = createServerFn({ method: "GET" }).handler(async () => {
-	const { getOrbitSnapshot } = await import("./store");
-	return getOrbitSnapshot();
-});
+export const loadOrbit = createServerFn({ method: "GET" })
+	.middleware([orbitAuthMiddleware])
+	.handler(async () => {
+		const { getOrbitSnapshot } = await import("./store");
+		return getOrbitSnapshot();
+	});
 
 export const mutateOrbit = createServerFn({ method: "POST" })
+	.middleware([orbitAuthMiddleware])
 	.validator((input: unknown) => orbitMutationSchema.parse(input))
 	.handler(async ({ data }) => {
 		const {

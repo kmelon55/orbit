@@ -2,9 +2,12 @@ import {
 	createRootRoute,
 	HeadContent,
 	Outlet,
+	redirect,
 	Scripts,
+	useRouterState,
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { getOrbitAuthStatus } from "#/lib/orbit/auth";
 import { loadOrbit } from "#/lib/orbit/functions";
 import { AppShell } from "@/components/app-shell";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -13,7 +16,15 @@ import appCss from "../styles.css?url";
 const themeScript = `(()=>{try{const t=localStorage.getItem("orbit-ui-theme")||"system";const d=t==="dark"||(t==="system"&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.toggle("dark",d);document.documentElement.style.colorScheme=d?"dark":"light"}catch{}})()`;
 
 export const Route = createRootRoute({
-	loader: () => loadOrbit(),
+	loader: async ({ location }) => {
+		const auth = await getOrbitAuthStatus();
+		if (location.pathname === "/login") {
+			if (auth.authenticated) throw redirect({ to: "/inbox" });
+			return null;
+		}
+		if (!auth.authenticated) throw redirect({ to: "/login" });
+		return loadOrbit();
+	},
 	staleTime: Number.POSITIVE_INFINITY,
 	head: () => ({
 		meta: [
@@ -43,11 +54,22 @@ export const Route = createRootRoute({
 
 function RootLayout() {
 	const snapshot = Route.useLoaderData();
+	const pathname = useRouterState({
+		select: (state) => state.location.pathname,
+	});
+	if (pathname === "/login") return <Outlet />;
+	if (!snapshot) return null;
 	return (
 		<AppShell snapshot={snapshot}>
 			<Outlet />
 		</AppShell>
 	);
+}
+
+export function useOrbitSnapshot() {
+	const snapshot = Route.useLoaderData();
+	if (!snapshot) throw new Error("Orbit workspace is unavailable.");
+	return snapshot;
 }
 
 function RootDocument({ children }: { children: ReactNode }) {

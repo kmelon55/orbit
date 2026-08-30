@@ -3,14 +3,14 @@ import { useMemo } from "react";
 import { itemsInSpace } from "#/lib/orbit/para";
 import { ItemWorkspace } from "@/components/item-workspace";
 import { QuickCapture } from "@/components/quick-capture";
-import { Route as RootRoute } from "./__root";
+import { useOrbitSnapshot } from "./__root";
 
 export const Route = createFileRoute("/inbox")({
 	component: InboxPage,
 });
 
 function InboxPage() {
-	const snapshot = RootRoute.useLoaderData();
+	const snapshot = useOrbitSnapshot();
 	const router = useRouter();
 	const inbox = useMemo(
 		() => itemsInSpace(snapshot.items, "inbox"),

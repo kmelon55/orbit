@@ -6,7 +6,7 @@
 </div>
 
 > [!IMPORTANT]
-> Orbit은 아직 초기 개발 단계입니다. 현재 버전에는 자체 인증이 없으므로 공개 인터넷에 바로 노출하지 말고, 로컬 네트워크나 Cloudflare Access 같은 인증 프록시 뒤에서 사용하세요.
+> 운영 환경에서는 `ORBIT_AUTH_USERNAME`과 `ORBIT_AUTH_PASSWORD`를 반드시 설정하세요. 로그인 세션은 HTTP-only 쿠키에 유지되며 비밀번호를 바꾸면 기존 세션도 만료됩니다.
 
 ## Orbit이 해결하려는 문제
 
@@ -32,7 +32,7 @@
 - `ORBIT_VAULT_DIR`로 앱 코드와 개인 vault 분리
 - 모바일 대응 내비게이션
 
-아직 없는 것: 로그인, AI 자동 분류, 변경 승인 화면, vault 전체 검색, CalDAV 동기화, Git 자동 백업, SSE 파일 감시. 범위와 순서는 [로드맵](./docs/roadmap.md)에 정리되어 있습니다.
+아직 없는 것: 다중 사용자 계정, AI 자동 분류, 변경 승인 화면, vault 전체 검색, CalDAV 동기화, Git 자동 백업, SSE 파일 감시. 범위와 순서는 [로드맵](./docs/roadmap.md)에 정리되어 있습니다.
 
 ## 빠른 시작
 
@@ -50,9 +50,12 @@ pnpm dev
 
 ```dotenv
 ORBIT_VAULT_DIR=/absolute/path/to/orbit-vault
+ORBIT_AUTH_USERNAME=orbit
+ORBIT_AUTH_PASSWORD=replace-with-a-long-random-password
 ```
 
 이전 `ORBIT_DATA_DIR`도 호환 목적으로 읽지만 새 설정에는 `ORBIT_VAULT_DIR`를 사용하세요.
+로컬 개발에서는 인증 환경변수를 생략할 수 있습니다. 운영 모드에서는 두 값을 모두 요구하며, 한 번 로그인하면 기본 180일 동안 같은 브라우저에서 바로 열립니다. 기간은 `ORBIT_AUTH_SESSION_DAYS`(1~365)로 조정할 수 있습니다.
 
 ## 파일 구조
 
@@ -130,6 +133,8 @@ mcp_servers:
 docker build -t orbit .
 docker run --rm -p 3000:3000 \
   -e ORBIT_VAULT_DIR=/vault \
+  -e ORBIT_AUTH_USERNAME=orbit \
+  -e ORBIT_AUTH_PASSWORD='replace-with-a-long-random-password' \
   -v orbit-vault:/vault \
   orbit
 ```
@@ -140,8 +145,9 @@ Dokploy에서는 GitHub 저장소와 배포 브랜치를 연결한 뒤 다음 �
 - Volume Mount: `orbit-vault` → `/vault`
 - Domain Container Port: `3000`
 - Autodeploy: `On Push`
+- Environment: `ORBIT_AUTH_USERNAME`, `ORBIT_AUTH_PASSWORD`
 
-배포 디렉터리와 vault를 분리해야 재배포가 개인 파일에 영향을 주지 않습니다. 외부 공개 전에는 Dokploy Basic Auth나 Cloudflare Access 같은 인증 프록시를 반드시 구성하세요.
+배포 디렉터리와 vault를 분리해야 재배포가 개인 파일에 영향을 주지 않습니다. 위 인증 환경변수를 설정하면 Dokploy Basic Auth는 끄고 Orbit 내부 로그인만 사용할 수 있습니다. 브라우저의 HTTP Basic Auth 팝업 대신 Orbit 로그인 화면이 한 번 나타나며 이후에는 유지되는 세션 쿠키로 바로 열립니다.
 
 ## 저장과 백업
 

@@ -13,13 +13,16 @@ import {
 	Inbox,
 	Layers,
 	ListTodo,
+	LogOut,
 } from "lucide-react";
 import { useEffect } from "react";
+import { logoutOrbit } from "#/lib/orbit/auth";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { ARCHIVE_SPACE, PARA_SPACES } from "#/lib/orbit/para";
 import type { OrbitSnapshot, OrbitSpace } from "#/lib/orbit/schema";
 import { ItemContextMenu } from "@/components/item-context-menu";
 import { ModeToggle } from "@/components/mode-toggle";
+import { Button } from "@/components/ui/button";
 import {
 	Sidebar,
 	SidebarContent,
@@ -75,6 +78,11 @@ export function AppSidebar({ snapshot }: { snapshot: OrbitSnapshot }) {
 			}
 		}
 		if (href) await navigate({ to: href });
+	}
+
+	async function logout() {
+		await logoutOrbit();
+		window.location.replace("/login");
 	}
 
 	return (
@@ -223,7 +231,19 @@ export function AppSidebar({ snapshot }: { snapshot: OrbitSnapshot }) {
 						<span className="size-1.5 rounded-full bg-emerald-500" />
 						Local files
 					</div>
-					<ModeToggle />
+					<div className="flex items-center gap-0.5">
+						<Button
+							variant="ghost"
+							size="icon"
+							className="size-8 text-muted-foreground"
+							title="로그아웃"
+							onClick={() => void logout()}
+						>
+							<LogOut className="size-4" />
+							<span className="sr-only">로그아웃</span>
+						</Button>
+						<ModeToggle />
+					</div>
 				</div>
 			</SidebarFooter>
 		</Sidebar>
