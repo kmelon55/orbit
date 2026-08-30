@@ -47,6 +47,7 @@ function WhiteboardsPage() {
 	const [saving, setSaving] = useState(false);
 	const [message, setMessage] = useState("파일에 자동 저장됩니다");
 	const saveTimer = useRef<number | undefined>(undefined);
+	const lastDocumentRef = useRef<string | null>(null);
 
 	useEffect(() => {
 		if (import.meta.env.SSR) return;
@@ -65,14 +66,17 @@ function WhiteboardsPage() {
 	useEffect(() => {
 		if (!selectedPath) {
 			setCanvasData(null);
+			lastDocumentRef.current = null;
 			return;
 		}
 		let active = true;
 		setLoading(true);
+		lastDocumentRef.current = null;
 		void loadOrbitCanvas({ data: { path: selectedPath } })
 			.then((data) => {
 				if (active) {
 					setCanvasData(data);
+					lastDocumentRef.current = JSON.stringify(JSON.parse(data.document));
 					setMessage("파일에 자동 저장됩니다");
 				}
 			})
@@ -109,10 +113,13 @@ function WhiteboardsPage() {
 		files: Parameters<CanvasChange>[2] & BinaryFiles,
 	) {
 		if (!serializeAsJSON) return;
+		const document = serializeAsJSON(elements, appState, files, "database");
+		const comparable = JSON.stringify(JSON.parse(document));
+		if (lastDocumentRef.current === comparable) return;
+		lastDocumentRef.current = comparable;
 		setSaving(true);
 		setMessage("저장 준비 중…");
 		window.clearTimeout(saveTimer.current);
-		const document = serializeAsJSON(elements, appState, files, "database");
 		saveTimer.current = window.setTimeout(() => {
 			void mutateOrbit({
 				data: { action: "save-canvas", path: canvas.path, document },
