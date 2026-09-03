@@ -1,5 +1,12 @@
-import { ArrowUp, CalendarDays, FileText, ListTodo } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import {
+	ArrowUp,
+	CalendarDays,
+	FileText,
+	ListTodo,
+	Mic,
+	MicOff,
+} from "lucide-react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { formatDayKey, ITEM_TYPE_LABEL } from "#/lib/orbit/para";
 import type { OrbitItemType } from "#/lib/orbit/schema";
@@ -7,6 +14,7 @@ import { DatePicker, TimePicker } from "@/components/schedule-controls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 
 const KINDS: { type: OrbitItemType; icon: typeof FileText }[] = [
 	{ type: "note", icon: FileText },
@@ -25,21 +33,111 @@ function nextDay(value: string) {
 	return formatDayKey(new Date(year, month - 1, day + 1));
 }
 
+type SpeechResultEvent = {
+	results: ArrayLike<{
+		0: { transcript: string };
+	}>;
+};
+
+type SpeechRecognitionLike = {
+	lang: string;
+	continuous: boolean;
+	interimResults: boolean;
+	start: () => void;
+	abort: () => void;
+	onresult: ((event: SpeechResultEvent) => void) | null;
+	onerror: ((event: { error: string }) => void) | null;
+	onend: (() => void) | null;
+};
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+
+function getSpeechRecognition() {
+	if (typeof window === "undefined") return undefined;
+	const speechWindow = window as typeof window & {
+		SpeechRecognition?: SpeechRecognitionConstructor;
+		webkitSpeechRecognition?: SpeechRecognitionConstructor;
+	};
+	return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+}
+
 export function QuickCapture({
 	onSaved,
 	placeholder = "생각나는 것을 일단 적어두세요",
+	initialKind = "note",
+	autoFocus = false,
+	className,
 }: {
 	onSaved?: () => void;
 	placeholder?: string;
+	initialKind?: Extract<OrbitItemType, "note" | "task" | "event">;
+	autoFocus?: boolean;
+	className?: string;
 }) {
 	const [capture, setCapture] = useState("");
-	const [kind, setKind] = useState<OrbitItemType>("note");
+	const [kind, setKind] = useState<OrbitItemType>(initialKind);
 	const [date, setDate] = useState(() => formatDayKey());
 	const [endDate, setEndDate] = useState(() => formatDayKey());
 	const [startTime, setStartTime] = useState("09:00");
 	const [endTime, setEndTime] = useState("10:00");
 	const [isSaving, setIsSaving] = useState(false);
 	const [message, setMessage] = useState<string | null>(null);
+	const [listening, setListening] = useState(false);
+	const [voiceSupported, setVoiceSupported] = useState(false);
+	const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+	const speechBaseRef = useRef("");
+
+	useEffect(() => {
+		setKind(initialKind);
+	}, [initialKind]);
+
+	useEffect(() => {
+		setVoiceSupported(Boolean(getSpeechRecognition()));
+		return () => recognitionRef.current?.abort();
+	}, []);
+
+	function toggleVoice() {
+		if (listening) {
+			recognitionRef.current?.abort();
+			setListening(false);
+			return;
+		}
+		const Recognition = getSpeechRecognition();
+		if (!Recognition) {
+			setMessage("이 브라우저에서는 음성 입력을 지원하지 않습니다.");
+			return;
+		}
+		const recognition = new Recognition();
+		recognition.lang = "ko-KR";
+		recognition.continuous = false;
+		recognition.interimResults = true;
+		speechBaseRef.current = capture.trim();
+		recognition.onresult = (event) => {
+			const transcript = Array.from(event.results)
+				.map((result) => result[0]?.transcript ?? "")
+				.join("")
+				.trim();
+			setCapture([speechBaseRef.current, transcript].filter(Boolean).join(" "));
+		};
+		recognition.onerror = (event) => {
+			setListening(false);
+			setMessage(
+				event.error === "not-allowed"
+					? "음성 입력을 사용하려면 마이크 권한을 허용해 주세요."
+					: "음성을 인식하지 못했습니다. 다시 눌러 주세요.",
+			);
+		};
+		recognition.onend = () => setListening(false);
+		recognitionRef.current = recognition;
+		setMessage(null);
+		setListening(true);
+		try {
+			recognition.start();
+		} catch {
+			setListening(false);
+			setMessage("음성 입력을 시작하지 못했습니다. 다시 눌러 주세요.");
+		}
+	}
 
 	async function handleCapture(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
@@ -57,7 +155,9 @@ export function QuickCapture({
 		try {
 			const schedule =
 				kind === "task"
-					? { due: date }
+					? date
+						? { due: date }
+						: {}
 					: kind === "event"
 						? {
 								start: `${date}T${startTime}:00`,
@@ -95,22 +195,41 @@ export function QuickCapture({
 	}
 
 	return (
-		<form onSubmit={handleCapture} className="orbit-card p-3">
+		<form onSubmit={handleCapture} className={cn("orbit-card p-3", className)}>
 			<div className="flex items-center gap-2">
 				<Input
+					autoFocus={autoFocus}
 					value={capture}
 					onChange={(event) => setCapture(event.target.value)}
 					placeholder={placeholder}
 					aria-label="빠른 기록"
 					className="h-11 border-0 bg-transparent text-base shadow-none focus-visible:ring-0"
 				/>
+				{voiceSupported ? (
+					<Button
+						type="button"
+						size="icon"
+						variant={listening ? "secondary" : "ghost"}
+						onClick={toggleVoice}
+						aria-pressed={listening}
+						aria-label={listening ? "음성 입력 중지" : "음성으로 입력"}
+						className={cn(
+							"shrink-0",
+							listening && "text-red-600 dark:text-red-400",
+						)}
+					>
+						{listening ? <MicOff /> : <Mic />}
+					</Button>
+				) : null}
 				<Button
 					type="submit"
 					size="icon"
 					disabled={!capture.trim() || isSaving}
 				>
 					<ArrowUp />
-					<span className="sr-only">Inbox에 넣기</span>
+					<span className="sr-only">
+						{kind === "event" ? "캘린더에 추가" : "Inbox에 넣기"}
+					</span>
 				</Button>
 			</div>
 			<Separator className="my-2" />
@@ -165,14 +284,26 @@ export function QuickCapture({
 							</div>
 						</>
 					) : (
-						<div className="flex flex-wrap items-center gap-2">
-							<DatePicker
-								value={date}
-								onChange={setDate}
-								label="마감 날짜"
-								className="h-8 w-auto max-w-44 px-2.5 text-xs"
-							/>
-							<span className="text-xs text-muted-foreground">마감 날짜</span>
+						<div className="grid grid-cols-3 gap-1 rounded-xl bg-muted/50 p-1">
+							{[
+								{ label: "오늘", value: formatDayKey() },
+								{ label: "내일", value: nextDay(formatDayKey()) },
+								{ label: "미정", value: "" },
+							].map((option) => (
+								<button
+									key={option.label}
+									type="button"
+									onClick={() => setDate(option.value)}
+									aria-pressed={date === option.value}
+									className={cn(
+										"min-h-10 rounded-lg px-2 text-sm font-medium text-muted-foreground transition-colors",
+										date === option.value &&
+											"bg-background text-foreground shadow-sm",
+									)}
+								>
+									{option.label}
+								</button>
+							))}
 						</div>
 					)}
 				</div>
@@ -187,6 +318,8 @@ export function QuickCapture({
 							variant={kind === type ? "secondary" : "ghost"}
 							onClick={() => {
 								setKind(type);
+								if (type === "event" && !date) setDate(formatDayKey());
+								if (type === "task" && kind !== "task") setDate(formatDayKey());
 								setMessage(null);
 							}}
 						>

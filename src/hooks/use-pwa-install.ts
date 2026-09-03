@@ -24,6 +24,7 @@ const serverState: PwaInstallState = {
 };
 let state = serverState;
 let initialized = false;
+const INSTALL_MARKER = "orbit:pwa-installed";
 
 function emit(next: Partial<PwaInstallState>) {
 	state = { ...state, ...next };
@@ -36,6 +37,28 @@ function isStandalone() {
 		("standalone" in navigator &&
 			(navigator as Navigator & { standalone?: boolean }).standalone === true)
 	);
+}
+
+function hasInstallMarker() {
+	try {
+		return window.localStorage.getItem(INSTALL_MARKER) === "true";
+	} catch {
+		return false;
+	}
+}
+
+function saveInstallMarker(installed: boolean) {
+	try {
+		if (installed) window.localStorage.setItem(INSTALL_MARKER, "true");
+		else window.localStorage.removeItem(INSTALL_MARKER);
+	} catch {
+		// Private browsing and restricted storage can reject localStorage access.
+	}
+}
+
+function markInstalled() {
+	saveInstallMarker(true);
+	emit({ installed: true, prompt: null });
 }
 
 function detectPlatform(): PwaPlatform {
@@ -52,22 +75,29 @@ function detectPlatform(): PwaPlatform {
 function initialize() {
 	if (initialized || typeof window === "undefined") return;
 	initialized = true;
+	const standalone = isStandalone();
+	if (standalone) saveInstallMarker(true);
 	emit({
 		ready: true,
-		installed: isStandalone(),
+		installed: standalone || hasInstallMarker(),
 		platform: detectPlatform(),
 	});
 
 	window.addEventListener("beforeinstallprompt", (event) => {
 		event.preventDefault();
-		emit({ prompt: event as BeforeInstallPromptEvent });
+		// Receiving this event means the browser currently considers the app
+		// installable, so a marker left behind after uninstalling is stale.
+		saveInstallMarker(false);
+		emit({ installed: false, prompt: event as BeforeInstallPromptEvent });
 	});
 	window.addEventListener("appinstalled", () => {
-		emit({ installed: true, prompt: null });
+		markInstalled();
 	});
 	window
 		.matchMedia("(display-mode: standalone)")
-		.addEventListener("change", () => emit({ installed: isStandalone() }));
+		.addEventListener("change", () => {
+			if (isStandalone()) markInstalled();
+		});
 }
 
 function subscribe(listener: () => void) {
@@ -97,7 +127,12 @@ export function usePwaInstall() {
 		emit({ prompt: null });
 		await prompt.prompt();
 		const choice = await prompt.userChoice;
+		if (choice.outcome === "accepted") markInstalled();
 		return choice.outcome;
+	}, []);
+
+	const confirmInstalled = useCallback(() => {
+		markInstalled();
 	}, []);
 
 	return {
@@ -106,5 +141,6 @@ export function usePwaInstall() {
 		platform: current.platform,
 		canInstall: current.prompt !== null,
 		install,
+		confirmInstalled,
 	};
 }

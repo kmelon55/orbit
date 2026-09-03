@@ -2,7 +2,6 @@ import { useRouterState } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import type { OrbitSnapshot } from "#/lib/orbit/schema";
 import { AppSidebar } from "@/components/app-sidebar";
-import { InstallAppButton } from "@/components/install-app-button";
 import { MobileNavigation } from "@/components/mobile-navigation";
 import {
 	SidebarInset,
@@ -60,7 +59,6 @@ export function AppShell({
 							<span className="hidden text-muted-foreground md:inline">/</span>
 							<h1 className="truncate font-medium">{pageTitle(pathname)}</h1>
 						</div>
-						<InstallAppButton />
 					</header>
 					<div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
 						{children}

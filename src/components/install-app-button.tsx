@@ -12,7 +12,8 @@ import { usePwaInstall } from "@/hooks/use-pwa-install";
 
 export function InstallAppButton() {
 	const [open, setOpen] = useState(false);
-	const { ready, installed, platform, canInstall, install } = usePwaInstall();
+	const { ready, installed, platform, canInstall, install, confirmInstalled } =
+		usePwaInstall();
 
 	if (!ready || installed || (platform !== "ios" && !canInstall)) return null;
 
@@ -68,7 +69,14 @@ export function InstallAppButton() {
 							</span>
 						</li>
 					</ol>
-					<Button onClick={() => setOpen(false)}>확인</Button>
+					<Button
+						onClick={() => {
+							confirmInstalled();
+							setOpen(false);
+						}}
+					>
+						설치했어요
+					</Button>
 				</DialogContent>
 			</Dialog>
 		</>
