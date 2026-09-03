@@ -1,5 +1,13 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { CalendarDays, Circle, ListTodo, Plus } from "lucide-react";
+import {
+	ArrowRight,
+	CalendarDays,
+	Circle,
+	FolderClosed,
+	FolderKanban,
+	ListTodo,
+	Plus,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { folderOf, formatDayKey } from "#/lib/orbit/para";
@@ -76,8 +84,8 @@ function TodayPage() {
 
 	return (
 		<div className="h-full overflow-auto bg-muted/20">
-			<div className="mx-auto w-full max-w-6xl px-5 py-6 lg:px-8">
-				<header className="mb-6 flex flex-wrap items-end justify-between gap-4">
+			<div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-5 sm:py-6 lg:px-8">
+				<header className="mb-5 flex flex-wrap items-end justify-between gap-4 sm:mb-6">
 					<div>
 						<p className="text-xs font-medium text-muted-foreground">
 							{snapshot.displayDate.longLabel}
@@ -86,7 +94,7 @@ function TodayPage() {
 							Today
 						</h2>
 					</div>
-					<div className="flex items-center gap-2">
+					<div className="hidden items-center gap-2 sm:flex">
 						<Button
 							variant="outline"
 							onClick={() => setEditor({ open: true, kind: "task" })}
@@ -99,7 +107,7 @@ function TodayPage() {
 					</div>
 				</header>
 
-				<div className="mb-8">
+				<div className="mb-5 sm:mb-8">
 					<QuickCapture onSaved={() => void router.invalidate()} />
 				</div>
 
@@ -262,6 +270,54 @@ function TodayPage() {
 						</div>
 					</section>
 				</div>
+
+				<section className="orbit-card mt-4 overflow-hidden">
+					<div className="flex items-center justify-between border-b border-border/60 px-4 py-3.5">
+						<div className="flex items-center gap-2">
+							<FolderKanban className="size-4" />
+							<h3 className="text-sm font-semibold">Projects</h3>
+							<span className="text-xs tabular-nums text-muted-foreground">
+								{snapshot.folders.project.length}
+							</span>
+						</div>
+						<Link
+							to="/projects"
+							className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+						>
+							전체 보기
+							<ArrowRight className="size-3.5" />
+						</Link>
+					</div>
+					{snapshot.folders.project.length > 0 ? (
+						<div className="grid gap-2 p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+							{snapshot.folders.project.map((folder) => (
+								<Link
+									key={folder.slug}
+									to="/projects/$folder"
+									params={{ folder: folder.slug }}
+									className="group flex min-w-0 items-center gap-3 rounded-xl border border-border/60 bg-background/55 px-3.5 py-3 transition-colors hover:border-border hover:bg-muted/55"
+								>
+									<FolderClosed className="size-8 shrink-0 fill-amber-300/55 text-amber-600/80 transition-transform group-hover:scale-105 dark:fill-amber-400/20 dark:text-amber-300/80" />
+									<span className="min-w-0 flex-1">
+										<span className="block truncate text-sm font-medium">
+											{folder.slug}
+										</span>
+										<span className="mt-0.5 block text-xs text-muted-foreground">
+											{folder.count}개 항목
+										</span>
+									</span>
+									<ArrowRight className="size-4 shrink-0 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+								</Link>
+							))}
+						</div>
+					) : (
+						<div className="flex min-h-24 items-center justify-center px-4 text-sm text-muted-foreground">
+							<Link to="/projects" className="hover:text-foreground">
+								프로젝트 폴더를 만들면 여기에 바로 표시됩니다
+							</Link>
+						</div>
+					)}
+				</section>
 			</div>
 
 			<ScheduleEditor
