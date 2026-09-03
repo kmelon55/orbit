@@ -1,10 +1,26 @@
 import { useRouter } from "@tanstack/react-router";
-import { CalendarDays, ListTodo } from "lucide-react";
+import {
+	AlignLeft,
+	CalendarDays,
+	Clock3,
+	ListTodo,
+	Trash2,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { formatDayKey } from "#/lib/orbit/para";
 import { type OrbitItem, orbitItemSchema } from "#/lib/orbit/schema";
 import { DatePicker, TimePicker } from "@/components/schedule-controls";
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -65,6 +81,8 @@ export function ScheduleEditor({
 	const [allDay, setAllDay] = useState(false);
 	const [taskTime, setTaskTime] = useState("");
 	const [saving, setSaving] = useState(false);
+	const [deleting, setDeleting] = useState(false);
+	const [deleteOpen, setDeleteOpen] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
@@ -72,12 +90,17 @@ export function ScheduleEditor({
 		const baseDate = initialDate ?? today;
 		const resolvedStart = dayOf(item?.start ?? item?.due, baseDate);
 		const resolvedTime = timeOf(item?.start ?? item?.due, initialTime);
+		const defaultEndTime = addHour(resolvedTime);
+		const defaultEndDate =
+			!item?.end && defaultEndTime <= resolvedTime
+				? nextDay(resolvedStart)
+				: resolvedStart;
 		setTitle(item?.title ?? "");
 		setBody(item?.body ?? "");
 		setStartDate(resolvedStart);
-		setEndDate(dayOf(item?.end, resolvedStart));
+		setEndDate(dayOf(item?.end, defaultEndDate));
 		setStartTime(resolvedTime);
-		setEndTime(timeOf(item?.end, addHour(resolvedTime)));
+		setEndTime(timeOf(item?.end, defaultEndTime));
 		setAllDay(
 			kind === "event" && Boolean(item?.start && !item.start.includes("T")),
 		);
@@ -85,6 +108,7 @@ export function ScheduleEditor({
 			kind === "task" && item?.due?.includes("T") ? resolvedTime : "",
 		);
 		setError(null);
+		setDeleteOpen(false);
 	}, [initialDate, initialTime, item, kind, open, today]);
 
 	async function save() {
@@ -186,166 +210,226 @@ export function ScheduleEditor({
 		}
 	}
 
+	async function deleteItem() {
+		if (!item || deleting) return;
+		setDeleting(true);
+		setError(null);
+		try {
+			await mutateOrbit({ data: { action: "delete-item", id: item.id } });
+			await router.invalidate();
+			setDeleteOpen(false);
+			onOpenChange(false);
+		} catch {
+			setDeleteOpen(false);
+			setError("삭제하지 못했습니다. 파일 권한을 확인해 주세요.");
+		} finally {
+			setDeleting(false);
+		}
+	}
+
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-xl">
-				<DialogHeader>
-					<div className="mb-1 flex size-9 items-center justify-center rounded-lg bg-muted">
-						{kind === "event" ? <CalendarDays /> : <ListTodo />}
-					</div>
-					<DialogTitle>
-						{item
-							? kind === "event"
-								? "일정 편집"
-								: "할 일 편집"
-							: kind === "event"
-								? "새 일정"
-								: "새 할 일"}
-					</DialogTitle>
-					<DialogDescription>
-						{kind === "event"
-							? "시간을 확보하고 필요한 맥락을 함께 적어두세요."
-							: "마감일을 정하고 오늘 실행할 수 있게 만드세요."}
-					</DialogDescription>
-				</DialogHeader>
+		<>
+			<Dialog open={open} onOpenChange={onOpenChange}>
+				<DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">
+					<form
+						onSubmit={(event) => {
+							event.preventDefault();
+							void save();
+						}}
+					>
+						<DialogHeader className="border-b border-border/60 px-5 pt-5 pb-4">
+							<div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+								<span
+									className={`size-2.5 rounded-full ${kind === "event" ? "bg-blue-500" : "bg-amber-500"}`}
+								/>
+								{item
+									? kind === "event"
+										? "일정 편집"
+										: "할 일 편집"
+									: kind === "event"
+										? "새 일정"
+										: "새 할 일"}
+							</div>
+							<DialogTitle className="sr-only">
+								{item ? "일정 편집" : "새 일정"}
+							</DialogTitle>
+							<DialogDescription className="sr-only">
+								제목, 날짜, 시간과 메모를 입력하세요.
+							</DialogDescription>
+							<Input
+								autoFocus
+								value={title}
+								onChange={(event) => setTitle(event.target.value)}
+								placeholder={kind === "event" ? "일정 제목" : "할 일"}
+								className="h-auto border-0 bg-transparent px-0 py-1 text-xl font-semibold shadow-none focus-visible:ring-0"
+							/>
+						</DialogHeader>
 
-				<div className="grid gap-5 pt-2">
-					<Input
-						autoFocus
-						value={title}
-						onChange={(event) => setTitle(event.target.value)}
-						placeholder={kind === "event" ? "일정 제목" : "할 일"}
-						className="h-11 text-base"
-					/>
-
-					{kind === "event" ? (
-						<div className="grid gap-3">
-							<div className="flex items-center justify-between rounded-lg border px-3 py-2">
-								<div>
-									<p className="text-sm font-medium">종일</p>
-									<p className="text-xs text-muted-foreground">
-										시간 없이 날짜만 표시
-									</p>
+						<div className="grid gap-4 px-5 py-4">
+							{kind === "event" ? (
+								<div className="grid gap-3">
+									<div className="flex items-center gap-3">
+										<CalendarDays className="size-4 shrink-0 text-muted-foreground" />
+										<span className="flex-1 text-sm font-medium">
+											날짜와 시간
+										</span>
+										<div className="flex items-center gap-2 text-xs text-muted-foreground">
+											종일
+											<button
+												type="button"
+												role="switch"
+												aria-checked={allDay}
+												onClick={() => setAllDay((current) => !current)}
+												className={`relative h-5 w-9 rounded-full transition-colors ${allDay ? "bg-blue-500" : "bg-muted-foreground/25"}`}
+											>
+												<span
+													className={`absolute top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform ${allDay ? "translate-x-4" : "translate-x-0.5"}`}
+												/>
+											</button>
+										</div>
+									</div>
+									<div className="ml-7 grid gap-2 rounded-xl bg-muted/40 p-2.5">
+										<div className="grid items-center gap-2 sm:grid-cols-[2.5rem_minmax(0,1fr)_minmax(0,0.82fr)]">
+											<span className="text-xs font-medium text-muted-foreground">
+												시작
+											</span>
+											<DatePicker
+												value={startDate}
+												onChange={(value) => {
+													setStartDate(value);
+													if (endDate < value) setEndDate(value);
+												}}
+												label="시작 날짜"
+												className="w-full bg-background"
+											/>
+											{!allDay ? (
+												<TimePicker
+													value={startTime}
+													onChange={(value) => {
+														setStartTime(value);
+														if (endDate === startDate && endTime <= value) {
+															const nextEndTime = addHour(value);
+															setEndTime(nextEndTime);
+															if (nextEndTime <= value)
+																setEndDate(nextDay(startDate));
+														}
+													}}
+													label="시작 시간"
+													className="w-full bg-background"
+												/>
+											) : null}
+										</div>
+										<div className="grid items-center gap-2 sm:grid-cols-[2.5rem_minmax(0,1fr)_minmax(0,0.82fr)]">
+											<span className="text-xs font-medium text-muted-foreground">
+												종료
+											</span>
+											<DatePicker
+												value={endDate}
+												min={startDate}
+												onChange={setEndDate}
+												label="종료 날짜"
+												className="w-full bg-background"
+											/>
+											{!allDay ? (
+												<TimePicker
+													value={endTime}
+													onChange={setEndTime}
+													label="종료 시간"
+													className="w-full bg-background"
+												/>
+											) : null}
+										</div>
+									</div>
 								</div>
+							) : (
+								<div className="grid grid-cols-[1rem_minmax(0,1fr)] items-start gap-3">
+									<ListTodo className="mt-2.5 size-4 text-muted-foreground" />
+									<div className="grid gap-2 sm:grid-cols-2">
+										<DatePicker
+											value={startDate}
+											onChange={setStartDate}
+											label="마감 날짜"
+											className="w-full"
+										/>
+										<TimePicker
+											value={taskTime}
+											onChange={setTaskTime}
+											label="할 일 시간"
+											placeholder="시간 없음"
+											allowEmpty
+											className="w-full"
+										/>
+									</div>
+								</div>
+							)}
+
+							<div className="grid grid-cols-[1rem_minmax(0,1fr)] items-start gap-3">
+								<AlignLeft className="mt-2.5 size-4 text-muted-foreground" />
+								<Textarea
+									value={body}
+									onChange={(event) => setBody(event.target.value)}
+									placeholder="메모, 장소, 준비할 것"
+									className="min-h-24 resize-none"
+								/>
+							</div>
+							{error ? (
+								<p className="text-sm text-destructive">{error}</p>
+							) : null}
+						</div>
+
+						<div className="flex items-center justify-between border-t border-border/60 bg-muted/25 px-5 py-3">
+							{item ? (
 								<Button
 									type="button"
-									variant={allDay ? "default" : "outline"}
+									variant="ghost"
 									size="sm"
-									onClick={() => setAllDay((current) => !current)}
+									className="text-muted-foreground hover:text-destructive"
+									onClick={() => setDeleteOpen(true)}
 								>
-									{allDay ? "켜짐" : "꺼짐"}
+									<Trash2 /> 삭제
+								</Button>
+							) : (
+								<span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+									<Clock3 className="size-3" /> Enter로 저장
+								</span>
+							)}
+							<div className="flex gap-2">
+								<Button
+									type="button"
+									variant="ghost"
+									onClick={() => onOpenChange(false)}
+								>
+									취소
+								</Button>
+								<Button type="submit" disabled={!title.trim() || saving}>
+									{saving ? "저장 중" : item ? "저장" : "추가"}
 								</Button>
 							</div>
-							<div className="grid gap-2 rounded-xl border p-3">
-								<div className="grid items-center gap-2 sm:grid-cols-[3rem_minmax(0,1fr)_minmax(0,0.9fr)]">
-									<span className="text-xs font-semibold text-muted-foreground">
-										시작
-									</span>
-									<DatePicker
-										value={startDate}
-										onChange={(value) => {
-											setStartDate(value);
-											if (endDate < value) setEndDate(value);
-										}}
-										label="시작 날짜"
-										className="w-full"
-									/>
-									{!allDay ? (
-										<TimePicker
-											value={startTime}
-											onChange={(value) => {
-												setStartTime(value);
-												if (endDate === startDate && endTime <= value) {
-													const nextEndTime = addHour(value);
-													setEndTime(nextEndTime);
-													if (nextEndTime <= value)
-														setEndDate(nextDay(startDate));
-												}
-											}}
-											label="시작 시간"
-											className="w-full"
-										/>
-									) : null}
-								</div>
-								<div className="grid items-center gap-2 sm:grid-cols-[3rem_minmax(0,1fr)_minmax(0,0.9fr)]">
-									<span className="text-xs font-semibold text-muted-foreground">
-										종료
-									</span>
-									<DatePicker
-										value={endDate}
-										min={startDate}
-										onChange={setEndDate}
-										label="종료 날짜"
-										className="w-full"
-									/>
-									{!allDay ? (
-										<TimePicker
-											value={endTime}
-											onChange={setEndTime}
-											label="종료 시간"
-											className="w-full"
-										/>
-									) : null}
-								</div>
-							</div>
-							<p className="text-xs text-muted-foreground">
-								종료 날짜를 바꾸면 여러 날에 걸친 일정으로 저장됩니다.
-							</p>
 						</div>
-					) : (
-						<div className="grid gap-3 sm:grid-cols-2">
-							<div className="grid gap-1.5">
-								<span className="text-xs font-medium text-muted-foreground">
-									마감 날짜
-								</span>
-								<DatePicker
-									value={startDate}
-									onChange={setStartDate}
-									label="마감 날짜"
-									className="w-full"
-								/>
-							</div>
-							<div className="grid gap-1.5">
-								<span className="text-xs font-medium text-muted-foreground">
-									시간 (선택)
-								</span>
-								<TimePicker
-									value={taskTime}
-									onChange={setTaskTime}
-									label="할 일 시간"
-									placeholder="시간 없음"
-									allowEmpty
-									className="w-full"
-								/>
-							</div>
-						</div>
-					)}
+					</form>
+				</DialogContent>
+			</Dialog>
 
-					<Textarea
-						value={body}
-						onChange={(event) => setBody(event.target.value)}
-						placeholder="메모, 장소, 준비할 것"
-						className="min-h-24"
-					/>
-					{error ? <p className="text-sm text-destructive">{error}</p> : null}
-					<div className="flex justify-end gap-2">
-						<Button
-							type="button"
-							variant="ghost"
-							onClick={() => onOpenChange(false)}
+			<AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>이 항목을 삭제할까요?</AlertDialogTitle>
+						<AlertDialogDescription>
+							“{item?.title}” 파일이 Vault에서 완전히 삭제됩니다.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel disabled={deleting}>취소</AlertDialogCancel>
+						<AlertDialogAction
+							variant="destructive"
+							disabled={deleting}
+							onClick={() => void deleteItem()}
 						>
-							취소
-						</Button>
-						<Button
-							type="button"
-							disabled={!title.trim() || saving}
-							onClick={() => void save()}
-						>
-							{saving ? "저장 중" : item ? "변경 저장" : "추가"}
-						</Button>
-					</div>
-				</div>
-			</DialogContent>
-		</Dialog>
+							{deleting ? "삭제 중" : "삭제"}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+		</>
 	);
 }
