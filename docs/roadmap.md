@@ -1,62 +1,67 @@
 # Orbit roadmap
 
-로드맵은 기능 수보다 파일 소유권과 안전한 변경 흐름을 먼저 완성하는 순서다.
+Orbit's roadmap is organized around a small personal loop, not feature parity with larger note-taking or project-management products.
 
-## v0.1 — File loop
+## v0.1 — The personal loop (current)
 
-- [x] TanStack Start 기반
-- [x] Markdown/YAML vault scanner
-- [x] Universal Inbox의 텍스트 캡처
-- [x] Today task projection과 완료 처리
-- [x] MCP capture/today/search
-- [x] 반응형 Today UI
-- [x] Inbox, Projects, Areas, Resources 상세 화면
-- [x] Markdown 노트 목록, 편집기, GFM 미리보기와 archive 이동
-- [ ] 파일 watcher + SSE 갱신
-- [ ] vault 전체 텍스트 검색 (Notes 내부 검색은 구현됨)
-- [ ] 단일 사용자 인증 또는 trusted-proxy 계약
+- [x] Markdown/YAML vault as the source of truth
+- [x] Quick capture for notes, tasks, and events
+- [x] Today view for tasks, events, and active projects
+- [x] Task views, completion, editing, and lightweight rescheduling
+- [x] Day, week, and month calendar views
+- [x] Timed and multi-day events with drag-to-move and resize
+- [x] Inbox and PARA filing with nested folders
+- [x] Markdown editing, tags, internal links, autosave, and optional Vim mode
+- [x] Excalidraw-compatible whiteboards
+- [x] Mobile navigation, dedicated capture, and installable PWA shell
+- [x] Built-in single-user authentication for self-hosting
+- [x] Docker deployment with a persistent filesystem vault
+- [x] Local stdio MCP tools for capture, reading, search, calendar, and PARA filing
 
-완료 조건: AI 없이도 기록 → 파일 확인 → Today 실행 → 검색이 끊기지 않는다.
+The browser UI, MCP server, and Markdown files now share one working storage contract. The PWA does not currently cache private data for offline access, and MCP is local stdio rather than a hosted endpoint.
 
-## v0.2 — Safe organizer
+## v0.2 — Useful AI, under user control
 
-- [ ] AI provider BYOK
-- [ ] 수동 분석 버튼과 폴더별 opt-in
-- [ ] 분류/태그/날짜 추출 제안
-- [ ] diff 기반 승인·거절·일괄 적용
-- [ ] content hash 충돌 감지
-- [ ] 규칙 기반 정리(무AI 대안)
+- [ ] Bring-your-own-key provider configuration
+- [ ] Ask questions across notes, tasks, and events
+- [ ] Search and summarize related material with links back to source files
+- [ ] Turn natural-language input into proposed notes, tasks, and events
+- [ ] Suggest titles, tags, dates, and PARA destinations
+- [ ] Review changes as a diff before applying them
+- [ ] Detect stale proposals and conflicting file changes
+- [ ] Provide a rules-only organizer when AI is disabled
 
-완료 조건: AI가 원본 파일을 사용자 승인 없이 변경하지 않는다.
+Completion boundary: Orbit remains fully useful without AI, and AI never changes or moves an existing file without a visible user decision.
 
-## v0.3 — Time and sync
+## v0.3 — Dependable personal infrastructure
 
-- [x] 내부 Calendar 월 보기
-- [ ] iCalendar import/export
-- [ ] CalDAV adapter
-- [ ] Apple Calendar 양방향 동기화
-- [ ] timezone, recurrence, conflict 정책
-- [ ] Git snapshot과 복구 UI
+- [ ] Filesystem watcher and live refresh
+- [ ] Search ranking and filters across the vault
+- [ ] Snapshot history, restore UI, and verifiable backup jobs
+- [ ] Attachment handling with stable paths
+- [ ] iCalendar import and export
+- [ ] CalDAV adapter with explicit timezone, recurrence, and conflict rules
+- [ ] Scoped credentials for non-local integrations
 
-완료 조건: Orbit event, remote event, Git backup의 성공 상태를 각각 확인할 수 있다.
+Completion boundary: local writes, backup state, and external sync state are independently observable and recoverable.
 
-## v0.4 — Agent platform
+## v0.4 — A safer agent boundary
 
-- [ ] MCP resources와 prompts
-- [ ] 제안 생성/조회/승인 도구
-- [ ] 최소 권한 API token
-- [ ] webhook/SSE event stream
-- [x] Hermes stdio MCP 연결 가이드
-- [ ] Hermes 검증 fixture
+- [ ] MCP resources and reusable prompts
+- [ ] Tools for creating, reading, approving, and rejecting AI proposals
+- [ ] Least-privilege tokens for any future remote transport
+- [ ] File-change and task/event webhooks
+- [ ] Compatibility fixtures for supported agent clients
 
-완료 조건: 외부 에이전트가 읽기, 캡처, 변경 제안을 수행하고 사용자가 Orbit에서 승인할 수 있다.
+Completion boundary: an external agent can retrieve context and suggest useful actions without receiving unrestricted, invisible mutation authority.
 
-## 지금 하지 않는 것
+## Deliberate non-goals
 
-- 팀 협업과 복잡한 권한 모델
-- Notion 호환 데이터베이스 빌더
-- 자체 AI 모델 호스팅
-- 핵심 상태를 관계형 DB에만 저장
-- 승인 없는 상시 AI 재분류
+- A general-purpose database builder
+- A plugin ecosystem
+- Team workspaces and complex role management
+- A general-purpose project-management suite
+- A required cloud service or hosted AI model
+- Continuous autonomous rewriting of the vault
 
-이 항목들은 사용자 검증으로 필요성이 드러나기 전까지 범위에 넣지 않는다.
+These boundaries can change only when real personal use shows that the added complexity earns its place.

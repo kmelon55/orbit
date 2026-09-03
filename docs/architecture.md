@@ -97,12 +97,15 @@ GitHub API나 S3 API는 Orbit의 실시간 데이터베이스가 아니다. 웹 
 - `src/lib/orbit/store.ts`: filesystem 읽기/쓰기
 - `src/lib/orbit/vault-key.ts`: portable filename과 object key 계약
 - `src/lib/orbit/functions.ts`: 웹 UI용 server functions
+- `src/lib/orbit/auth.server.ts`: 단일 사용자 로그인과 서명된 세션
 - `src/mcp/server.ts`: 외부 에이전트용 stdio MCP
 - `src/routes/index.tsx`: Today vertical slice
 - `src/routes/inbox.tsx`: 빠른 캡처와 PARA 분류
+- `src/routes/tasks.tsx`: 전체 할 일과 일정 변경
 - `src/routes/projects.tsx`, `areas.tsx`, `resources.tsx`, `archive.tsx`: PARA 폴더 탐색
-- `src/routes/calendar.tsx`: 월간 캘린더
-- `src/routes/notes.tsx`: Markdown 노트 탐색, 편집, 미리보기, 보관
+- `src/routes/calendar.tsx`: 일·주·월 캘린더
+- `src/routes/whiteboards.tsx`: Excalidraw 호환 화이트보드
+- `src/routes/capture.tsx`: 모바일 빠른 기록
 - `src/components/ui/`: shadcn/ui 기반 공통 컴포넌트
 
 웹 UI와 MCP는 별도 저장 구현을 만들지 않고 `store.ts`를 공유한다.
