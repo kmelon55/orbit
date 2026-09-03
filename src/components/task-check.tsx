@@ -69,16 +69,20 @@ export function TaskExit({
 
 export function TaskEmpty({
 	show,
+	animate = true,
 	children,
 }: {
 	show: boolean;
+	animate?: boolean;
 	children: ReactNode;
 }) {
 	return (
 		<div
 			aria-hidden={!show}
 			className={cn(
-				"grid transition-[grid-template-rows,opacity] duration-300 ease-[var(--interaction-ease)] motion-reduce:transition-none",
+				"grid",
+				animate &&
+					"transition-[grid-template-rows,opacity] duration-300 ease-[var(--interaction-ease)] motion-reduce:transition-none",
 				show
 					? "grid-rows-[1fr] opacity-100"
 					: "pointer-events-none grid-rows-[0fr] opacity-0",
