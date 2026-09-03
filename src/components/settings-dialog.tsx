@@ -1,9 +1,14 @@
 import {
+	BadgeCheck,
+	Download,
 	Keyboard,
 	Monitor,
 	Moon,
 	Palette,
 	Settings,
+	Share,
+	Smartphone,
+	SquarePlus,
 	Sun,
 	X,
 } from "lucide-react";
@@ -23,13 +28,15 @@ import {
 	type NoteVimExitSequence,
 	useNoteVimPreference,
 } from "@/hooks/use-note-vim-preference";
+import { usePwaInstall } from "@/hooks/use-pwa-install";
 import { cn } from "@/lib/utils";
 
-type SettingsSection = "appearance" | "editor";
+type SettingsSection = "appearance" | "editor" | "install";
 
 const navigation = [
 	{ id: "appearance", label: "화면", icon: Palette },
 	{ id: "editor", label: "에디터", icon: Keyboard },
+	{ id: "install", label: "앱 설치", icon: Smartphone },
 ] as const;
 
 const exitSequences: Array<{
@@ -40,6 +47,134 @@ const exitSequences: Array<{
 	{ value: "jk", label: "j k", description: "빠르게 jk 입력" },
 	{ value: "none", label: "사용 안 함", description: "Esc만 사용" },
 ];
+
+function InstallSettings() {
+	const { ready, installed, platform, canInstall, install } = usePwaInstall();
+	const [installing, setInstalling] = useState(false);
+	const [message, setMessage] = useState<string>();
+
+	async function requestInstall() {
+		if (!canInstall || installing) return;
+		setInstalling(true);
+		setMessage(undefined);
+		try {
+			const outcome = await install();
+			if (outcome === "dismissed") {
+				setMessage("설치를 취소했습니다. 원할 때 다시 시도할 수 있습니다.");
+			} else if (outcome === "unavailable") {
+				setMessage("브라우저 메뉴에서 앱 설치를 선택해 주세요.");
+			}
+		} catch {
+			setMessage("설치창을 열지 못했습니다. 브라우저 메뉴를 이용해 주세요.");
+		} finally {
+			setInstalling(false);
+		}
+	}
+
+	return (
+		<>
+			<DialogHeader className="pr-10">
+				<DialogTitle>앱 설치</DialogTitle>
+				<DialogDescription>
+					Orbit을 홈 화면에 추가하면 브라우저 주소창 없이 앱처럼 열 수 있습니다.
+				</DialogDescription>
+			</DialogHeader>
+
+			<div className="mt-7 grid gap-4">
+				{installed ? (
+					<div className="flex items-start gap-3 rounded-xl border border-emerald-500/25 bg-emerald-500/8 p-4">
+						<BadgeCheck className="mt-0.5 size-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+						<div>
+							<h2 className="text-sm font-medium">
+								이 기기에 설치되어 있습니다
+							</h2>
+							<p className="mt-1 text-xs leading-5 text-muted-foreground">
+								홈 화면이나 앱 목록에서 Orbit을 바로 열 수 있습니다.
+							</p>
+						</div>
+					</div>
+				) : platform === "ios" ? (
+					<section className="grid gap-4">
+						<div className="flex items-start gap-3 rounded-xl border border-border/70 p-4">
+							<Smartphone className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+							<div>
+								<h2 className="text-sm font-medium">iPhone 또는 iPad</h2>
+								<p className="mt-1 text-xs leading-5 text-muted-foreground">
+									iOS에서는 Safari 메뉴를 이용해 직접 홈 화면에 추가합니다.
+								</p>
+							</div>
+						</div>
+						<ol className="grid gap-2 text-sm">
+							<li className="flex items-center gap-3 rounded-xl bg-muted/55 p-3">
+								<span className="grid size-8 shrink-0 place-items-center rounded-lg bg-background shadow-sm">
+									<Share className="size-4" />
+								</span>
+								<span>
+									Safari에서 <strong>공유</strong> 버튼을 누릅니다.
+								</span>
+							</li>
+							<li className="flex items-center gap-3 rounded-xl bg-muted/55 p-3">
+								<span className="grid size-8 shrink-0 place-items-center rounded-lg bg-background shadow-sm">
+									<SquarePlus className="size-4" />
+								</span>
+								<span>
+									<strong>홈 화면에 추가</strong>를 선택합니다.
+								</span>
+							</li>
+							<li className="flex items-center gap-3 rounded-xl bg-muted/55 p-3">
+								<span className="grid size-8 shrink-0 place-items-center rounded-lg bg-background text-xs font-semibold shadow-sm">
+									3
+								</span>
+								<span>
+									<strong>웹 앱으로 열기</strong>를 켠 뒤 추가합니다.
+								</span>
+							</li>
+						</ol>
+					</section>
+				) : (
+					<section className="grid gap-4">
+						<div className="flex items-start gap-3 rounded-xl border border-border/70 p-4">
+							<Download className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+							<div>
+								<h2 className="text-sm font-medium">
+									{platform === "android"
+										? "Android 앱으로 설치"
+										: "이 기기에 설치"}
+								</h2>
+								<p className="mt-1 text-xs leading-5 text-muted-foreground">
+									설치하면 홈 화면과 앱 목록에서 Orbit을 빠르게 실행할 수
+									있습니다.
+								</p>
+							</div>
+						</div>
+
+						{canInstall ? (
+							<Button
+								className="w-full"
+								disabled={installing}
+								onClick={() => void requestInstall()}
+							>
+								<Download /> {installing ? "설치창 여는 중" : "Orbit 설치"}
+							</Button>
+						) : (
+							<div className="rounded-xl bg-muted/55 p-4 text-xs leading-5 text-muted-foreground">
+								{ready
+									? "브라우저 메뉴에서 ‘앱 설치’ 또는 ‘홈 화면에 추가’를 선택해 주세요. 설치 조건이 충족되면 이곳에 설치 버튼이 나타납니다."
+									: "이 기기의 설치 가능 여부를 확인하고 있습니다."}
+							</div>
+						)}
+					</section>
+				)}
+
+				{message ? (
+					<output className="block text-xs text-muted-foreground">
+						{message}
+					</output>
+				) : null}
+			</div>
+		</>
+	);
+}
 
 export function SettingsDialog() {
 	const [section, setSection] = useState<SettingsSection>("editor");
@@ -140,7 +275,7 @@ export function SettingsDialog() {
 									</div>
 								</section>
 							</>
-						) : (
+						) : section === "editor" ? (
 							<>
 								<DialogHeader className="pr-10">
 									<DialogTitle>에디터</DialogTitle>
@@ -211,6 +346,8 @@ export function SettingsDialog() {
 									</section>
 								</div>
 							</>
+						) : (
+							<InstallSettings />
 						)}
 					</div>
 				</div>

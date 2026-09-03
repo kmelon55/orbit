@@ -1,5 +1,5 @@
 import { Download, Share, SquarePlus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -8,55 +8,20 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
-
-type InstallPromptEvent = Event & {
-	prompt: () => Promise<void>;
-	userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
-};
-
-function isStandalone() {
-	return (
-		window.matchMedia("(display-mode: standalone)").matches ||
-		("standalone" in navigator &&
-			(navigator as Navigator & { standalone?: boolean }).standalone === true)
-	);
-}
+import { usePwaInstall } from "@/hooks/use-pwa-install";
 
 export function InstallAppButton() {
-	const [prompt, setPrompt] = useState<InstallPromptEvent | null>(null);
-	const [ios, setIos] = useState(false);
-	const [installed, setInstalled] = useState(true);
 	const [open, setOpen] = useState(false);
+	const { ready, installed, platform, canInstall, install } = usePwaInstall();
 
-	useEffect(() => {
-		setInstalled(isStandalone());
-		setIos(/iPad|iPhone|iPod/.test(navigator.userAgent));
-		const onPrompt = (event: Event) => {
-			event.preventDefault();
-			setPrompt(event as InstallPromptEvent);
-		};
-		const onInstalled = () => {
-			setInstalled(true);
-			setPrompt(null);
-		};
-		window.addEventListener("beforeinstallprompt", onPrompt);
-		window.addEventListener("appinstalled", onInstalled);
-		return () => {
-			window.removeEventListener("beforeinstallprompt", onPrompt);
-			window.removeEventListener("appinstalled", onInstalled);
-		};
-	}, []);
+	if (!ready || installed || (platform !== "ios" && !canInstall)) return null;
 
-	if (installed || (!ios && !prompt)) return null;
-
-	async function install() {
-		if (!prompt) {
+	async function requestInstall() {
+		if (!canInstall) {
 			setOpen(true);
 			return;
 		}
-		await prompt.prompt();
-		const choice = await prompt.userChoice;
-		if (choice.outcome === "accepted") setPrompt(null);
+		await install();
 	}
 
 	return (
@@ -65,7 +30,7 @@ export function InstallAppButton() {
 				variant="outline"
 				size="sm"
 				className="ml-auto h-8 shrink-0 gap-1.5 rounded-lg px-2.5 text-xs md:hidden"
-				onClick={() => void install()}
+				onClick={() => void requestInstall()}
 			>
 				<Download className="size-3.5" /> 설치
 			</Button>
@@ -92,6 +57,14 @@ export function InstallAppButton() {
 							</span>
 							<span>
 								<strong>홈 화면에 추가</strong>를 선택합니다.
+							</span>
+						</li>
+						<li className="flex items-center gap-3 rounded-xl bg-muted/70 p-3">
+							<span className="grid size-8 shrink-0 place-items-center rounded-lg bg-background text-xs font-semibold shadow-sm">
+								3
+							</span>
+							<span>
+								<strong>웹 앱으로 열기</strong>를 켜고 추가합니다.
 							</span>
 						</li>
 					</ol>
