@@ -9,6 +9,7 @@ import {
 	Search,
 } from "lucide-react";
 import {
+	type ReactElement,
 	type ReactNode,
 	startTransition,
 	useCallback,
@@ -60,6 +61,7 @@ import {
 	ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useTaskToggle } from "@/hooks/use-task-toggle";
 import { cn } from "@/lib/utils";
 
@@ -67,6 +69,13 @@ type NoteDraft = {
 	title: string;
 	body: string;
 	tags: string;
+};
+
+export type ItemWorkspaceNavigatorContext = {
+	selectedId: string | null;
+	openItem: (id: string) => void;
+	openCreatedItem: (item: OrbitItem) => void;
+	renderItem: (item: OrbitItem, child: ReactElement) => ReactNode;
 };
 
 function noteDraft(item?: OrbitItem): NoteDraft {
@@ -153,7 +162,7 @@ function normalizeLegacyCanvasLinks(body: string, canvases: OrbitCanvas[]) {
 
 export function ItemWorkspace({
 	snapshot,
-	items,
+	items: sourceItems,
 	heading,
 	description,
 	create,
@@ -161,6 +170,7 @@ export function ItemWorkspace({
 	hideInboxTarget = false,
 	clearSelectionAfterMove = false,
 	navigator,
+	navigatorOnly = false,
 	showNavigator = false,
 	onShowNavigator,
 	scopeKey,
@@ -176,7 +186,10 @@ export function ItemWorkspace({
 	initialSelectedId?: string;
 	hideInboxTarget?: boolean;
 	clearSelectionAfterMove?: boolean;
-	navigator?: ReactNode;
+	navigator?:
+		| ReactNode
+		| ((context: ItemWorkspaceNavigatorContext) => ReactNode);
+	navigatorOnly?: boolean;
 	showNavigator?: boolean;
 	onShowNavigator?: () => void;
 	scopeKey?: string;
@@ -185,6 +198,7 @@ export function ItemWorkspace({
 	emptyDescription?: string;
 }) {
 	const router = useRouter();
+	const isMobile = useIsMobile();
 	const taskToggle = useTaskToggle();
 	useEffect(() => {
 		taskToggle.sync(snapshot.items);
@@ -197,6 +211,21 @@ export function ItemWorkspace({
 		return () =>
 			window.removeEventListener("orbit:canvas-renamed", refreshCanvases);
 	}, [router]);
+	const [localItems, setLocalItems] = useState<OrbitItem[]>([]);
+	const items = useMemo(() => {
+		const sourceIds = new Set(sourceItems.map((item) => item.id));
+		return [
+			...localItems.filter((item) => !sourceIds.has(item.id)),
+			...sourceItems,
+		];
+	}, [localItems, sourceItems]);
+	useEffect(() => {
+		const sourceIds = new Set(sourceItems.map((item) => item.id));
+		setLocalItems((current) => {
+			const next = current.filter((item) => !sourceIds.has(item.id));
+			return next.length === current.length ? current : next;
+		});
+	}, [sourceItems]);
 	const initialItem =
 		items.find((item) => item.id === initialSelectedId) ?? items[0];
 	const [selectedId, setSelectedId] = useState<string | null>(
@@ -227,10 +256,12 @@ export function ItemWorkspace({
 	const [draggingId, setDraggingId] = useState<string | null>(null);
 	const [organizeMessage, setOrganizeMessage] = useState<string>();
 	const [confirm, setConfirm] = useState<ItemConfirmAction | null>(null);
+	const [mobilePane, setMobilePane] = useState<"list" | "editor">("list");
 	const [linkPickerAnchor, setLinkPickerAnchor] =
 		useState<NoteEditorAnchor | null>(null);
 	const [savedById, setSavedById] = useState<Record<string, NoteDraft>>({});
 	const [saveErrors, setSaveErrors] = useState<Record<string, boolean>>({});
+	const [createError, setCreateError] = useState(false);
 	const selectedKey = selectedId ?? selected?.id ?? null;
 	const selectedKeyRef = useRef<string | null>(selectedKey);
 	selectedKeyRef.current = selectedKey;
@@ -242,6 +273,7 @@ export function ItemWorkspace({
 		selected ? { [selected.id]: initialStoredDraft } : {},
 	);
 	const saveQueuesRef = useRef<Map<string, Promise<void>>>(new Map());
+	const createInFlightRef = useRef(false);
 	const persistRef = useRef<() => Promise<void>>(async () => {});
 	const editorRef = useRef<NoteEditorHandle>(null);
 	const savedByIdRef = useRef(savedById);
@@ -452,17 +484,33 @@ export function ItemWorkspace({
 	}, [applyNote, items, scopeKey, selectedId]);
 
 	function chooseItem(id: string) {
-		if (id === selectedKey) return;
+		if (id === selectedKey) {
+			setMobilePane("editor");
+			return;
+		}
 		void persistRef.current();
 		const item = items.find((entry) => entry.id === id);
 		applyNote(item, id);
+		setMobilePane("editor");
 	}
 
-	async function openLinkedNote(id: string) {
+	function openCreatedItem(item: OrbitItem) {
+		setLocalItems((current) => [
+			item,
+			...current.filter((entry) => entry.id !== item.id),
+		]);
+		applyNote(item, item.id);
+		setMobilePane("editor");
+	}
+
+	function openLinkedNote(id: string) {
 		if (id === selectedKeyRef.current) return;
-		await persistRef.current();
+		void persistRef.current();
 		const item = snapshot.items.find((entry) => entry.id === id);
-		if (item) applyNote(item, id);
+		if (item) {
+			applyNote(item, id);
+			setMobilePane("editor");
+		}
 	}
 
 	async function attachCanvas(canvas: OrbitSnapshot["canvases"][number]) {
@@ -501,43 +549,64 @@ export function ItemWorkspace({
 	}
 
 	async function createItem() {
-		if (disableCreate) return;
-		await persistRef.current();
-		const created = await mutateOrbit({
-			data: create
-				? {
-						action: "create-item",
-						input: {
-							title: "새 노트",
-							type: create.type ?? "note",
-							body: "",
-							space: create.space,
-							folder: create.folder,
+		if (disableCreate || createInFlightRef.current) return;
+		createInFlightRef.current = true;
+		setCreateError(false);
+		void persistRef.current();
+		try {
+			const created = await mutateOrbit({
+				data: create
+					? {
+							action: "create-item",
+							input: {
+								title: "새 노트",
+								type: create.type ?? "note",
+								body: "",
+								space: create.space,
+								folder: create.folder,
+							},
+						}
+					: {
+							action: "capture",
+							input: { title: "새 노트", type: "note", body: "" },
 						},
-					}
-				: {
-						action: "capture",
-						input: { title: "새 노트", type: "note", body: "" },
-					},
-		});
-		await router.invalidate();
-		if (created && "type" in created && "space" in created) {
-			applyNote(created, created.id);
+			});
+			if (created && "type" in created && "space" in created) {
+				setLocalItems((current) => [
+					created,
+					...current.filter((item) => item.id !== created.id),
+				]);
+				applyNote(created, created.id);
+				setMobilePane("editor");
+				void router.invalidate();
+			}
+		} catch {
+			setCreateError(true);
+		} finally {
+			createInFlightRef.current = false;
 		}
 	}
 
 	async function archiveItem(item: OrbitItem) {
 		await persistRef.current();
 		await mutateOrbit({ data: { action: "archive-item", id: item.id } });
-		if (item.id === selectedKey) setSelectedId(null);
+		if (item.id === selectedKey) {
+			setSelectedId(null);
+			setMobilePane("list");
+		}
+		setLocalItems((current) => current.filter((entry) => entry.id !== item.id));
 		await router.invalidate();
 	}
 
 	async function deleteItem(item: OrbitItem) {
 		await mutateOrbit({ data: { action: "delete-item", id: item.id } });
-		if (item.id === selectedKey) setSelectedId(null);
+		if (item.id === selectedKey) {
+			setSelectedId(null);
+			setMobilePane("list");
+		}
 		delete localDraftsRef.current[item.id];
 		delete lastSavedByIdRef.current[item.id];
+		setLocalItems((current) => current.filter((entry) => entry.id !== item.id));
 		setSavedById((current) => {
 			if (!(item.id in current)) return current;
 			const next = { ...current };
@@ -561,7 +630,9 @@ export function ItemWorkspace({
 			(space === "archive" || clearSelectionAfterMove)
 		) {
 			setSelectedId(null);
+			setMobilePane("list");
 		}
+		setLocalItems((current) => current.filter((entry) => entry.id !== item.id));
 		await router.invalidate();
 		const destination =
 			folder ??
@@ -638,13 +709,25 @@ export function ItemWorkspace({
 		};
 	}
 
+	const renderedNavigator =
+		typeof navigator === "function"
+			? navigator({
+					selectedId: selected?.id ?? null,
+					openItem: chooseItem,
+					openCreatedItem,
+					renderItem: (item, child) => (
+						<ItemContextMenu {...itemMenu(item)}>{child}</ItemContextMenu>
+					),
+				})
+			: navigator;
+
 	const listPane = (
 		<ItemContextMenu
 			onCreate={disableCreate ? undefined : () => void createItem()}
 		>
 			<div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-sidebar/30">
 				<div className="flex h-14 shrink-0 items-center justify-between gap-2 px-3">
-					{navigator ? (
+					{renderedNavigator && isMobile && !navigatorOnly ? (
 						<Button
 							variant="ghost"
 							size="icon-sm"
@@ -656,9 +739,15 @@ export function ItemWorkspace({
 					) : null}
 					<div className="min-w-0 flex-1 overflow-hidden">
 						<p className="truncate text-sm font-medium">{heading}</p>
-						<p className="truncate text-xs text-muted-foreground">
-							{description ?? `${items.length}개`}
-						</p>
+						{createError ? (
+							<output className="block truncate text-xs text-destructive">
+								새 노트를 만들지 못했습니다.
+							</output>
+						) : (
+							<p className="truncate text-xs text-muted-foreground">
+								{description ?? `${items.length}개`}
+							</p>
+						)}
 					</div>
 					<div className="flex shrink-0 items-center gap-1">
 						{disableCreate ? null : (
@@ -761,21 +850,24 @@ export function ItemWorkspace({
 			</div>
 		</ItemContextMenu>
 	);
-	const navigationPane = navigator ? (
-		<div className="h-full overflow-hidden">
-			<div
-				className={cn(
-					"flex h-full w-[200%] transition-transform duration-300 ease-[var(--interaction-ease)]",
-					showNavigator ? "translate-x-0" : "-translate-x-1/2",
-				)}
-			>
-				<div className="h-full w-1/2 min-w-0">{navigator}</div>
-				<div className="h-full w-1/2 min-w-0">{listPane}</div>
+	const navigationPane =
+		renderedNavigator && isMobile && !navigatorOnly ? (
+			<div className="h-full overflow-hidden">
+				<div
+					className={cn(
+						"flex h-full w-[200%] transition-transform duration-300 ease-[var(--interaction-ease)]",
+						showNavigator ? "translate-x-0" : "-translate-x-1/2",
+					)}
+				>
+					<div className="h-full w-1/2 min-w-0">{renderedNavigator}</div>
+					<div className="h-full w-1/2 min-w-0">{listPane}</div>
+				</div>
 			</div>
-		</div>
-	) : (
-		listPane
-	);
+		) : navigatorOnly && renderedNavigator ? (
+			renderedNavigator
+		) : (
+			listPane
+		);
 
 	const dialogs = (
 		<>
@@ -860,6 +952,11 @@ export function ItemWorkspace({
 							{emptyDescription ??
 								"우클릭하거나 아래 버튼으로 새 노트를 만드세요."}
 						</p>
+						{createError ? (
+							<output className="mt-2 block text-sm text-destructive">
+								새 노트를 만들지 못했습니다.
+							</output>
+						) : null}
 						{disableCreate ? null : (
 							<Button className="mt-4" onClick={() => void createItem()}>
 								<Plus /> 새 노트
@@ -869,27 +966,49 @@ export function ItemWorkspace({
 				</div>
 			</ItemContextMenu>
 		);
-		if (navigator) {
+		if (isMobile) {
+			return (
+				<div className="relative h-full min-h-0 overflow-hidden">
+					{navigationPane}
+					{dialogs}
+				</div>
+			);
+		}
+		if (renderedNavigator) {
 			return (
 				<div className="relative h-full min-h-0 overflow-hidden">
 					<ResizablePanelGroup
-						id="orbit-notes"
+						id="orbit-folder-notes"
 						orientation="horizontal"
 						className="h-full"
 					>
 						<ResizablePanel
-							id="orbit-note-list"
-							defaultSize="28%"
-							minSize="18%"
-							maxSize="46%"
+							id="orbit-folder-tree"
+							defaultSize={navigatorOnly ? "32%" : "22%"}
+							minSize={navigatorOnly ? "22%" : "16%"}
+							maxSize={navigatorOnly ? "46%" : "32%"}
 							className="min-w-0 overflow-hidden"
 						>
-							{navigationPane}
+							{renderedNavigator}
 						</ResizablePanel>
+						{navigatorOnly ? null : (
+							<>
+								<ResizableHandle withHandle />
+								<ResizablePanel
+									id="orbit-note-list"
+									defaultSize="25%"
+									minSize="18%"
+									maxSize="36%"
+									className="min-w-0 overflow-hidden"
+								>
+									{listPane}
+								</ResizablePanel>
+							</>
+						)}
 						<ResizableHandle withHandle />
 						<ResizablePanel
 							id="orbit-note-editor"
-							defaultSize="72%"
+							defaultSize={navigatorOnly ? "68%" : "53%"}
 							minSize="40%"
 							className="min-w-0 overflow-hidden"
 						>
@@ -912,6 +1031,19 @@ export function ItemWorkspace({
 		<div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
 			<ItemContextMenu {...itemMenu(selected)}>
 				<header className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-border/50 bg-background/60 px-4 py-1.5 backdrop-blur-xl">
+					{isMobile ? (
+						<Button
+							variant="ghost"
+							size="icon-sm"
+							onClick={() => {
+								void persistRef.current();
+								setMobilePane("list");
+							}}
+							aria-label="목록으로 돌아가기"
+						>
+							<ChevronLeft />
+						</Button>
+					) : null}
 					<p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
 						{selected.path}
 					</p>
@@ -957,7 +1089,7 @@ export function ItemWorkspace({
 				</header>
 			</ItemContextMenu>
 			<div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
-				<div className="mx-auto w-full max-w-[52rem] min-w-0 pr-6 pl-16 pt-6">
+				<div className="mx-auto w-full max-w-[52rem] min-w-0 px-4 pt-5 sm:pr-6 sm:pl-16 sm:pt-6">
 					<NoteMetadataEditor
 						key={selected.id}
 						title={draft.title}
@@ -970,7 +1102,7 @@ export function ItemWorkspace({
 						<span>수정 {formatDateTime(selected.updated)}</span>
 					</div>
 				</div>
-				<div className="mx-auto flex w-full max-w-[52rem] min-w-0 flex-1 flex-col pr-6 pl-16">
+				<div className="mx-auto flex w-full max-w-[52rem] min-w-0 flex-1 flex-col px-4 sm:pr-6 sm:pl-16">
 					<NoteEditor
 						ref={editorRef}
 						noteId={selected.id}
@@ -984,6 +1116,81 @@ export function ItemWorkspace({
 			</div>
 		</div>
 	);
+
+	if (isMobile) {
+		return (
+			<div className="relative h-full min-h-0 overflow-hidden">
+				{mobilePane === "editor" ? editorPane : navigationPane}
+				<NoteOrganizeTray
+					open={organizeOpen || draggingId !== null}
+					snapshot={snapshot}
+					activeItem={selected}
+					draggingId={draggingId}
+					message={organizeMessage}
+					hideInboxTarget={hideInboxTarget}
+					onClose={() => setOrganizeOpen(false)}
+					onMove={moveItemById}
+				/>
+				{dialogs}
+			</div>
+		);
+	}
+
+	if (renderedNavigator) {
+		return (
+			<div className="relative h-full min-h-0 overflow-hidden">
+				<ResizablePanelGroup
+					id="orbit-folder-notes"
+					orientation="horizontal"
+					className="h-full"
+				>
+					<ResizablePanel
+						id="orbit-folder-tree"
+						defaultSize={navigatorOnly ? "32%" : "22%"}
+						minSize={navigatorOnly ? "22%" : "16%"}
+						maxSize={navigatorOnly ? "46%" : "32%"}
+						className="min-w-0 overflow-hidden"
+					>
+						{renderedNavigator}
+					</ResizablePanel>
+					{navigatorOnly ? null : (
+						<>
+							<ResizableHandle withHandle />
+							<ResizablePanel
+								id="orbit-note-list"
+								defaultSize="25%"
+								minSize="18%"
+								maxSize="36%"
+								className="min-w-0 overflow-hidden"
+							>
+								{listPane}
+							</ResizablePanel>
+						</>
+					)}
+					<ResizableHandle withHandle />
+					<ResizablePanel
+						id="orbit-note-editor"
+						defaultSize={navigatorOnly ? "68%" : "53%"}
+						minSize="40%"
+						className="min-w-0 overflow-hidden"
+					>
+						{editorPane}
+					</ResizablePanel>
+				</ResizablePanelGroup>
+				<NoteOrganizeTray
+					open={organizeOpen || draggingId !== null}
+					snapshot={snapshot}
+					activeItem={selected}
+					draggingId={draggingId}
+					message={organizeMessage}
+					hideInboxTarget={hideInboxTarget}
+					onClose={() => setOrganizeOpen(false)}
+					onMove={moveItemById}
+				/>
+				{dialogs}
+			</div>
+		);
+	}
 
 	return (
 		<div className="relative h-full min-h-0 overflow-hidden">
