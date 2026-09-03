@@ -22,6 +22,7 @@ import { ARCHIVE_SPACE, PARA_SPACES } from "#/lib/orbit/para";
 import type { OrbitSnapshot, OrbitSpace } from "#/lib/orbit/schema";
 import { ItemContextMenu } from "@/components/item-context-menu";
 import { ModeToggle } from "@/components/mode-toggle";
+import { SettingsDialog } from "@/components/settings-dialog";
 import { Button } from "@/components/ui/button";
 import {
 	Sidebar,
@@ -232,6 +233,7 @@ export function AppSidebar({ snapshot }: { snapshot: OrbitSnapshot }) {
 						Local files
 					</div>
 					<div className="flex items-center gap-0.5">
+						<SettingsDialog />
 						<Button
 							variant="ghost"
 							size="icon"

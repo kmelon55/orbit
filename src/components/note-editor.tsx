@@ -5,9 +5,11 @@ import { TextSelection } from "@milkdown/kit/prose/state";
 import {
 	forwardRef,
 	memo,
+	useCallback,
 	useEffect,
 	useImperativeHandle,
 	useRef,
+	useState,
 } from "react";
 import "@milkdown/crepe/theme/common/style.css";
 import {
@@ -15,6 +17,12 @@ import {
 	orbitCanvasSchema,
 	orbitCanvasView,
 } from "@/components/note-canvas-node";
+import { useNoteVimPreference } from "@/hooks/use-note-vim-preference";
+import {
+	createNoteVimController,
+	createNoteVimCursorPlugin,
+	type NoteVimMode,
+} from "@/lib/orbit/note-vim";
 
 export type NoteEditorHandle = {
 	insertLink: (label: string, href: string) => string | null;
@@ -61,6 +69,13 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 	) {
 		const rootRef = useRef<HTMLDivElement>(null);
 		const crepeRef = useRef<Crepe | null>(null);
+		const { vimEnabled, exitSequence } = useNoteVimPreference();
+		const [vimMode, setVimMode] = useState<NoteVimMode>("insert");
+		const vimEnabledRef = useRef(vimEnabled);
+		const vimModeRef = useRef<NoteVimMode>("insert");
+		const vimExitSequenceRef = useRef(exitSequence);
+		const vimCommandRef = useRef(false);
+		const previousVimEnabledRef = useRef(false);
 		const userInteractedRef = useRef(false);
 		const onChangeRef = useRef(onChange);
 		const onOpenNoteRef = useRef(onOpenNote);
@@ -76,10 +91,38 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 		onRequestNoteLinkRef.current = onRequestNoteLink;
 		onRequestCanvasRef.current = onRequestCanvas;
 		onReadyChangeRef.current = onReadyChange;
+		const changeVimMode = useCallback((mode: NoteVimMode) => {
+			vimModeRef.current = mode;
+			setVimMode(mode);
+		}, []);
+		vimEnabledRef.current = vimEnabled;
+		vimExitSequenceRef.current = exitSequence;
 		if (noteIdRef.current !== noteId) {
 			noteIdRef.current = noteId;
 			bootMarkdownRef.current = markdown;
 		}
+
+		useEffect(() => {
+			if (vimEnabled && !previousVimEnabledRef.current) {
+				changeVimMode("normal");
+			} else if (!vimEnabled) {
+				changeVimMode("insert");
+			}
+			previousVimEnabledRef.current = vimEnabled;
+		}, [vimEnabled, changeVimMode]);
+
+		useEffect(() => {
+			const root = rootRef.current;
+			if (root) {
+				root.dataset.vimMode = vimEnabled ? vimMode : "off";
+			}
+			const crepe = crepeRef.current;
+			if (!crepe) return;
+			crepe.editor.action((ctx) => {
+				const view = ctx.get(editorViewCtx);
+				view.dispatch(view.state.tr);
+			});
+		}, [vimEnabled, vimMode]);
 
 		useImperativeHandle(ref, () => ({
 			insertLink(label, href) {
@@ -164,6 +207,7 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 		useEffect(() => {
 			const root = rootRef.current;
 			if (!root) return;
+			if (vimEnabledRef.current) changeVimMode("normal");
 			const openedNoteId = noteId;
 			void openedNoteId;
 			root.replaceChildren();
@@ -250,7 +294,49 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 				...orbitCanvasRemark,
 				...orbitCanvasSchema,
 				orbitCanvasView,
+				createNoteVimCursorPlugin({
+					getEnabled: () => vimEnabledRef.current,
+					getMode: () => vimModeRef.current,
+					isApplyingCommand: () => vimCommandRef.current,
+				}),
 			]);
+			const vimController = createNoteVimController({
+				getMode: () => vimModeRef.current,
+				getExitSequence: () => vimExitSequenceRef.current,
+				setMode: changeVimMode,
+			});
+			const handleVimKeyDown = (event: KeyboardEvent) => {
+				if (!vimEnabledRef.current) return;
+				const modeBeforeCommand = vimModeRef.current;
+				const commandMode = modeBeforeCommand !== "insert";
+				if (commandMode && !event.metaKey && !event.altKey) {
+					event.preventDefault();
+					event.stopImmediatePropagation();
+				}
+				let handled = false;
+				vimCommandRef.current = true;
+				try {
+					crepe.editor.action((ctx) => {
+						handled = vimController.handleKeyDown(
+							ctx.get(editorViewCtx),
+							event,
+						);
+					});
+				} finally {
+					vimCommandRef.current = false;
+				}
+				if (!handled || commandMode) return;
+				event.preventDefault();
+				event.stopImmediatePropagation();
+			};
+			const blockCommandModeInput = (event: Event) => {
+				if (!vimEnabledRef.current || vimModeRef.current === "insert") return;
+				event.preventDefault();
+				event.stopImmediatePropagation();
+			};
+			root.addEventListener("keydown", handleVimKeyDown, true);
+			root.addEventListener("beforeinput", blockCommandModeInput, true);
+			root.addEventListener("compositionstart", blockCommandModeInput, true);
 
 			crepe.on((listener) => {
 				listener.markdownUpdated((_ctx, next) => {
@@ -277,16 +363,42 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 					root.removeEventListener(eventName, markUserInteraction, true);
 				}
 				root.removeEventListener("click", openInternalLink);
+				root.removeEventListener("keydown", handleVimKeyDown, true);
+				root.removeEventListener("beforeinput", blockCommandModeInput, true);
+				root.removeEventListener(
+					"compositionstart",
+					blockCommandModeInput,
+					true,
+				);
 				void crepe.destroy();
 				root.replaceChildren();
 			};
-		}, [noteId, placeholder]);
+		}, [noteId, placeholder, changeVimMode]);
 
 		return (
-			<div
-				ref={rootRef}
-				className="orbit-note-editor min-h-0 w-full min-w-0 flex-1"
-			/>
+			<div className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col">
+				<div
+					ref={rootRef}
+					data-vim-mode={vimEnabled ? vimMode : "off"}
+					className="orbit-note-editor min-h-0 w-full min-w-0 flex-1"
+				/>
+				{vimEnabled ? (
+					<output
+						className="orbit-vim-status sticky right-3 bottom-3 z-20 ml-auto"
+						aria-live="polite"
+					>
+						<span>VIM</span>
+						<span aria-hidden="true">·</span>
+						<span>
+							{vimMode === "normal"
+								? "일반"
+								: vimMode === "visual"
+									? "비주얼"
+									: "입력"}
+						</span>
+					</output>
+				) : null}
+			</div>
 		);
 	},
 );
