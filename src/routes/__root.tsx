@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import { getOrbitAuthStatus } from "#/lib/orbit/auth";
 import { loadOrbit } from "#/lib/orbit/functions";
 import { AppShell } from "@/components/app-shell";
+import { ServiceWorkerRegister } from "@/components/service-worker-register";
 import { ThemeProvider } from "@/components/theme-provider";
 import appCss from "../styles.css?url";
 
@@ -39,13 +40,22 @@ export const Route = createRootRoute({
 					"A private, file-first second brain for notes, tasks, PARA, and calendar.",
 			},
 			{ name: "theme-color", content: "#f3f3f7" },
+			{ name: "mobile-web-app-capable", content: "yes" },
+			{ name: "apple-mobile-web-app-capable", content: "yes" },
+			{
+				name: "apple-mobile-web-app-status-bar-style",
+				content: "default",
+			},
+			{ name: "apple-mobile-web-app-title", content: "Orbit" },
+			{ name: "format-detection", content: "telephone=no" },
 			{ title: "Orbit · File-first workspace" },
 		],
 		links: [
 			{ rel: "stylesheet", href: appCss },
+			{ rel: "manifest", href: "/manifest.webmanifest" },
 			{ rel: "icon", href: "/orbit.png", type: "image/png" },
 			{ rel: "icon", href: "/orbit.svg", type: "image/svg+xml" },
-			{ rel: "apple-touch-icon", href: "/orbit.png" },
+			{ rel: "apple-touch-icon", href: "/icons/orbit-apple-touch.png" },
 		],
 	}),
 	component: RootLayout,
@@ -81,6 +91,7 @@ function RootDocument({ children }: { children: ReactNode }) {
 			</head>
 			<body>
 				<ThemeProvider>{children}</ThemeProvider>
+				<ServiceWorkerRegister />
 				<Scripts />
 			</body>
 		</html>

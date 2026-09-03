@@ -115,6 +115,7 @@
 	body {
 		@apply min-h-svh bg-background text-foreground antialiased;
 		margin: 0;
+		overscroll-behavior-y: none;
 	}
 
 	:where(
@@ -145,6 +146,17 @@
 
 	::selection {
 		background: color-mix(in oklch, var(--foreground) 14%, transparent);
+	}
+}
+
+.orbit-mobile-nav {
+	padding-bottom: max(0.35rem, env(safe-area-inset-bottom));
+}
+
+@media (display-mode: standalone) and (max-width: 767px) {
+	.orbit-mobile-header {
+		padding-top: env(safe-area-inset-top);
+		height: calc(3rem + env(safe-area-inset-top));
 	}
 }
 

@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ArchiveRouteImport } from './routes/archive'
 import { Route as AreasRouteImport } from './routes/areas'
 import { Route as CalendarRouteImport } from './routes/calendar'
+import { Route as CaptureRouteImport } from './routes/capture'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ProjectsRouteImport } from './routes/projects'
@@ -44,6 +45,11 @@ const AreasRoute = AreasRouteImport.update({
 const CalendarRoute = CalendarRouteImport.update({
   id: '/calendar',
   path: '/calendar',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CaptureRoute = CaptureRouteImport.update({
+  id: '/capture',
+  path: '/capture',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InboxRoute = InboxRouteImport.update({
@@ -112,6 +118,7 @@ export interface FileRoutesByFullPath {
   '/archive': typeof ArchiveRoute
   '/areas': typeof AreasRouteWithChildren
   '/calendar': typeof CalendarRoute
+  '/capture': typeof CaptureRoute
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
   '/projects': typeof ProjectsRouteWithChildren
@@ -129,6 +136,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/archive': typeof ArchiveRoute
   '/calendar': typeof CalendarRoute
+  '/capture': typeof CaptureRoute
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
   '/tasks': typeof TasksRoute
@@ -146,6 +154,7 @@ export interface FileRoutesById {
   '/archive': typeof ArchiveRoute
   '/areas': typeof AreasRouteWithChildren
   '/calendar': typeof CalendarRoute
+  '/capture': typeof CaptureRoute
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
   '/projects': typeof ProjectsRouteWithChildren
@@ -166,6 +175,7 @@ export interface FileRouteTypes {
     | '/archive'
     | '/areas'
     | '/calendar'
+    | '/capture'
     | '/inbox'
     | '/login'
     | '/projects'
@@ -183,6 +193,7 @@ export interface FileRouteTypes {
     | '/'
     | '/archive'
     | '/calendar'
+    | '/capture'
     | '/inbox'
     | '/login'
     | '/tasks'
@@ -199,6 +210,7 @@ export interface FileRouteTypes {
     | '/archive'
     | '/areas'
     | '/calendar'
+    | '/capture'
     | '/inbox'
     | '/login'
     | '/projects'
@@ -218,6 +230,7 @@ export interface RootRouteChildren {
   ArchiveRoute: typeof ArchiveRoute
   AreasRoute: typeof AreasRouteWithChildren
   CalendarRoute: typeof CalendarRoute
+  CaptureRoute: typeof CaptureRoute
   InboxRoute: typeof InboxRoute
   LoginRoute: typeof LoginRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
@@ -254,6 +267,13 @@ declare module '@tanstack/react-router' {
       path: '/calendar'
       fullPath: '/calendar'
       preLoaderRoute: typeof CalendarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/capture': {
+      id: '/capture'
+      path: '/capture'
+      fullPath: '/capture'
+      preLoaderRoute: typeof CaptureRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/inbox': {
@@ -388,6 +408,7 @@ const rootRouteChildren: RootRouteChildren = {
   ArchiveRoute: ArchiveRoute,
   AreasRoute: AreasRouteWithChildren,
   CalendarRoute: CalendarRoute,
+  CaptureRoute: CaptureRoute,
   InboxRoute: InboxRoute,
   LoginRoute: LoginRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
