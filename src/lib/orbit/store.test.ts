@@ -7,12 +7,15 @@ import LZString from "lz-string";
 import {
 	archiveOrbitItem,
 	createOrbitCanvas,
+	createOrbitFolder,
 	createOrbitItem,
+	deleteOrbitFolder,
 	fileOrbitItem,
 	getOrbitCanvas,
 	getOrbitSnapshot,
 	renameOrbitCanvas,
 	saveOrbitCanvas,
+	updateOrbitFolder,
 } from "./store";
 
 test("archived notes keep their folder in the unified folder browser", async () => {
@@ -38,8 +41,118 @@ test("archived notes keep their folder in the unified folder browser", async () 
 
 		const snapshot = await getOrbitSnapshot();
 		assert.deepEqual(snapshot.folders.archive, [
-			{ space: "archive", slug: "출시-준비", count: 1 },
+			{
+				space: "archive",
+				slug: "출시-준비",
+				name: "출시-준비",
+				parent: undefined,
+				depth: 0,
+				color: "amber",
+				count: 1,
+				descendantCount: 1,
+			},
 		]);
+	} finally {
+		if (previousVault === undefined) delete process.env.ORBIT_VAULT_DIR;
+		else process.env.ORBIT_VAULT_DIR = previousVault;
+		await rm(vault, { recursive: true, force: true });
+	}
+});
+
+test("PARA folders support arbitrary nesting, colors, renaming, and safe deletion", async () => {
+	const previousVault = process.env.ORBIT_VAULT_DIR;
+	const vault = await mkdtemp(path.join(os.tmpdir(), "orbit-folders-"));
+	process.env.ORBIT_VAULT_DIR = vault;
+
+	try {
+		const root = await createOrbitFolder({ space: "project", name: "업무" });
+		const child = await createOrbitFolder({
+			space: "project",
+			name: "출시",
+			parent: root.slug,
+			color: "blue",
+		});
+		const grandchild = await createOrbitFolder({
+			space: "project",
+			name: "한국",
+			parent: child.slug,
+		});
+		const note = await createOrbitItem({
+			title: "체크리스트",
+			body: "중첩 폴더에 저장된다.",
+			type: "note",
+			space: "project",
+			folder: grandchild.slug,
+		});
+		assert.equal(note?.folder, "업무/출시/한국");
+		assert.match(note?.path ?? "", /^projects\/업무\/출시\/한국\//);
+
+		let snapshot = await getOrbitSnapshot();
+		assert.deepEqual(
+			snapshot.folders.project.map((folder) => ({
+				slug: folder.slug,
+				parent: folder.parent,
+				depth: folder.depth,
+				color: folder.color,
+				count: folder.count,
+				descendantCount: folder.descendantCount,
+			})),
+			[
+				{
+					slug: "업무",
+					parent: undefined,
+					depth: 0,
+					color: "amber",
+					count: 0,
+					descendantCount: 1,
+				},
+				{
+					slug: "업무/출시",
+					parent: "업무",
+					depth: 1,
+					color: "blue",
+					count: 0,
+					descendantCount: 1,
+				},
+				{
+					slug: "업무/출시/한국",
+					parent: "업무/출시",
+					depth: 2,
+					color: "amber",
+					count: 1,
+					descendantCount: 1,
+				},
+			],
+		);
+
+		await updateOrbitFolder({
+			space: "project",
+			path: root.slug,
+			name: "회사",
+		});
+		snapshot = await getOrbitSnapshot();
+		assert.equal(snapshot.items[0]?.folder, "회사/출시/한국");
+		assert.equal(
+			snapshot.folders.project.find((folder) => folder.slug === "회사/출시")
+				?.color,
+			"blue",
+		);
+		await assert.rejects(
+			deleteOrbitFolder({ space: "project", path: "회사" }),
+			/비어 있는 폴더|하위 폴더/,
+		);
+
+		const empty = await createOrbitFolder({
+			space: "project",
+			name: "임시",
+		});
+		await deleteOrbitFolder({ space: "project", path: empty.slug });
+		assert.equal(
+			(await getOrbitSnapshot()).folders.project.some(
+				(folder) => folder.slug === empty.slug,
+			),
+			false,
+		);
 	} finally {
 		if (previousVault === undefined) delete process.env.ORBIT_VAULT_DIR;
 		else process.env.ORBIT_VAULT_DIR = previousVault;

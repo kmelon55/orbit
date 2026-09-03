@@ -117,7 +117,7 @@ export function folderOf(item: OrbitItem) {
 			parts[0] === "archive") &&
 		parts.length >= 3
 	) {
-		return parts[1];
+		return parts.slice(1, -1).join("/");
 	}
 	return undefined;
 }

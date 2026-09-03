@@ -4,6 +4,7 @@ import {
 	readdir,
 	readFile,
 	rename,
+	rmdir,
 	stat,
 	unlink,
 	writeFile,
@@ -17,15 +18,20 @@ import {
 	type CreateItemInput,
 	createFolderInputSchema,
 	createItemInputSchema,
+	type DeleteFolderInput,
+	deleteFolderInputSchema,
 	type FileItemInput,
 	fileItemInputSchema,
 	type OrbitCanvas,
 	type OrbitFolder,
+	type OrbitFolderColor,
 	type OrbitItem,
 	type OrbitSnapshot,
 	type OrbitSpace,
 	orbitItemSchema,
+	type UpdateFolderInput,
 	type UpdateNoteInput,
+	updateFolderInputSchema,
 	updateNoteInputSchema,
 } from "./schema";
 import {
@@ -48,6 +54,18 @@ const PARA_VAULT: Record<"project" | "area" | "resource", string> = {
 	project: "projects",
 	area: "areas",
 	resource: "resources",
+};
+
+const DEFAULT_FOLDER_COLOR: OrbitFolderColor = "amber";
+
+type FolderMetadata = {
+	version: 1;
+	folders: Partial<
+		Record<
+			"project" | "area" | "resource" | "archive",
+			Record<string, { color: OrbitFolderColor }>
+		>
+	>;
 };
 
 function getVaultRoot() {
@@ -106,9 +124,21 @@ function folderFromPath(relativePath: string) {
 			parts[0] === "archive") &&
 		parts.length >= 3
 	) {
-		return parts[1];
+		return parts.slice(1, -1).join("/");
 	}
 	return undefined;
+}
+
+function normalizeFolderPath(value: string) {
+	return value
+		.split(/[\\/]+/)
+		.map((segment) => toVaultSlug(segment))
+		.filter(Boolean)
+		.join("/");
+}
+
+function folderRoot(space: "project" | "area" | "resource" | "archive") {
+	return space === "archive" ? "archive" : PARA_VAULT[space];
 }
 
 function assertInsideVault(vaultRoot: string, targetPath: string) {
@@ -267,16 +297,60 @@ async function listOrbitCanvases(vaultRoot: string) {
 		.sort((left, right) => right.updated.localeCompare(left.updated));
 }
 
-async function listImmediateFolders(directory: string) {
+async function listNestedFolders(
+	directory: string,
+	prefix = "",
+): Promise<string[]> {
 	try {
 		const entries = await readdir(directory, { withFileTypes: true });
-		return entries
+		const folders = entries
 			.filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
 			.map((entry) => entry.name)
 			.sort((left, right) => left.localeCompare(right, "ko"));
+		const nested = await Promise.all(
+			folders.map(async (name) => {
+				const slug = prefix ? `${prefix}/${name}` : name;
+				return [
+					slug,
+					...(await listNestedFolders(path.join(directory, name), slug)),
+				];
+			}),
+		);
+		return nested.flat();
 	} catch {
 		return [];
 	}
+}
+
+function emptyFolderMetadata(): FolderMetadata {
+	return { version: 1, folders: {} };
+}
+
+async function readFolderMetadata(vaultRoot: string): Promise<FolderMetadata> {
+	try {
+		const raw = await readFile(
+			path.join(vaultRoot, ".orbit", "folders.json"),
+			"utf8",
+		);
+		const parsed = JSON.parse(raw) as FolderMetadata;
+		return parsed.version === 1 && parsed.folders
+			? parsed
+			: emptyFolderMetadata();
+	} catch {
+		return emptyFolderMetadata();
+	}
+}
+
+async function writeFolderMetadata(
+	vaultRoot: string,
+	metadata: FolderMetadata,
+) {
+	const directory = path.join(vaultRoot, ".orbit");
+	await mkdir(directory, { recursive: true });
+	await atomicWrite(
+		path.join(directory, "folders.json"),
+		`${JSON.stringify(metadata, null, 2)}\n`,
+	);
 }
 
 async function readOrbitItem(filePath: string, vaultRoot: string) {
@@ -360,17 +434,41 @@ async function collectFolders(
 ): Promise<OrbitSnapshot["folders"]> {
 	const spaces = ["project", "area", "resource", "archive"] as const;
 	const folders = {} as OrbitSnapshot["folders"];
+	const metadata = await readFolderMetadata(vaultRoot);
 	for (const space of spaces) {
-		const root = space === "archive" ? "archive" : PARA_VAULT[space];
-		const dirNames = await listImmediateFolders(path.join(vaultRoot, root));
+		const root = folderRoot(space);
+		const dirNames = await listNestedFolders(path.join(vaultRoot, root));
 		const counted = new Map<string, number>();
+		const descendantCounted = new Map<string, number>();
 		for (const name of dirNames) counted.set(name, 0);
 		for (const item of items) {
 			if (item.space !== space || !item.folder) continue;
 			counted.set(item.folder, (counted.get(item.folder) ?? 0) + 1);
+			const parts = splitVaultObjectKey(item.folder);
+			for (let depth = 1; depth <= parts.length; depth += 1) {
+				const ancestor = parts.slice(0, depth).join("/");
+				descendantCounted.set(
+					ancestor,
+					(descendantCounted.get(ancestor) ?? 0) + 1,
+				);
+			}
 		}
 		const list: OrbitFolder[] = [...counted.entries()]
-			.map(([slug, count]) => ({ space, slug, count }))
+			.map(([slug, count]) => {
+				const parts = splitVaultObjectKey(slug);
+				const parent =
+					parts.length > 1 ? parts.slice(0, -1).join("/") : undefined;
+				return {
+					space,
+					slug,
+					name: parts.at(-1) ?? slug,
+					parent,
+					depth: parts.length - 1,
+					color: metadata.folders[space]?.[slug]?.color ?? DEFAULT_FOLDER_COLOR,
+					count,
+					descendantCount: descendantCounted.get(slug) ?? 0,
+				};
+			})
 			.sort((left, right) => left.slug.localeCompare(right.slug, "ko"));
 		folders[space] = list;
 	}
@@ -645,7 +743,9 @@ export async function createOrbitItem(input: CreateItemInput) {
 	const vaultRoot = await ensureVault();
 	const now = new Date().toISOString();
 	const id = randomUUID();
-	const folder = parsed.folder ? toVaultSlug(parsed.folder) : undefined;
+	const folder = parsed.folder
+		? normalizeFolderPath(parsed.folder) || undefined
+		: undefined;
 	const relativeDir = destinationDir(parsed.space, folder);
 	const directory = path.join(vaultRoot, relativeDir);
 	assertInsideVault(vaultRoot, directory);
@@ -682,11 +782,118 @@ export async function createOrbitItem(input: CreateItemInput) {
 export async function createOrbitFolder(input: CreateFolderInput) {
 	const parsed = createFolderInputSchema.parse(input);
 	const vaultRoot = await ensureVault();
-	const slug = toVaultSlug(parsed.name);
-	const directory = path.join(vaultRoot, destinationDir(parsed.space), slug);
+	const name = toVaultSlug(parsed.name);
+	const parent = parsed.parent
+		? normalizeFolderPath(parsed.parent) || undefined
+		: undefined;
+	const slug = parent ? `${parent}/${name}` : name;
+	const directory = path.join(
+		vaultRoot,
+		folderRoot(parsed.space),
+		...splitVaultObjectKey(slug),
+	);
 	assertInsideVault(vaultRoot, directory);
 	await mkdir(directory, { recursive: true });
-	return { space: parsed.space, slug, count: 0 };
+	if (parsed.color) {
+		const metadata = await readFolderMetadata(vaultRoot);
+		const spaceMetadata = metadata.folders[parsed.space] ?? {};
+		spaceMetadata[slug] = { color: parsed.color };
+		metadata.folders[parsed.space] = spaceMetadata;
+		await writeFolderMetadata(vaultRoot, metadata);
+	}
+	return {
+		space: parsed.space,
+		slug,
+		name,
+		parent,
+		depth: splitVaultObjectKey(slug).length - 1,
+		color: parsed.color ?? DEFAULT_FOLDER_COLOR,
+		count: 0,
+		descendantCount: 0,
+	};
+}
+
+export async function updateOrbitFolder(input: UpdateFolderInput) {
+	const parsed = updateFolderInputSchema.parse(input);
+	const vaultRoot = await ensureVault();
+	const currentPath = normalizeFolderPath(parsed.path);
+	const currentParts = splitVaultObjectKey(currentPath);
+	if (currentParts.length === 0) throw new Error("Folder path is required");
+
+	let nextPath = currentPath;
+	if (parsed.name) {
+		const nextName = toVaultSlug(parsed.name);
+		nextPath = [...currentParts.slice(0, -1), nextName].join("/");
+		if (nextPath !== currentPath) {
+			const root = path.join(vaultRoot, folderRoot(parsed.space));
+			const source = path.join(root, ...currentParts);
+			const destination = path.join(root, ...splitVaultObjectKey(nextPath));
+			assertInsideVault(vaultRoot, source);
+			assertInsideVault(vaultRoot, destination);
+			await rename(source, destination);
+		}
+	}
+
+	const metadata = await readFolderMetadata(vaultRoot);
+	const currentMetadata = metadata.folders[parsed.space] ?? {};
+	const nextMetadata: Record<string, { color: OrbitFolderColor }> = {};
+	for (const [folderPath, value] of Object.entries(currentMetadata)) {
+		if (
+			folderPath === currentPath ||
+			folderPath.startsWith(`${currentPath}/`)
+		) {
+			const suffix = folderPath.slice(currentPath.length);
+			nextMetadata[`${nextPath}${suffix}`] = value;
+		} else {
+			nextMetadata[folderPath] = value;
+		}
+	}
+	if (parsed.color) {
+		nextMetadata[nextPath] = { color: parsed.color };
+	}
+	metadata.folders[parsed.space] = nextMetadata;
+	await writeFolderMetadata(vaultRoot, metadata);
+
+	const parts = splitVaultObjectKey(nextPath);
+	return {
+		space: parsed.space,
+		slug: nextPath,
+		name: parts.at(-1) ?? nextPath,
+		parent: parts.length > 1 ? parts.slice(0, -1).join("/") : undefined,
+		depth: parts.length - 1,
+		color:
+			parsed.color ?? nextMetadata[nextPath]?.color ?? DEFAULT_FOLDER_COLOR,
+	};
+}
+
+export async function deleteOrbitFolder(input: DeleteFolderInput) {
+	const parsed = deleteFolderInputSchema.parse(input);
+	const vaultRoot = await ensureVault();
+	const folderPath = normalizeFolderPath(parsed.path);
+	if (splitVaultObjectKey(folderPath).length === 0) {
+		throw new Error("Folder path is required");
+	}
+	const directory = path.join(
+		vaultRoot,
+		folderRoot(parsed.space),
+		...splitVaultObjectKey(folderPath),
+	);
+	assertInsideVault(vaultRoot, directory);
+	try {
+		await rmdir(directory);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOTEMPTY") {
+			throw new Error("노트나 하위 폴더가 있는 폴더는 삭제할 수 없습니다.");
+		}
+		throw error;
+	}
+	const metadata = await readFolderMetadata(vaultRoot);
+	const spaceMetadata = metadata.folders[parsed.space];
+	if (spaceMetadata?.[folderPath]) {
+		delete spaceMetadata[folderPath];
+		await writeFolderMetadata(vaultRoot, metadata);
+	}
+	return { space: parsed.space, path: folderPath };
 }
 
 export async function fileOrbitItem(id: string, input: FileItemInput) {
@@ -699,7 +906,9 @@ export async function fileOrbitItem(id: string, input: FileItemInput) {
 	const title =
 		next.title ?? String(current.title ?? path.basename(found.filePath, ".md"));
 	const type = next.type ?? (current.type as OrbitItem["type"]) ?? "note";
-	const folder = next.folder ? toVaultSlug(next.folder) : undefined;
+	const folder = next.folder
+		? normalizeFolderPath(next.folder) || undefined
+		: undefined;
 	const space =
 		type === "event" && next.space !== "archive" ? "event" : next.space;
 	const relativeDir = destinationDir(space, folder);

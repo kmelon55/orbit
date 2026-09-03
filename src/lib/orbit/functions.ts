@@ -19,9 +19,11 @@ export const mutateOrbit = createServerFn({ method: "POST" })
 			captureOrbitItem,
 			createOrbitFolder,
 			createOrbitItem,
+			deleteOrbitFolder,
 			deleteOrbitItem,
 			fileOrbitItem,
 			renameOrbitCanvas,
+			updateOrbitFolder,
 			toggleOrbitTask,
 			updateOrbitNote,
 			saveOrbitCanvas,
@@ -34,6 +36,10 @@ export const mutateOrbit = createServerFn({ method: "POST" })
 				return createOrbitItem(data.input);
 			case "create-folder":
 				return createOrbitFolder(data.input);
+			case "update-folder":
+				return updateOrbitFolder(data.input);
+			case "delete-folder":
+				return deleteOrbitFolder(data.input);
 			case "file-item":
 				return fileOrbitItem(data.id, data.input);
 			case "toggle-task":

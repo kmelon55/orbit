@@ -25,6 +25,19 @@ export const paraFolderSpaceSchema = z.enum([
 	"archive",
 ]);
 
+export const orbitFolderColorSchema = z.enum([
+	"amber",
+	"red",
+	"orange",
+	"lime",
+	"emerald",
+	"cyan",
+	"blue",
+	"violet",
+	"pink",
+	"slate",
+]);
+
 export const orbitItemSchema = z.object({
 	id: z.string().min(1),
 	title: z.string().min(1),
@@ -56,7 +69,7 @@ export const captureInputSchema = z.object({
 
 export const createItemInputSchema = captureInputSchema.extend({
 	space: orbitSpaceSchema.default("inbox"),
-	folder: z.string().trim().min(1).max(80).optional(),
+	folder: z.string().trim().min(1).max(500).optional(),
 });
 
 export const updateNoteInputSchema = z.object({
@@ -70,7 +83,7 @@ export const fileItemInputSchema = z.object({
 	body: z.string().max(100_000).optional(),
 	type: orbitItemTypeSchema.optional(),
 	space: orbitSpaceSchema,
-	folder: z.string().trim().max(80).optional(),
+	folder: z.string().trim().max(500).optional(),
 	due: z.string().nullable().optional(),
 	start: z.string().nullable().optional(),
 	end: z.string().nullable().optional(),
@@ -82,6 +95,20 @@ export const fileItemInputSchema = z.object({
 export const createFolderInputSchema = z.object({
 	space: paraFolderSpaceSchema,
 	name: z.string().trim().min(1).max(80),
+	parent: z.string().trim().min(1).max(500).optional(),
+	color: orbitFolderColorSchema.optional(),
+});
+
+export const updateFolderInputSchema = z.object({
+	space: paraFolderSpaceSchema,
+	path: z.string().trim().min(1).max(500),
+	name: z.string().trim().min(1).max(80).optional(),
+	color: orbitFolderColorSchema.optional(),
+});
+
+export const deleteFolderInputSchema = z.object({
+	space: paraFolderSpaceSchema,
+	path: z.string().trim().min(1).max(500),
 });
 
 export const orbitMutationSchema = z.discriminatedUnion("action", [
@@ -96,6 +123,14 @@ export const orbitMutationSchema = z.discriminatedUnion("action", [
 	z.object({
 		action: z.literal("create-folder"),
 		input: createFolderInputSchema,
+	}),
+	z.object({
+		action: z.literal("update-folder"),
+		input: updateFolderInputSchema,
+	}),
+	z.object({
+		action: z.literal("delete-folder"),
+		input: deleteFolderInputSchema,
 	}),
 	z.object({
 		action: z.literal("file-item"),
@@ -143,6 +178,9 @@ export type CreateItemInput = z.infer<typeof createItemInputSchema>;
 export type UpdateNoteInput = z.infer<typeof updateNoteInputSchema>;
 export type FileItemInput = z.infer<typeof fileItemInputSchema>;
 export type CreateFolderInput = z.infer<typeof createFolderInputSchema>;
+export type UpdateFolderInput = z.infer<typeof updateFolderInputSchema>;
+export type DeleteFolderInput = z.infer<typeof deleteFolderInputSchema>;
+export type OrbitFolderColor = z.infer<typeof orbitFolderColorSchema>;
 export type OrbitMutation = z.infer<typeof orbitMutationSchema>;
 
 export type OrbitCanvas = {
@@ -159,7 +197,12 @@ export type OrbitCanvas = {
 export type OrbitFolder = {
 	space: "project" | "area" | "resource" | "archive";
 	slug: string;
+	name: string;
+	parent?: string;
+	depth: number;
+	color: OrbitFolderColor;
 	count: number;
+	descendantCount: number;
 };
 
 export type OrbitSnapshot = {
