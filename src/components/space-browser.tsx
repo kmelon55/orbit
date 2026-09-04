@@ -14,7 +14,14 @@ import {
 	Search,
 	Trash2,
 } from "lucide-react";
-import { type FormEvent, Fragment, useMemo, useRef, useState } from "react";
+import {
+	type FormEvent,
+	Fragment,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import {
 	type FolderSpaceId,
@@ -123,8 +130,18 @@ const FOLDER_COLORS: Array<{
 ];
 
 function folderColor(color: OrbitFolderColor) {
-	return FOLDER_COLORS.find((entry) => entry.id === color) ?? FOLDER_COLORS[0];
+	return (
+		FOLDER_COLORS.find((entry) => entry.id === color) ??
+		FOLDER_COLORS.find((entry) => entry.id === "lime") ??
+		FOLDER_COLORS[0]
+	);
 }
+
+type FolderTreeState = {
+	itemsByFolder: Map<string, OrbitItem[]>;
+	matchingItems: Set<string>;
+	matchingFolders: Set<string>;
+};
 
 function itemIcon(item: OrbitItem) {
 	if (item.type === "task") return ListTodo;
@@ -152,12 +169,37 @@ function UnifiedFolderWorkspace({
 	if (!meta) throw new Error(`Unknown folder space: ${space}`);
 	const { label: spaceLabel, korean: spaceName } = meta;
 
-	const folders = snapshot.folders[space];
+	const sourceFolders = snapshot.folders[space];
+	const [optimisticColors, setOptimisticColors] = useState<
+		Partial<Record<string, OrbitFolderColor>>
+	>({});
+	const folders = useMemo(
+		() =>
+			sourceFolders.map((folder) => ({
+				...folder,
+				color: optimisticColors[folder.slug] ?? folder.color,
+			})),
+		[optimisticColors, sourceFolders],
+	);
+	useEffect(() => {
+		setOptimisticColors((current) => {
+			let changed = false;
+			const next = { ...current };
+			for (const folder of sourceFolders) {
+				if (next[folder.slug] === folder.color) {
+					delete next[folder.slug];
+					changed = true;
+				}
+			}
+			return changed ? next : current;
+		});
+	}, [sourceFolders]);
 	const items = useMemo(
 		() => itemsInSpace(snapshot.items, space),
 		[snapshot.items, space],
 	);
 	const inputRef = useRef<HTMLInputElement>(null);
+	const colorQueuesRef = useRef(new Map<string, Promise<void>>());
 	const [collapsed, setCollapsed] = useState<Set<string>>(() => {
 		if (!initialFolder) return new Set();
 		const open = new Set(folderAncestors(initialFolder));
@@ -188,58 +230,7 @@ function UnifiedFolderWorkspace({
 		return result;
 	}, [folders]);
 
-	const itemsByFolder = useMemo(() => {
-		const result = new Map<string, OrbitItem[]>();
-		for (const item of items) {
-			const key = folderOf(item) ?? "";
-			const children = result.get(key) ?? [];
-			children.push(item);
-			result.set(key, children);
-		}
-		for (const children of result.values()) {
-			children.sort((left, right) =>
-				left.title.localeCompare(right.title, "ko"),
-			);
-		}
-		return result;
-	}, [items]);
-
 	const normalizedQuery = query.trim().toLocaleLowerCase("ko");
-	const matchingItems = useMemo(() => {
-		if (!normalizedQuery) return new Set(items.map((item) => item.id));
-		return new Set(
-			items
-				.filter((item) =>
-					[
-						item.title,
-						item.body,
-						item.tags.join(" "),
-						folderOf(item) ?? "",
-					].some((value) =>
-						value.toLocaleLowerCase("ko").includes(normalizedQuery),
-					),
-				)
-				.map((item) => item.id),
-		);
-	}, [items, normalizedQuery]);
-
-	const matchingFolders = useMemo(() => {
-		if (!normalizedQuery) return new Set(folders.map((folder) => folder.slug));
-		const result = new Set<string>();
-		for (const folder of folders) {
-			if (folder.slug.toLocaleLowerCase("ko").includes(normalizedQuery)) {
-				for (const ancestor of folderAncestors(folder.slug))
-					result.add(ancestor);
-			}
-		}
-		for (const item of items) {
-			if (!matchingItems.has(item.id) || !folderOf(item)) continue;
-			for (const ancestor of folderAncestors(folderOf(item) ?? "")) {
-				result.add(ancestor);
-			}
-		}
-		return result;
-	}, [folders, items, matchingItems, normalizedQuery]);
 
 	function toggleFolder(folder: OrbitFolder) {
 		setCollapsed((current) => {
@@ -285,40 +276,45 @@ function UnifiedFolderWorkspace({
 		}
 	}
 
-	async function createNote(
+	function createNote(
 		folder: string | undefined,
 		controls: ItemWorkspaceNavigatorContext,
 	) {
 		setError(undefined);
-		try {
-			const created = await mutateOrbit({
-				data: {
-					action: "create-item",
-					input: { title: "새 노트", type: "note", body: "", space, folder },
-				},
-			});
-			if (created && "id" in created && "type" in created) {
-				controls.openCreatedItem(created);
-			}
-			await router.invalidate();
-		} catch {
-			setError("노트를 만들지 못했습니다.");
-		}
+		controls.createItem(folder);
 	}
 
-	async function updateColor(folder: OrbitFolder, color: OrbitFolderColor) {
+	function updateColor(folder: OrbitFolder, color: OrbitFolderColor) {
 		setError(undefined);
-		try {
-			await mutateOrbit({
-				data: {
-					action: "update-folder",
-					input: { space, path: folder.slug, color },
-				},
+		const previous = folder.color;
+		setOptimisticColors((current) => ({ ...current, [folder.slug]: color }));
+		const queued = (
+			colorQueuesRef.current.get(folder.slug) ?? Promise.resolve()
+		)
+			.catch(() => {})
+			.then(async () => {
+				try {
+					await mutateOrbit({
+						data: {
+							action: "update-folder",
+							input: { space, path: folder.slug, color },
+						},
+					});
+					void router.invalidate();
+				} catch {
+					setOptimisticColors((current) => {
+						if (current[folder.slug] !== color) return current;
+						return { ...current, [folder.slug]: previous };
+					});
+					setError("폴더 색상을 바꾸지 못했습니다.");
+				}
 			});
-			await router.invalidate();
-		} catch {
-			setError("폴더 색상을 바꾸지 못했습니다.");
-		}
+		colorQueuesRef.current.set(folder.slug, queued);
+		void queued.finally(() => {
+			if (colorQueuesRef.current.get(folder.slug) === queued) {
+				colorQueuesRef.current.delete(folder.slug);
+			}
+		});
 	}
 
 	async function renameFolder(event: FormEvent) {
@@ -367,15 +363,16 @@ function UnifiedFolderWorkspace({
 		folder: OrbitFolder,
 		depth: number,
 		controls: ItemWorkspaceNavigatorContext,
+		tree: FolderTreeState,
 	): React.ReactNode {
-		if (!matchingFolders.has(folder.slug)) return null;
+		if (!tree.matchingFolders.has(folder.slug)) return null;
 		const directFolders = childFolders.get(folder.slug) ?? [];
-		const directItems = (itemsByFolder.get(folder.slug) ?? []).filter((item) =>
-			matchingItems.has(item.id),
+		const directItems = (tree.itemsByFolder.get(folder.slug) ?? []).filter(
+			(item) => tree.matchingItems.has(item.id),
 		);
 		const hasChildren =
 			directFolders.length > 0 ||
-			(itemsByFolder.get(folder.slug)?.length ?? 0) > 0;
+			(tree.itemsByFolder.get(folder.slug)?.length ?? 0) > 0;
 		const expanded = Boolean(normalizedQuery) || !collapsed.has(folder.slug);
 		const color = folderColor(folder.color);
 
@@ -412,9 +409,7 @@ function UnifiedFolderWorkspace({
 						</button>
 					</ContextMenuTrigger>
 					<ContextMenuContent className="w-52">
-						<ContextMenuItem
-							onSelect={() => void createNote(folder.slug, controls)}
-						>
+						<ContextMenuItem onSelect={() => createNote(folder.slug, controls)}>
 							<FilePlus2 /> 노트 추가
 						</ContextMenuItem>
 						<ContextMenuItem onSelect={() => prepareSubfolder(folder)}>
@@ -429,7 +424,7 @@ function UnifiedFolderWorkspace({
 								{FOLDER_COLORS.map((entry) => (
 									<ContextMenuItem
 										key={entry.id}
-										onSelect={() => void updateColor(folder, entry.id)}
+										onSelect={() => updateColor(folder, entry.id)}
 									>
 										<span className={cn("size-2.5 rounded-full", entry.dot)} />
 										{entry.label}
@@ -460,14 +455,23 @@ function UnifiedFolderWorkspace({
 						</ContextMenuItem>
 					</ContextMenuContent>
 				</ContextMenu>
-				{expanded ? (
-					<>
+				<div
+					className={cn(
+						"grid transition-[grid-template-rows,opacity] duration-200 ease-[var(--interaction-ease)] motion-reduce:transition-none",
+						expanded
+							? "grid-rows-[1fr] opacity-100"
+							: "pointer-events-none grid-rows-[0fr] opacity-0",
+					)}
+					aria-hidden={!expanded}
+					inert={!expanded}
+				>
+					<div className="min-h-0 overflow-hidden">
 						{directFolders.map((child) =>
-							renderFolder(child, depth + 1, controls),
+							renderFolder(child, depth + 1, controls, tree),
 						)}
 						{directItems.map((item) => renderNote(item, depth + 1, controls))}
-					</>
-				) : null}
+					</div>
+				</div>
 			</Fragment>
 		);
 	}
@@ -504,6 +508,52 @@ function UnifiedFolderWorkspace({
 	}
 
 	function renderNavigator(controls: ItemWorkspaceNavigatorContext) {
+		const itemsByFolder = new Map<string, OrbitItem[]>();
+		for (const item of controls.items) {
+			const key = folderOf(item) ?? "";
+			const children = itemsByFolder.get(key) ?? [];
+			children.push(item);
+			itemsByFolder.set(key, children);
+		}
+		for (const children of itemsByFolder.values()) {
+			children.sort((left, right) =>
+				left.title.localeCompare(right.title, "ko"),
+			);
+		}
+		const matchingItems = normalizedQuery
+			? new Set(
+					controls.items
+						.filter((item) =>
+							[
+								item.title,
+								item.body,
+								item.tags.join(" "),
+								folderOf(item) ?? "",
+							].some((value) =>
+								value.toLocaleLowerCase("ko").includes(normalizedQuery),
+							),
+						)
+						.map((item) => item.id),
+				)
+			: new Set(controls.items.map((item) => item.id));
+		const matchingFolders = new Set<string>();
+		if (!normalizedQuery) {
+			for (const folder of folders) matchingFolders.add(folder.slug);
+		} else {
+			for (const folder of folders) {
+				if (!folder.slug.toLocaleLowerCase("ko").includes(normalizedQuery))
+					continue;
+				for (const ancestor of folderAncestors(folder.slug))
+					matchingFolders.add(ancestor);
+			}
+			for (const item of controls.items) {
+				if (!matchingItems.has(item.id) || !folderOf(item)) continue;
+				for (const ancestor of folderAncestors(folderOf(item) ?? "")) {
+					matchingFolders.add(ancestor);
+				}
+			}
+		}
+		const tree = { itemsByFolder, matchingItems, matchingFolders };
 		const rootFolders = childFolders.get("") ?? [];
 		const rootItems = (itemsByFolder.get("") ?? []).filter((item) =>
 			matchingItems.has(item.id),
@@ -526,7 +576,7 @@ function UnifiedFolderWorkspace({
 						</div>
 						<Button
 							size="icon-sm"
-							onClick={() => void createNote(undefined, controls)}
+							onClick={() => createNote(undefined, controls)}
 							aria-label="루트에 새 노트"
 						>
 							<FilePlus2 />
@@ -590,7 +640,9 @@ function UnifiedFolderWorkspace({
 
 				<ScrollArea className="min-h-0 flex-1">
 					<div className="space-y-0.5 px-2 pb-4">
-						{rootFolders.map((folder) => renderFolder(folder, 0, controls))}
+						{rootFolders.map((folder) =>
+							renderFolder(folder, 0, controls, tree),
+						)}
 						{rootItems.map((item) => renderNote(item, 0, controls))}
 						{!hasResults ? (
 							<div className="px-3 py-10 text-center text-sm leading-6 text-muted-foreground">

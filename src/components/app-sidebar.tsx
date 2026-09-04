@@ -1,9 +1,4 @@
-import {
-	Link,
-	useNavigate,
-	useRouter,
-	useRouterState,
-} from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
 	Archive,
 	BookOpen,
@@ -17,7 +12,6 @@ import {
 } from "lucide-react";
 import { useEffect } from "react";
 import { logoutOrbit } from "#/lib/orbit/auth";
-import { mutateOrbit } from "#/lib/orbit/functions";
 import { ARCHIVE_SPACE, PARA_SPACES } from "#/lib/orbit/para";
 import type { OrbitSnapshot, OrbitSpace } from "#/lib/orbit/schema";
 import { ItemContextMenu } from "@/components/item-context-menu";
@@ -51,7 +45,6 @@ function startsWithPath(pathname: string, href: string) {
 export function AppSidebar({ snapshot }: { snapshot: OrbitSnapshot }) {
 	const { setOpenMobile } = useSidebar();
 	const navigate = useNavigate();
-	const router = useRouter();
 	const pathname = useRouterState({
 		select: (state) => state.location.pathname,
 	});
@@ -61,13 +54,6 @@ export function AppSidebar({ snapshot }: { snapshot: OrbitSnapshot }) {
 	}, [pathname, setOpenMobile]);
 
 	async function createNote(space: OrbitSpace, folder?: string, href?: string) {
-		await mutateOrbit({
-			data: {
-				action: "create-item",
-				input: { title: "새 노트", type: "note", body: "", space, folder },
-			},
-		});
-		await router.invalidate();
 		if (folder) {
 			const spaceMeta = PARA_SPACES.find((item) => item.space === space);
 			if (spaceMeta?.folderHref) {
@@ -75,10 +61,13 @@ export function AppSidebar({ snapshot }: { snapshot: OrbitSnapshot }) {
 					to: spaceMeta.folderHref,
 					params: { folder },
 				});
-				return;
 			}
-		}
-		if (href) await navigate({ to: href });
+		} else if (href) await navigate({ to: href });
+		window.setTimeout(() => {
+			window.dispatchEvent(
+				new CustomEvent("orbit:create-note", { detail: { space, folder } }),
+			);
+		}, 0);
 	}
 
 	async function logout() {

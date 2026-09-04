@@ -73,10 +73,18 @@ type NoteDraft = {
 
 export type ItemWorkspaceNavigatorContext = {
 	selectedId: string | null;
+	items: OrbitItem[];
 	openItem: (id: string) => void;
 	openCreatedItem: (item: OrbitItem) => void;
+	createItem: (folder?: string) => void;
 	renderItem: (item: OrbitItem, child: ReactElement) => ReactNode;
 };
+
+const OPTIMISTIC_ITEM_PREFIX = "orbit-optimistic:";
+
+function isOptimisticItemId(id: string) {
+	return id.startsWith(OPTIMISTIC_ITEM_PREFIX);
+}
 
 function noteDraft(item?: OrbitItem): NoteDraft {
 	return {
@@ -212,18 +220,32 @@ export function ItemWorkspace({
 			window.removeEventListener("orbit:canvas-renamed", refreshCanvases);
 	}, [router]);
 	const [localItems, setLocalItems] = useState<OrbitItem[]>([]);
+	const [hiddenItemIds, setHiddenItemIds] = useState<ReadonlySet<string>>(
+		new Set(),
+	);
 	const items = useMemo(() => {
 		const sourceIds = new Set(sourceItems.map((item) => item.id));
 		return [
 			...localItems.filter((item) => !sourceIds.has(item.id)),
 			...sourceItems,
-		];
-	}, [localItems, sourceItems]);
+		].filter((item) => !hiddenItemIds.has(item.id));
+	}, [hiddenItemIds, localItems, sourceItems]);
 	useEffect(() => {
 		const sourceIds = new Set(sourceItems.map((item) => item.id));
 		setLocalItems((current) => {
 			const next = current.filter((item) => !sourceIds.has(item.id));
 			return next.length === current.length ? current : next;
+		});
+	}, [sourceItems]);
+	useEffect(() => {
+		const sourceIds = new Set(sourceItems.map((item) => item.id));
+		setHiddenItemIds((current) => {
+			const next = new Set(
+				[...current].filter(
+					(id) => isOptimisticItemId(id) || sourceIds.has(id),
+				),
+			);
+			return next.size === current.size ? current : next;
 		});
 	}, [sourceItems]);
 	const initialItem =
@@ -262,6 +284,7 @@ export function ItemWorkspace({
 	const [savedById, setSavedById] = useState<Record<string, NoteDraft>>({});
 	const [saveErrors, setSaveErrors] = useState<Record<string, boolean>>({});
 	const [createError, setCreateError] = useState(false);
+	const [actionError, setActionError] = useState<string>();
 	const selectedKey = selectedId ?? selected?.id ?? null;
 	const selectedKeyRef = useRef<string | null>(selectedKey);
 	selectedKeyRef.current = selectedKey;
@@ -273,8 +296,9 @@ export function ItemWorkspace({
 		selected ? { [selected.id]: initialStoredDraft } : {},
 	);
 	const saveQueuesRef = useRef<Map<string, Promise<void>>>(new Map());
-	const createInFlightRef = useRef(false);
+	const cancelledCreateIdsRef = useRef(new Set<string>());
 	const persistRef = useRef<() => Promise<void>>(async () => {});
+	const createItemRef = useRef<(folder?: string) => void>(() => {});
 	const editorRef = useRef<NoteEditorHandle>(null);
 	const savedByIdRef = useRef(savedById);
 	const updateDraftTitle = useCallback((title: string) => {
@@ -356,7 +380,7 @@ export function ItemWorkspace({
 	}, [query, visibleItems]);
 
 	const persistSnapshot = useCallback((id: string, next: NoteDraft) => {
-		if (!next.title.trim()) return Promise.resolve();
+		if (!next.title.trim() || isOptimisticItemId(id)) return Promise.resolve();
 		const previous = saveQueuesRef.current.get(id) ?? Promise.resolve();
 		const queued = previous
 			.catch(() => {})
@@ -548,44 +572,144 @@ export function ItemWorkspace({
 		await router.invalidate();
 	}
 
-	async function createItem() {
-		if (disableCreate || createInFlightRef.current) return;
-		createInFlightRef.current = true;
-		setCreateError(false);
-		void persistRef.current();
-		try {
-			const created = await mutateOrbit({
-				data: create
-					? {
-							action: "create-item",
-							input: {
-								title: "새 노트",
-								type: create.type ?? "note",
-								body: "",
-								space: create.space,
-								folder: create.folder,
-							},
-						}
-					: {
-							action: "capture",
-							input: { title: "새 노트", type: "note", body: "" },
-						},
-			});
-			if (created && "type" in created && "space" in created) {
-				setLocalItems((current) => [
-					created,
-					...current.filter((item) => item.id !== created.id),
-				]);
-				applyNote(created, created.id);
-				setMobilePane("editor");
-				void router.invalidate();
-			}
-		} catch {
-			setCreateError(true);
-		} finally {
-			createInFlightRef.current = false;
-		}
+	function clearSelection() {
+		cachedSelectedRef.current = undefined;
+		selectedKeyRef.current = null;
+		draftRef.current = noteDraft();
+		setDraft(noteDraft());
+		setSelectedId(null);
+		setMobilePane("list");
 	}
+
+	function selectAfterRemoval(id: string) {
+		if (selectedKeyRef.current !== id) return;
+		const next = items.find((entry) => entry.id !== id);
+		if (next) {
+			applyNote(next, next.id);
+			return;
+		}
+		clearSelection();
+	}
+
+	function createItem(folder?: string) {
+		if (disableCreate) return;
+		setCreateError(false);
+		setActionError(undefined);
+		void persistRef.current();
+		const now = new Date().toISOString();
+		const optimisticId = `${OPTIMISTIC_ITEM_PREFIX}${crypto.randomUUID()}`;
+		const optimistic: OrbitItem = {
+			id: optimisticId,
+			title: "새 노트",
+			type: create?.type ?? "note",
+			space: create?.space ?? "inbox",
+			status: create?.type === "task" ? "open" : undefined,
+			folder: folder ?? create?.folder,
+			tags: [],
+			created: now,
+			updated: now,
+			body: "",
+			path: "",
+		};
+		openCreatedItem(optimistic);
+
+		void (async () => {
+			try {
+				const created = await mutateOrbit({
+					data: create
+						? {
+								action: "create-item",
+								input: {
+									title: "새 노트",
+									type: create.type ?? "note",
+									body: "",
+									space: create.space,
+									folder: folder ?? create.folder,
+								},
+							}
+						: {
+								action: "capture",
+								input: { title: "새 노트", type: "note", body: "" },
+							},
+				});
+				if (created && "type" in created && "space" in created) {
+					const latestDraft =
+						localDraftsRef.current[optimisticId] ?? noteDraft(optimistic);
+					delete localDraftsRef.current[optimisticId];
+					delete lastSavedByIdRef.current[optimisticId];
+					if (cancelledCreateIdsRef.current.delete(optimisticId)) {
+						setLocalItems((current) =>
+							current.filter((item) => item.id !== optimisticId),
+						);
+						setHiddenItemIds((current) => {
+							const next = new Set(current);
+							next.delete(optimisticId);
+							return next;
+						});
+						try {
+							await mutateOrbit({
+								data: { action: "delete-item", id: created.id },
+							});
+						} catch {
+							setActionError(
+								`“${latestDraft.title || created.title}” 노트를 삭제하지 못했습니다.`,
+							);
+						}
+						void router.invalidate();
+						return;
+					}
+					localDraftsRef.current[created.id] = latestDraft;
+					lastSavedByIdRef.current[created.id] = noteDraft(created);
+					setLocalItems((current) => [
+						...current.map((item) =>
+							item.id === optimisticId ? created : item,
+						),
+					]);
+					setSavedById((current) => {
+						const next = { ...current, [created.id]: latestDraft };
+						delete next[optimisticId];
+						return next;
+					});
+					if (selectedKeyRef.current === optimisticId) {
+						cachedSelectedRef.current = created;
+						selectedKeyRef.current = created.id;
+						draftRef.current = latestDraft;
+						setSelectedId(created.id);
+					}
+					void persistSnapshot(created.id, latestDraft);
+					void router.invalidate();
+				}
+			} catch {
+				const wasCancelled = cancelledCreateIdsRef.current.delete(optimisticId);
+				setLocalItems((current) =>
+					current.filter((item) => item.id !== optimisticId),
+				);
+				setHiddenItemIds((current) => {
+					if (!current.has(optimisticId)) return current;
+					const next = new Set(current);
+					next.delete(optimisticId);
+					return next;
+				});
+				delete localDraftsRef.current[optimisticId];
+				delete lastSavedByIdRef.current[optimisticId];
+				selectAfterRemoval(optimisticId);
+				if (!wasCancelled) setCreateError(true);
+			}
+		})();
+	}
+	createItemRef.current = createItem;
+
+	useEffect(() => {
+		const createSpace = create?.space ?? "inbox";
+		const handleCreate = (event: Event) => {
+			const detail = (event as CustomEvent<{ space?: string; folder?: string }>)
+				.detail;
+			if (detail?.space !== createSpace) return;
+			createItemRef.current(detail.folder);
+		};
+		window.addEventListener("orbit:create-note", handleCreate);
+		return () => window.removeEventListener("orbit:create-note", handleCreate);
+	}, [create?.space]);
 
 	async function archiveItem(item: OrbitItem) {
 		await persistRef.current();
@@ -599,21 +723,38 @@ export function ItemWorkspace({
 	}
 
 	async function deleteItem(item: OrbitItem) {
-		await mutateOrbit({ data: { action: "delete-item", id: item.id } });
-		if (item.id === selectedKey) {
-			setSelectedId(null);
-			setMobilePane("list");
+		setActionError(undefined);
+		setHiddenItemIds((current) => new Set(current).add(item.id));
+		selectAfterRemoval(item.id);
+		if (isOptimisticItemId(item.id)) {
+			cancelledCreateIdsRef.current.add(item.id);
+			return;
 		}
-		delete localDraftsRef.current[item.id];
-		delete lastSavedByIdRef.current[item.id];
-		setLocalItems((current) => current.filter((entry) => entry.id !== item.id));
-		setSavedById((current) => {
-			if (!(item.id in current)) return current;
-			const next = { ...current };
-			delete next[item.id];
-			return next;
-		});
-		await router.invalidate();
+		try {
+			await (saveQueuesRef.current.get(item.id) ?? Promise.resolve()).catch(
+				() => {},
+			);
+			await mutateOrbit({ data: { action: "delete-item", id: item.id } });
+			delete localDraftsRef.current[item.id];
+			delete lastSavedByIdRef.current[item.id];
+			setLocalItems((current) =>
+				current.filter((entry) => entry.id !== item.id),
+			);
+			setSavedById((current) => {
+				if (!(item.id in current)) return current;
+				const next = { ...current };
+				delete next[item.id];
+				return next;
+			});
+			void router.invalidate();
+		} catch {
+			setHiddenItemIds((current) => {
+				const next = new Set(current);
+				next.delete(item.id);
+				return next;
+			});
+			setActionError(`“${item.title}” 노트를 삭제하지 못했습니다.`);
+		}
 	}
 
 	async function moveItem(item: OrbitItem, space: OrbitSpace, folder?: string) {
@@ -713,8 +854,10 @@ export function ItemWorkspace({
 		typeof navigator === "function"
 			? navigator({
 					selectedId: selected?.id ?? null,
+					items,
 					openItem: chooseItem,
 					openCreatedItem,
+					createItem,
 					renderItem: (item, child) => (
 						<ItemContextMenu {...itemMenu(item)}>{child}</ItemContextMenu>
 					),
@@ -739,9 +882,9 @@ export function ItemWorkspace({
 					) : null}
 					<div className="min-w-0 flex-1 overflow-hidden">
 						<p className="truncate text-sm font-medium">{heading}</p>
-						{createError ? (
+						{createError || actionError ? (
 							<output className="block truncate text-xs text-destructive">
-								새 노트를 만들지 못했습니다.
+								{actionError ?? "새 노트를 만들지 못했습니다."}
 							</output>
 						) : (
 							<p className="truncate text-xs text-muted-foreground">
@@ -952,9 +1095,9 @@ export function ItemWorkspace({
 							{emptyDescription ??
 								"우클릭하거나 아래 버튼으로 새 노트를 만드세요."}
 						</p>
-						{createError ? (
+						{createError || actionError ? (
 							<output className="mt-2 block text-sm text-destructive">
-								새 노트를 만들지 못했습니다.
+								{actionError ?? "새 노트를 만들지 못했습니다."}
 							</output>
 						) : null}
 						{disableCreate ? null : (

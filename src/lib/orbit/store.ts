@@ -56,7 +56,7 @@ const PARA_VAULT: Record<"project" | "area" | "resource", string> = {
 	resource: "resources",
 };
 
-const DEFAULT_FOLDER_COLOR: OrbitFolderColor = "amber";
+const DEFAULT_FOLDER_COLOR: OrbitFolderColor = "lime";
 
 type FolderMetadata = {
 	version: 1;

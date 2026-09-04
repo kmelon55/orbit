@@ -47,7 +47,7 @@ test("archived notes keep their folder in the unified folder browser", async () 
 				name: "출시-준비",
 				parent: undefined,
 				depth: 0,
-				color: "amber",
+				color: "lime",
 				count: 1,
 				descendantCount: 1,
 			},
@@ -102,7 +102,7 @@ test("PARA folders support arbitrary nesting, colors, renaming, and safe deletio
 					slug: "업무",
 					parent: undefined,
 					depth: 0,
-					color: "amber",
+					color: "lime",
 					count: 0,
 					descendantCount: 1,
 				},
@@ -118,7 +118,7 @@ test("PARA folders support arbitrary nesting, colors, renaming, and safe deletio
 					slug: "업무/출시/한국",
 					parent: "업무/출시",
 					depth: 2,
-					color: "amber",
+					color: "lime",
 					count: 1,
 					descendantCount: 1,
 				},
@@ -136,6 +136,16 @@ test("PARA folders support arbitrary nesting, colors, renaming, and safe deletio
 			snapshot.folders.project.find((folder) => folder.slug === "회사/출시")
 				?.color,
 			"blue",
+		);
+		await updateOrbitFolder({
+			space: "project",
+			path: "회사",
+			color: "pink",
+		});
+		snapshot = await getOrbitSnapshot();
+		assert.equal(
+			snapshot.folders.project.find((folder) => folder.slug === "회사")?.color,
+			"pink",
 		);
 		await assert.rejects(
 			deleteOrbitFolder({ space: "project", path: "회사" }),

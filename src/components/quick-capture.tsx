@@ -80,7 +80,6 @@ export function QuickCapture({
 	const [endDate, setEndDate] = useState(() => formatDayKey());
 	const [startTime, setStartTime] = useState("09:00");
 	const [endTime, setEndTime] = useState("10:00");
-	const [isSaving, setIsSaving] = useState(false);
 	const [message, setMessage] = useState<string | null>(null);
 	const [listening, setListening] = useState(false);
 	const [voiceSupported, setVoiceSupported] = useState(false);
@@ -142,7 +141,7 @@ export function QuickCapture({
 	async function handleCapture(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
 		const title = capture.trim();
-		if (!title || isSaving) return;
+		if (!title) return;
 		if (
 			kind === "event" &&
 			(endDate < date || (endDate === date && endTime <= startTime))
@@ -150,8 +149,10 @@ export function QuickCapture({
 			setMessage("종료는 시작보다 뒤여야 합니다.");
 			return;
 		}
-		setIsSaving(true);
-		setMessage(null);
+		const successMessage =
+			kind === "event" ? "캘린더에 추가했습니다." : "Inbox에 넣었습니다.";
+		setCapture("");
+		setMessage(successMessage);
 		try {
 			const schedule =
 				kind === "task"
@@ -182,15 +183,11 @@ export function QuickCapture({
 								input: { title, type: kind, body: "", ...schedule },
 							},
 			});
-			setCapture("");
-			setMessage(
-				kind === "event" ? "캘린더에 추가했습니다." : "Inbox에 넣었습니다.",
-			);
 			onSaved?.();
 		} catch {
-			setMessage("저장하지 못했습니다. 데이터 폴더 권한을 확인해 주세요.");
-		} finally {
-			setIsSaving(false);
+			setMessage(
+				`“${title}”을 저장하지 못했습니다. 데이터 폴더 권한을 확인해 주세요.`,
+			);
 		}
 	}
 
@@ -221,11 +218,7 @@ export function QuickCapture({
 						{listening ? <MicOff /> : <Mic />}
 					</Button>
 				) : null}
-				<Button
-					type="submit"
-					size="icon"
-					disabled={!capture.trim() || isSaving}
-				>
+				<Button type="submit" size="icon" disabled={!capture.trim()}>
 					<ArrowUp />
 					<span className="sr-only">
 						{kind === "event" ? "캘린더에 추가" : "Inbox에 넣기"}
