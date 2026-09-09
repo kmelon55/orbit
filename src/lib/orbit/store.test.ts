@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import LZString from "lz-string";
+import { orbitFolderColorSchema } from "./schema";
 import {
 	archiveOrbitItem,
 	createOrbitCanvas,
@@ -15,8 +16,94 @@ import {
 	getOrbitSnapshot,
 	renameOrbitCanvas,
 	saveOrbitCanvas,
+	toggleOrbitTask,
 	updateOrbitFolder,
+	updateOrbitNote,
 } from "./store";
+
+test("item colors persist across edits, rescheduling, moves, and reset", async () => {
+	const previousVault = process.env.ORBIT_VAULT_DIR;
+	const vault = await mkdtemp(path.join(os.tmpdir(), "orbit-item-colors-"));
+	process.env.ORBIT_VAULT_DIR = vault;
+	try {
+		for (const type of ["task", "event"] as const) {
+			for (const color of orbitFolderColorSchema.options) {
+				const item = await createOrbitItem({
+					title: `${type} ${color}`,
+					body: "색상 보존",
+					type,
+					space: type === "event" ? "event" : "inbox",
+					color,
+				});
+				assert.ok(item);
+				assert.equal(item.color, color);
+				assert.match(
+					await readFile(path.join(vault, item.path), "utf8"),
+					new RegExp(`color: ${color}`),
+				);
+				const edited = await updateOrbitNote(item.id, {
+					title: item.title,
+					body: "내용 수정",
+					tags: [],
+				});
+				assert.equal(edited?.color, color);
+				const moved = await fileOrbitItem(item.id, {
+					space: type === "task" ? "project" : "event",
+					folder: type === "task" ? "색상" : undefined,
+					...(type === "task"
+						? { due: "2026-09-10" }
+						: { start: "2026-09-10T09:00:00", end: "2026-09-10T10:00:00" }),
+				});
+				assert.equal(moved?.color, color);
+				if (type === "task") {
+					assert.equal((await toggleOrbitTask(item.id))?.color, color);
+				}
+				const snapshot = await getOrbitSnapshot();
+				assert.equal(
+					snapshot.items.find((entry) => entry.id === item.id)?.color,
+					color,
+				);
+				const recolored = await fileOrbitItem(item.id, {
+					space: item.space,
+					color: color === "white" ? "black" : "white",
+				});
+				assert.equal(recolored?.color, color === "white" ? "black" : "white");
+				const reset = await fileOrbitItem(item.id, {
+					space: item.space,
+					color: null,
+				});
+				assert.ok(reset);
+				assert.equal(reset.color, undefined);
+				assert.doesNotMatch(
+					await readFile(path.join(vault, reset.path), "utf8"),
+					/^color:/m,
+				);
+			}
+		}
+		const legacy = await createOrbitItem({
+			title: "기본 색상",
+			body: "",
+			type: "task",
+			space: "inbox",
+		});
+		assert.ok(legacy);
+		assert.equal(legacy.color, undefined);
+		const filename = path.join(vault, legacy.path);
+		const raw = await readFile(filename, "utf8");
+		await writeFile(
+			filename,
+			raw.replace("---\n", "---\ncolor: unknown-external-color\n"),
+		);
+		assert.ok(
+			(await getOrbitSnapshot()).items.some((item) => item.id === legacy.id),
+			"unknown colors must not hide existing notes",
+		);
+	} finally {
+		if (previousVault === undefined) delete process.env.ORBIT_VAULT_DIR;
+		else process.env.ORBIT_VAULT_DIR = previousVault;
+		await rm(vault, { recursive: true, force: true });
+	}
+});
 
 test("archived notes keep their folder in the unified folder browser", async () => {
 	const previousVault = process.env.ORBIT_VAULT_DIR;

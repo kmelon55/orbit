@@ -12,6 +12,7 @@ import type {
 	OrbitSnapshot,
 	OrbitSpace,
 } from "#/lib/orbit/schema";
+import { ItemColorPicker } from "@/components/item-color-picker";
 import { DatePicker, TimePicker } from "@/components/schedule-controls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,6 +66,7 @@ export function FileItemForm({
 }) {
 	const [title, setTitle] = useState(item.title);
 	const [body, setBody] = useState(item.body);
+	const [color, setColor] = useState(item.color);
 	const [type, setType] = useState<OrbitItemType>(item.type);
 	const [space, setSpace] = useState<OrbitSpace>(
 		item.space === "inbox" ? "project" : item.space,
@@ -131,6 +133,7 @@ export function FileItemForm({
 						title: title.trim(),
 						body,
 						type,
+						color: color ?? null,
 						space: type === "event" && space !== "archive" ? "event" : space,
 						folder: folderSpace ? resolvedFolder : undefined,
 						due:
@@ -233,6 +236,17 @@ export function FileItemForm({
 							className="h-9"
 						/>
 					</Field>
+				</div>
+			)}
+
+			{(type === "task" || type === "event") && (
+				<div>
+					<ItemColorPicker
+						type={type}
+						value={color}
+						onChange={setColor}
+						disabled={saving}
+					/>
 				</div>
 			)}
 

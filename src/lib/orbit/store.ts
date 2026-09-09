@@ -28,6 +28,7 @@ import {
 	type OrbitItem,
 	type OrbitSnapshot,
 	type OrbitSpace,
+	orbitFolderColorSchema,
 	orbitItemSchema,
 	type UpdateFolderInput,
 	type UpdateNoteInput,
@@ -370,6 +371,7 @@ async function readOrbitItem(filePath: string, vaultRoot: string) {
 		type: data.type ?? "note",
 		space: data.space ?? space,
 		status: data.status,
+		color: orbitFolderColorSchema.safeParse(data.color).data,
 		project: data.project,
 		folder: folderFromPath(relativePath),
 		due: data.due ? normalizeScheduleDate(data.due, fallbackDate) : undefined,
@@ -695,6 +697,7 @@ function itemFrontmatter(
 		type: OrbitItem["type"];
 		space: OrbitSpace;
 		status?: OrbitItem["status"];
+		color?: OrbitItem["color"];
 		project?: string;
 		due?: string;
 		start?: string;
@@ -719,6 +722,8 @@ function itemFrontmatter(
 	delete data.folder;
 	delete data.path;
 	delete data.body;
+	if (input.color) data.color = input.color;
+	else delete data.color;
 	if (input.status) data.status = input.status;
 	else delete data.status;
 	if (input.project) data.project = input.project;
@@ -763,6 +768,7 @@ export async function createOrbitItem(input: CreateItemInput) {
 			id,
 			title: parsed.title,
 			type: parsed.type,
+			color: parsed.color,
 			space: parsed.space,
 			status,
 			project,
@@ -944,6 +950,11 @@ export async function fileOrbitItem(id: string, input: FileItemInput) {
 				type,
 				space,
 				status: status as OrbitItem["status"],
+				color:
+					next.color === null
+						? undefined
+						: (next.color ??
+							orbitFolderColorSchema.safeParse(current.color).data),
 				project,
 				due:
 					next.due === null

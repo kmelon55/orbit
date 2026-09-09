@@ -9,7 +9,9 @@ import {
 	Plus,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { folderColor } from "#/lib/orbit/folder-colors";
 import { mutateOrbit } from "#/lib/orbit/functions";
+import { itemColor } from "#/lib/orbit/item-colors";
 import { folderOf, formatDayKey } from "#/lib/orbit/para";
 import type { OrbitItem, OrbitSpace } from "#/lib/orbit/schema";
 import {
@@ -163,6 +165,7 @@ function TodayPage() {
 										>
 											<div className="flex min-h-14 items-center gap-3 border-b border-border/55 px-4 last:border-b-0">
 												<TaskCheck
+													color={task.color}
 													checked={checked}
 													animate={taskToggle.isAnimating(task.id)}
 													disabled={taskToggle.isBusy(task.id)}
@@ -257,7 +260,12 @@ function TodayPage() {
 											<span className="w-12 shrink-0 text-xs font-medium tabular-nums">
 												{formatTime(event.start)}
 											</span>
-											<span className="h-7 w-px bg-foreground/30" />
+											<span
+												className={cn(
+													"h-7 w-1 shrink-0 rounded-full",
+													itemColor(event).dot,
+												)}
+											/>
 											<span className="min-w-0 flex-1 truncate text-sm font-medium">
 												{event.title}
 											</span>
@@ -297,7 +305,12 @@ function TodayPage() {
 									params={{ folder: folder.slug }}
 									className="group flex min-w-0 items-center gap-3 rounded-xl border border-border/60 bg-background/55 px-3.5 py-3 transition-colors hover:border-border hover:bg-muted/55"
 								>
-									<FolderClosed className="size-8 shrink-0 fill-amber-300/55 text-amber-600/80 transition-transform group-hover:scale-105 dark:fill-amber-400/20 dark:text-amber-300/80" />
+									<FolderClosed
+										className={cn(
+											"size-8 shrink-0 transition-transform group-hover:scale-105",
+											folderColor(folder.color).icon,
+										)}
+									/>
 									<span className="min-w-0 flex-1">
 										<span className="block truncate text-sm font-medium">
 											{folder.slug}

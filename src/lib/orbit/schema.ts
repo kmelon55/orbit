@@ -36,6 +36,8 @@ export const orbitFolderColorSchema = z.enum([
 	"violet",
 	"pink",
 	"slate",
+	"black",
+	"white",
 ]);
 
 export const orbitItemSchema = z.object({
@@ -43,6 +45,7 @@ export const orbitItemSchema = z.object({
 	title: z.string().min(1),
 	type: orbitItemTypeSchema,
 	space: orbitSpaceSchema,
+	color: orbitFolderColorSchema.optional(),
 	status: orbitStatusSchema.optional(),
 	project: z.string().optional(),
 	folder: z.string().optional(),
@@ -61,6 +64,7 @@ export const captureInputSchema = z.object({
 	title: z.string().trim().min(1).max(160),
 	body: z.string().trim().max(20_000).default(""),
 	type: orbitItemTypeSchema.default("note"),
+	color: orbitFolderColorSchema.optional(),
 	due: z.string().optional(),
 	start: z.string().optional(),
 	end: z.string().optional(),
@@ -82,6 +86,7 @@ export const fileItemInputSchema = z.object({
 	title: z.string().trim().min(1).max(160).optional(),
 	body: z.string().max(100_000).optional(),
 	type: orbitItemTypeSchema.optional(),
+	color: orbitFolderColorSchema.nullable().optional(),
 	space: orbitSpaceSchema,
 	folder: z.string().trim().max(500).optional(),
 	due: z.string().nullable().optional(),

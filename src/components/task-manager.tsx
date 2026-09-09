@@ -548,6 +548,7 @@ function TaskRows({
 									</span>
 								) : null}
 								<TaskCheck
+									color={item.color}
 									checked={checked}
 									animate={taskToggle.isAnimating(item.id)}
 									disabled={taskToggle.isBusy(item.id)}

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { mutateOrbit } from "#/lib/orbit/functions";
+import { itemColor } from "#/lib/orbit/item-colors";
 import { formatDayKey, itemDayKey } from "#/lib/orbit/para";
 import type { OrbitItem, OrbitSnapshot } from "#/lib/orbit/schema";
 import { ScheduleEditor } from "@/components/schedule-editor";
@@ -286,13 +287,14 @@ function itemTimeLabel(item: OrbitItem) {
 }
 
 function eventTone(item: OrbitItem) {
+	if (item.color) return itemColor(item).surface;
 	return item.type === "task"
 		? "border-border bg-muted/75 text-foreground hover:bg-muted"
 		: "border-foreground/25 bg-foreground text-background hover:bg-foreground/85";
 }
 
 function itemAccent(item: OrbitItem) {
-	return item.type === "event" ? "bg-blue-500" : "bg-amber-500";
+	return itemColor(item).dot;
 }
 
 function timedRangeForDay(item: OrbitItem, dayKey: string) {
@@ -1405,19 +1407,12 @@ function MobileMonthView({
 							</span>
 							{density === "compact" ? (
 								<span className="mt-1 flex h-1 w-7 overflow-hidden rounded-full">
-									{dayItems.length > 0 ? (
-										dayItems.some((item) => item.type === "event") &&
-										dayItems.some((item) => item.type === "task") ? (
-											<>
-												<span className="h-full flex-1 bg-blue-500" />
-												<span className="h-full flex-1 bg-amber-500" />
-											</>
-										) : (
-											<span
-												className={cn("h-full w-full", itemAccent(dayItems[0]))}
-											/>
-										)
-									) : null}
+									{dayItems.slice(0, 4).map((item) => (
+										<span
+											key={item.id}
+											className={cn("h-full min-w-0 flex-1", itemAccent(item))}
+										/>
+									))}
 								</span>
 							) : density === "stacked" ? (
 								<span className="mt-1 flex w-full flex-1 flex-col gap-1 overflow-hidden px-1.5">

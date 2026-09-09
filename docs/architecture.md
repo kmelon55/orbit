@@ -37,6 +37,7 @@ ORBIT_VAULT_DIR/
 | `title` | 필수 | 사람이 읽는 제목 |
 | `type` | 필수 | `note`, `task`, `event`, `link` |
 | `space` | 선택 | `inbox`, `project`, `area`, `resource`, `event`, `archive` |
+| `color` | 선택 | `amber`, `red`, `orange`, `lime`, `emerald`, `cyan`, `blue`, `violet`, `pink`, `slate`, `black`, `white` |
 | `status` | task | `open`, `in_progress`, `done`, `cancelled` |
 | `project` | 선택 | 프로젝트의 표시 이름 |
 | `due` | 선택 | ISO 8601 날짜 또는 시각 |
@@ -46,6 +47,21 @@ ORBIT_VAULT_DIR/
 | `created`, `updated` | 권장 | ISO 8601 시각 |
 
 알 수 없는 frontmatter 필드는 보존해야 한다. 외부 편집기가 추가한 필드를 Orbit이 삭제하면 안 된다.
+
+할 일과 일정의 선택 색상은 `color`에 저장한다. 색상이 없는 기존 파일도 그대로 읽으며, 기본 색상으로 되돌리면 필드를 제거한다. 예를 들어 다음 할 일은 날짜나 폴더를 바꿔도 보라색을 유지한다.
+
+```markdown
+---
+id: 32e11ee7-df90-4f0f-bc35-9c0c32b48174
+title: 주간 계획 정리
+type: task
+space: inbox
+status: open
+color: violet
+due: 2026-09-10
+---
+이번 주 할 일을 확인한다.
+```
 
 ## 4. 쓰기 원칙
 
