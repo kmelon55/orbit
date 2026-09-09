@@ -9,10 +9,11 @@ import {
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { formatDayKey, ITEM_TYPE_LABEL } from "#/lib/orbit/para";
-import type { OrbitItemType } from "#/lib/orbit/schema";
+import type { OrbitItem, OrbitItemType } from "#/lib/orbit/schema";
+import { ItemColorPicker } from "@/components/item-color-picker";
+import { QuickCaptureEditor } from "@/components/quick-capture-editor";
 import { DatePicker, TimePicker } from "@/components/schedule-controls";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
@@ -75,6 +76,10 @@ export function QuickCapture({
 	className?: string;
 }) {
 	const [capture, setCapture] = useState("");
+	const titleBreak = capture.indexOf("\n");
+	const captureTitle = titleBreak < 0 ? capture : capture.slice(0, titleBreak);
+	const captureBody = titleBreak < 0 ? "" : capture.slice(titleBreak + 1);
+	const [color, setColor] = useState<OrbitItem["color"]>();
 	const [kind, setKind] = useState<OrbitItemType>(initialKind);
 	const [date, setDate] = useState(() => formatDayKey());
 	const [endDate, setEndDate] = useState(() => formatDayKey());
@@ -140,8 +145,13 @@ export function QuickCapture({
 
 	async function handleCapture(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		const title = capture.trim();
+		const title = captureTitle.trim();
+		const body = captureBody.trim();
 		if (!title) return;
+		if (title.length > 160 || body.length > 20_000) {
+			setMessage("첫 줄은 160자, 본문은 20,000자까지 적을 수 있습니다.");
+			return;
+		}
 		if (
 			kind === "event" &&
 			(endDate < date || (endDate === date && endTime <= startTime))
@@ -173,14 +183,21 @@ export function QuickCapture({
 								input: {
 									title,
 									type: kind,
-									body: "",
+									body,
 									space: "event",
+									color,
 									...schedule,
 								},
 							}
 						: {
 								action: "capture",
-								input: { title, type: kind, body: "", ...schedule },
+								input: {
+									title,
+									type: kind,
+									body,
+									color: kind === "task" ? color : undefined,
+									...schedule,
+								},
 							},
 			});
 			onSaved?.();
@@ -192,42 +209,64 @@ export function QuickCapture({
 	}
 
 	return (
-		<form onSubmit={handleCapture} className={cn("orbit-card p-3", className)}>
-			<div className="flex items-center gap-2">
-				<Input
-					autoFocus={autoFocus}
+		<form
+			onSubmit={handleCapture}
+			onKeyDown={(event) => {
+				if (
+					event.key === "Enter" &&
+					(event.metaKey || event.ctrlKey) &&
+					!event.nativeEvent.isComposing
+				) {
+					event.preventDefault();
+					event.currentTarget.requestSubmit();
+				}
+			}}
+			className={cn("orbit-card p-3", className)}
+		>
+			<div className="space-y-2">
+				<QuickCaptureEditor
 					value={capture}
-					onChange={(event) => setCapture(event.target.value)}
+					onChange={setCapture}
 					placeholder={placeholder}
-					aria-label="빠른 기록"
-					className="h-11 border-0 bg-transparent text-base shadow-none focus-visible:ring-0"
+					autoFocus={autoFocus}
 				/>
-				{voiceSupported ? (
+				<div className="flex items-center justify-end gap-2 px-1">
+					{voiceSupported ? (
+						<Button
+							type="button"
+							size="icon"
+							variant={listening ? "secondary" : "ghost"}
+							onClick={toggleVoice}
+							aria-pressed={listening}
+							aria-label={listening ? "음성 입력 중지" : "음성으로 입력"}
+							className={cn(
+								"size-11 shrink-0",
+								listening && "text-red-600 dark:text-red-400",
+							)}
+						>
+							{listening ? <MicOff /> : <Mic />}
+						</Button>
+					) : null}
 					<Button
-						type="button"
+						type="submit"
 						size="icon"
-						variant={listening ? "secondary" : "ghost"}
-						onClick={toggleVoice}
-						aria-pressed={listening}
-						aria-label={listening ? "음성 입력 중지" : "음성으로 입력"}
-						className={cn(
-							"shrink-0",
-							listening && "text-red-600 dark:text-red-400",
-						)}
+						className="size-11 shrink-0"
+						disabled={!captureTitle.trim()}
+						title="저장 (⌘ / Ctrl + Enter)"
 					>
-						{listening ? <MicOff /> : <Mic />}
+						<ArrowUp />
+						<span className="sr-only">
+							{kind === "event" ? "캘린더에 추가" : "Inbox에 넣기"}
+						</span>
 					</Button>
-				) : null}
-				<Button type="submit" size="icon" disabled={!capture.trim()}>
-					<ArrowUp />
-					<span className="sr-only">
-						{kind === "event" ? "캘린더에 추가" : "Inbox에 넣기"}
-					</span>
-				</Button>
+				</div>
 			</div>
 			<Separator className="my-2" />
 			{kind === "task" || kind === "event" ? (
 				<div className="grid gap-2 px-1 pb-2">
+					<div>
+						<ItemColorPicker type={kind} value={color} onChange={setColor} />
+					</div>
 					{kind === "event" ? (
 						<>
 							<div className="grid items-center gap-2 sm:grid-cols-[2.5rem_minmax(0,1fr)_minmax(0,0.8fr)]">
@@ -308,6 +347,7 @@ export function QuickCapture({
 							key={type}
 							type="button"
 							size="sm"
+							className="min-h-11 px-3"
 							variant={kind === type ? "secondary" : "ghost"}
 							onClick={() => {
 								setKind(type);
