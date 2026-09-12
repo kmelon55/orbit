@@ -160,7 +160,11 @@ export function QuickCapture({
 			return;
 		}
 		const successMessage =
-			kind === "event" ? "캘린더에 추가했습니다." : "Inbox에 넣었습니다.";
+			kind === "event"
+				? "캘린더에 추가했습니다."
+				: kind === "task"
+					? "할 일에 등록했습니다."
+					: "Inbox에 넣었습니다.";
 		setCapture("");
 		setMessage(successMessage);
 		try {
@@ -256,7 +260,11 @@ export function QuickCapture({
 					>
 						<ArrowUp />
 						<span className="sr-only">
-							{kind === "event" ? "캘린더에 추가" : "Inbox에 넣기"}
+							{kind === "event"
+								? "캘린더에 추가"
+								: kind === "task"
+									? "할 일 등록"
+									: "Inbox에 넣기"}
 						</span>
 					</Button>
 				</div>

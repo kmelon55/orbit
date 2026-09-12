@@ -430,7 +430,7 @@ export function ScheduleEditor({
 					<AlertDialogHeader>
 						<AlertDialogTitle>이 항목을 삭제할까요?</AlertDialogTitle>
 						<AlertDialogDescription>
-							“{item?.title}” 파일이 Vault에서 완전히 삭제됩니다.
+							“{item?.title}” 항목을 삭제합니다.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>

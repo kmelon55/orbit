@@ -4,16 +4,13 @@ import {
 	Check,
 	Copy,
 	FileText,
-	Folder,
 	FolderInput,
-	Inbox,
 	ListTodo,
 	Plus,
 	Trash2,
 } from "lucide-react";
-import type { ReactElement } from "react";
-import { PARA_SPACES, SPACE_LABEL } from "#/lib/orbit/para";
-import type { OrbitItem, OrbitSnapshot, OrbitSpace } from "#/lib/orbit/schema";
+import { type ReactElement, useState } from "react";
+import type { OrbitItem, OrbitSnapshot } from "#/lib/orbit/schema";
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -28,28 +25,16 @@ import {
 	ContextMenu,
 	ContextMenuContent,
 	ContextMenuItem,
-	ContextMenuLabel,
 	ContextMenuSeparator,
-	ContextMenuSub,
-	ContextMenuSubContent,
-	ContextMenuSubTrigger,
 	ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+
+import { ItemMoveDialog, type MoveDestination } from "./item-move-dialog";
 
 export type ItemConfirmAction = {
 	kind: "archive" | "delete";
 	item: OrbitItem;
 };
-
-const MOVE_ROOTS: { space: OrbitSpace; label: string }[] = [
-	{ space: "inbox", label: SPACE_LABEL.inbox },
-	...PARA_SPACES.map((space) => ({
-		space: space.space,
-		label: space.label,
-	})),
-	{ space: "event", label: SPACE_LABEL.event },
-	{ space: "archive", label: SPACE_LABEL.archive },
-];
 
 function closeThen(action?: () => void) {
 	if (!action) return undefined;
@@ -83,154 +68,111 @@ export function ItemContextMenu({
 	onDelete?: () => void;
 	onToggleTask?: () => void;
 	onConvert?: (kind: "note" | "task" | "event") => void;
-	onMove?: (space: OrbitSpace, folder?: string) => void;
+	onMove?: MoveDestination;
 }) {
+	const [open, setOpen] = useState(false);
+	const [moveOpen, setMoveOpen] = useState(false);
 	const showCreate = Boolean(onCreate);
 	const showItem = Boolean(item);
-	const showMove = Boolean(item && onMove);
+	const showMove = Boolean(item && snapshot && onMove);
 	const showConvert = Boolean(item && onConvert && item.type !== "link");
 	const canArchive = Boolean(item && onArchive && item.space !== "archive");
 
 	return (
-		<ContextMenu>
-			<ContextMenuTrigger
-				asChild
-				onContextMenu={(event) => event.stopPropagation()}
-			>
-				{children}
-			</ContextMenuTrigger>
-			<ContextMenuContent className="w-52">
-				{showCreate ? (
-					<ContextMenuItem onSelect={onCreate}>
-						<Plus /> {createLabel}
-					</ContextMenuItem>
-				) : null}
-				{showCreate && (showItem || onOpen) ? <ContextMenuSeparator /> : null}
-				{onOpen ? (
-					<ContextMenuItem onSelect={onOpen}>
-						<FileText /> 열기
-					</ContextMenuItem>
-				) : null}
-				{item && onFile ? (
-					<ContextMenuItem onSelect={closeThen(onFile)}>
-						<FolderInput /> 세부 정리...
-					</ContextMenuItem>
-				) : null}
-				{showMove && item && onMove ? (
-					<MoveSubmenu item={item} snapshot={snapshot} onMove={onMove} />
-				) : null}
-				{showConvert && item && onConvert ? <ContextMenuSeparator /> : null}
-				{showConvert && onConvert && item?.type !== "note" ? (
-					<ContextMenuItem onSelect={closeThen(() => onConvert("note"))}>
-						<FileText /> 노트로 전환
-					</ContextMenuItem>
-				) : null}
-				{showConvert && onConvert && item?.type !== "task" ? (
-					<ContextMenuItem onSelect={closeThen(() => onConvert("task"))}>
-						<ListTodo /> 할 일로 전환...
-					</ContextMenuItem>
-				) : null}
-				{showConvert && onConvert && item?.type !== "event" ? (
-					<ContextMenuItem onSelect={closeThen(() => onConvert("event"))}>
-						<CalendarDays /> 일정으로 전환...
-					</ContextMenuItem>
-				) : null}
-				{item?.type === "task" && onToggleTask ? (
-					<ContextMenuItem onSelect={onToggleTask}>
-						<Check /> {item.status === "done" ? "다시 열기" : "완료로 표시"}
-					</ContextMenuItem>
-				) : null}
-				{item ? (
-					<>
-						<ContextMenuSeparator />
-						<ContextMenuItem
-							onSelect={() => {
-								void navigator.clipboard.writeText(item.path);
-							}}
-						>
-							<Copy /> 경로 복사
-						</ContextMenuItem>
-					</>
-				) : null}
-				{item && (canArchive || onDelete) ? <ContextMenuSeparator /> : null}
-				{canArchive ? (
-					<ContextMenuItem onSelect={closeThen(onArchive)}>
-						<Archive /> 보관
-					</ContextMenuItem>
-				) : null}
-				{item && onDelete ? (
-					<ContextMenuItem variant="destructive" onSelect={closeThen(onDelete)}>
-						<Trash2 /> 삭제
-					</ContextMenuItem>
-				) : null}
-			</ContextMenuContent>
-		</ContextMenu>
-	);
-}
-
-function MoveSubmenu({
-	item,
-	snapshot,
-	onMove,
-}: {
-	item: OrbitItem;
-	snapshot?: OrbitSnapshot;
-	onMove: (space: OrbitSpace, folder?: string) => void;
-}) {
-	return (
-		<ContextMenuSub>
-			<ContextMenuSubTrigger>
-				<Inbox /> 옮기기
-			</ContextMenuSubTrigger>
-			<ContextMenuSubContent className="w-44">
-				{MOVE_ROOTS.map((target) => {
-					const folders =
-						target.space === "project" ||
-						target.space === "area" ||
-						target.space === "resource" ||
-						target.space === "archive"
-							? (snapshot?.folders[target.space] ?? [])
-							: [];
-					if (folders.length === 0) {
-						return (
-							<ContextMenuItem
-								key={target.space}
-								disabled={item.space === target.space && !item.folder}
-								onSelect={() => onMove(target.space)}
-							>
-								{target.label}
+		<>
+			<ContextMenu onOpenChange={setOpen}>
+				<ContextMenuTrigger
+					asChild
+					onContextMenu={(event) => event.stopPropagation()}
+				>
+					{children}
+				</ContextMenuTrigger>
+				{open ? (
+					<ContextMenuContent className="w-52">
+						{showCreate ? (
+							<ContextMenuItem onSelect={onCreate}>
+								<Plus /> {createLabel}
 							</ContextMenuItem>
-						);
-					}
-					return (
-						<ContextMenuSub key={target.space}>
-							<ContextMenuSubTrigger>{target.label}</ContextMenuSubTrigger>
-							<ContextMenuSubContent className="w-44">
-								<ContextMenuItem
-									disabled={item.space === target.space && !item.folder}
-									onSelect={() => onMove(target.space)}
-								>
-									루트
-								</ContextMenuItem>
+						) : null}
+						{showCreate && (showItem || onOpen) ? (
+							<ContextMenuSeparator />
+						) : null}
+						{onOpen ? (
+							<ContextMenuItem onSelect={onOpen}>
+								<FileText /> 열기
+							</ContextMenuItem>
+						) : null}
+						{item && onFile ? (
+							<ContextMenuItem onSelect={closeThen(onFile)}>
+								<FolderInput /> 세부 정리...
+							</ContextMenuItem>
+						) : null}
+						{showMove && item && onMove ? (
+							<ContextMenuItem onSelect={closeThen(() => setMoveOpen(true))}>
+								<FolderInput />{" "}
+								{item.type === "task" ? "소속 변경…" : "옮기기…"}
+							</ContextMenuItem>
+						) : null}
+						{showConvert && item && onConvert ? <ContextMenuSeparator /> : null}
+						{showConvert && onConvert && item?.type !== "note" ? (
+							<ContextMenuItem onSelect={closeThen(() => onConvert("note"))}>
+								<FileText /> 노트로 바꾸기
+							</ContextMenuItem>
+						) : null}
+						{showConvert && onConvert && item?.type !== "task" ? (
+							<ContextMenuItem onSelect={closeThen(() => onConvert("task"))}>
+								<ListTodo /> 할 일로 바꾸기
+							</ContextMenuItem>
+						) : null}
+						{showConvert && onConvert && item?.type !== "event" ? (
+							<ContextMenuItem onSelect={closeThen(() => onConvert("event"))}>
+								<CalendarDays /> 일정으로 바꾸기…
+							</ContextMenuItem>
+						) : null}
+						{item?.type === "task" && onToggleTask ? (
+							<ContextMenuItem onSelect={onToggleTask}>
+								<Check /> {item.status === "done" ? "다시 열기" : "완료로 표시"}
+							</ContextMenuItem>
+						) : null}
+						{item ? (
+							<>
 								<ContextMenuSeparator />
-								<ContextMenuLabel>폴더</ContextMenuLabel>
-								{folders.map((folder) => (
-									<ContextMenuItem
-										key={folder.slug}
-										disabled={
-											item.space === target.space && item.folder === folder.slug
-										}
-										onSelect={() => onMove(target.space, folder.slug)}
-									>
-										<Folder /> {folder.slug}
-									</ContextMenuItem>
-								))}
-							</ContextMenuSubContent>
-						</ContextMenuSub>
-					);
-				})}
-			</ContextMenuSubContent>
-		</ContextMenuSub>
+								<ContextMenuItem
+									onSelect={() => {
+										void navigator.clipboard.writeText(item.path);
+									}}
+								>
+									<Copy /> 경로 복사
+								</ContextMenuItem>
+							</>
+						) : null}
+						{item && (canArchive || onDelete) ? <ContextMenuSeparator /> : null}
+						{canArchive ? (
+							<ContextMenuItem onSelect={closeThen(onArchive)}>
+								<Archive /> 보관
+							</ContextMenuItem>
+						) : null}
+						{item && onDelete ? (
+							<ContextMenuItem
+								variant="destructive"
+								onSelect={closeThen(onDelete)}
+							>
+								<Trash2 /> 삭제
+							</ContextMenuItem>
+						) : null}
+					</ContextMenuContent>
+				) : null}
+			</ContextMenu>
+			{item && snapshot && onMove && moveOpen ? (
+				<ItemMoveDialog
+					item={item}
+					snapshot={snapshot}
+					open={moveOpen}
+					onOpenChange={setMoveOpen}
+					onMove={onMove}
+				/>
+			) : null}
+		</>
 	);
 }
 
@@ -253,7 +195,7 @@ export function ConfirmItemDialog({
 					</AlertDialogTitle>
 					<AlertDialogDescription>
 						{isDelete
-							? `"${action?.item.title}" 파일이 저장소에서 삭제됩니다. 이 동작은 되돌릴 수 없습니다.`
+							? `“${action?.item.title}” 항목을 삭제합니다.`
 							: `"${action?.item.title}" 파일은 삭제되지 않고 archive 폴더로 이동합니다.`}
 					</AlertDialogDescription>
 				</AlertDialogHeader>

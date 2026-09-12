@@ -159,9 +159,7 @@ function TodayPage() {
 											onToggleTask={() =>
 												void taskToggle.toggle(task, { exit: true })
 											}
-											onMove={(space, folder) =>
-												void moveItem(task, space, folder)
-											}
+											onMove={(space, folder) => moveItem(task, space, folder)}
 										>
 											<div className="flex min-h-14 items-center gap-3 border-b border-border/55 px-4 last:border-b-0">
 												<TaskCheck
@@ -246,9 +244,7 @@ function TodayPage() {
 											setConfirm({ kind: "archive", item: event })
 										}
 										onDelete={() => setConfirm({ kind: "delete", item: event })}
-										onMove={(space, folder) =>
-											void moveItem(event, space, folder)
-										}
+										onMove={(space, folder) => moveItem(event, space, folder)}
 									>
 										<button
 											type="button"

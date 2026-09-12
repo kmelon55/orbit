@@ -2,6 +2,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { isInboxItem } from "../lib/orbit/para";
 import {
 	captureOrbitItem,
 	createOrbitFolder,
@@ -21,7 +22,7 @@ server.registerTool(
 	{
 		title: "Capture to Orbit Inbox",
 		description:
-			"Append a note, task, event, or link to the Orbit Inbox as a Markdown file. Use this for quick capture; file into PARA later with orbit_file.",
+			"Capture a Markdown item. Notes and links appear in Inbox; tasks appear in Tasks and events in Calendar. PARA filing is optional.",
 		inputSchema: {
 			title: z.string().min(1).max(160),
 			body: z.string().max(20_000).default(""),
@@ -73,13 +74,11 @@ server.registerTool(
 	{
 		title: "List Orbit Inbox",
 		description:
-			"List unsorted Inbox items that still need to be filed into Projects, Areas, Resources, or Archive.",
+			"List unprocessed Inbox notes and links. Items confirmed as tasks or events are managed in Tasks or Calendar instead.",
 		inputSchema: {},
 	},
 	async () => {
-		const items = (await listOrbitItems()).filter(
-			(item) => item.space === "inbox",
-		);
+		const items = (await listOrbitItems()).filter(isInboxItem);
 		return {
 			content: [{ type: "text", text: JSON.stringify(items, null, 2) }],
 		};

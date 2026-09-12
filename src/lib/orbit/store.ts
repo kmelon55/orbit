@@ -10,8 +10,10 @@ import {
 	writeFile,
 } from "node:fs/promises";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import matter from "gray-matter";
 import LZString from "lz-string";
+import { isInboxItem } from "./para";
 import {
 	type CaptureInput,
 	type CreateFolderInput,
@@ -26,6 +28,7 @@ import {
 	type OrbitFolder,
 	type OrbitFolderColor,
 	type OrbitItem,
+	type OrbitMutation,
 	type OrbitSnapshot,
 	type OrbitSpace,
 	orbitFolderColorSchema,
@@ -35,6 +38,7 @@ import {
 	updateFolderInputSchema,
 	updateNoteInputSchema,
 } from "./schema";
+import type { MutationReceipt, UndoResult } from "./undo-events";
 import {
 	splitVaultObjectKey,
 	toVaultObjectKey,
@@ -136,6 +140,28 @@ function normalizeFolderPath(value: string) {
 		.map((segment) => toVaultSlug(segment))
 		.filter(Boolean)
 		.join("/");
+}
+
+async function existingFolderPath(
+	vaultRoot: string,
+	space: OrbitFolder["space"],
+	value: string,
+) {
+	if (!value) return "";
+	const parts = splitVaultObjectKey(value);
+	if (
+		parts.some((part) => part === "." || part === ".." || part.includes("\\"))
+	)
+		throw new Error("Invalid folder path");
+	const exact = parts.join("/");
+	const directory = path.join(vaultRoot, folderRoot(space), ...parts);
+	assertInsideVault(vaultRoot, directory);
+	try {
+		if ((await stat(directory)).isDirectory()) return exact;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+	}
+	return normalizeFolderPath(value);
 }
 
 function folderRoot(space: "project" | "area" | "resource" | "archive") {
@@ -505,7 +531,7 @@ export async function getOrbitSnapshot(): Promise<OrbitSnapshot> {
 		today: { tasks, events },
 		folders: await collectFolders(vaultRoot, items),
 		counts: {
-			inbox: items.filter((item) => item.space === "inbox").length,
+			inbox: items.filter(isInboxItem).length,
 			project: items.filter((item) => item.space === "project").length,
 			area: items.filter((item) => item.space === "area").length,
 			resource: items.filter((item) => item.space === "resource").length,
@@ -909,11 +935,29 @@ export async function fileOrbitItem(id: string, input: FileItemInput) {
 	if (!found) throw new Error(`Orbit item not found: ${id}`);
 
 	const current = found.parsed.data as Record<string, unknown>;
+	if (next.expectedLocation) {
+		const relative = path
+			.relative(vaultRoot, found.filePath)
+			.split(path.sep)
+			.join("/");
+		const expected = next.expectedLocation;
+		if (
+			spaceFromPath(relative) !== expected.space ||
+			folderFromPath(relative) !== expected.folder
+		) {
+			throw new Error("항목의 위치가 이후 변경되었습니다.");
+		}
+	}
 	const title =
 		next.title ?? String(current.title ?? path.basename(found.filePath, ".md"));
 	const type = next.type ?? (current.type as OrbitItem["type"]) ?? "note";
 	const folder = next.folder
-		? normalizeFolderPath(next.folder) || undefined
+		? (next.space === "project" ||
+			next.space === "area" ||
+			next.space === "resource" ||
+			next.space === "archive"
+				? await existingFolderPath(vaultRoot, next.space, next.folder)
+				: normalizeFolderPath(next.folder)) || undefined
 		: undefined;
 	const space =
 		type === "event" && next.space !== "archive" ? "event" : next.space;
@@ -934,12 +978,15 @@ export async function fileOrbitItem(id: string, input: FileItemInput) {
 				(typeof current.status === "string" ? current.status : "open"))
 			: undefined;
 	const project =
-		space === "project"
-			? (folder ??
-				(typeof current.project === "string" ? current.project : undefined))
-			: typeof current.project === "string"
-				? current.project
-				: undefined;
+		next.project === null
+			? undefined
+			: (next.project ??
+				(space === "project"
+					? (folder ??
+						(typeof current.project === "string" ? current.project : undefined))
+					: typeof current.project === "string"
+						? current.project
+						: undefined));
 	const body = next.body ?? found.parsed.content.trim();
 	const tags = next.tags ?? normalizeTags(current.tags);
 	const contents = matter.stringify(body ? `${body}\n` : "", {
@@ -1061,4 +1108,188 @@ export async function getOrbitItem(id: string) {
 	const found = await findItemFile(id, vaultRoot);
 	if (!found) return null;
 	return readOrbitItem(found.filePath, vaultRoot);
+}
+
+type ItemRevision = { path: string; contents: string };
+type ItemUndo = {
+	vault: string;
+	itemId: string;
+	before: ItemRevision | null;
+	after: ItemRevision | null;
+};
+const itemUndos = new Map<string, ItemUndo>();
+let itemMutationQueue: Promise<unknown> = Promise.resolve();
+
+function serializeItemMutation<T>(work: () => Promise<T>): Promise<T> {
+	const queued = itemMutationQueue.catch(() => {}).then(work);
+	itemMutationQueue = queued;
+	return queued;
+}
+
+async function itemRevision(
+	id: string,
+	vault: string,
+): Promise<ItemRevision | null> {
+	const found = await findItemFile(id, vault);
+	return found
+		? {
+				path: path.relative(vault, found.filePath),
+				contents: await readFile(found.filePath, "utf8"),
+			}
+		: null;
+}
+
+function changedRevisionFields(before: ItemRevision, after: ItemRevision) {
+	const left = matter(before.contents);
+	const right = matter(after.contents);
+	const fields = [
+		...new Set([...Object.keys(left.data), ...Object.keys(right.data)]),
+	].filter(
+		(key) =>
+			key !== "updated" && !isDeepStrictEqual(left.data[key], right.data[key]),
+	);
+	if (left.content.trim() !== right.content.trim()) fields.push("$body");
+	if (before.path !== after.path) fields.push("$path");
+	return fields;
+}
+
+function itemMutationMessage(
+	data: OrbitMutation,
+	before: OrbitItem | null,
+	after: OrbitItem | null,
+) {
+	if (!before) return "추가했습니다.";
+	if (!after) return "삭제했습니다.";
+	if (before.type !== after.type)
+		return `${{ note: "노트로", task: "할 일로", event: "일정으로", link: "링크로" }[after.type]} 바꿨습니다.`;
+	if (before.status !== after.status)
+		return after.status === "done" ? "완료했습니다." : "미완료로 바꿨습니다.";
+	if (before.space !== after.space || before.folder !== after.folder)
+		return after.space === "archive" ? "보관했습니다." : "이동했습니다.";
+	if (
+		before.due !== after.due ||
+		before.start !== after.start ||
+		before.end !== after.end
+	)
+		return "날짜를 변경했습니다.";
+	if (before.color !== after.color) return "색상을 변경했습니다.";
+	return data.action === "file-item" ? "변경했습니다." : "저장했습니다.";
+}
+
+// Capture the actual persisted before/after values, shared by every item UI.
+// Autosaves share the queue but stay in the text editor's own undo history.
+export function withItemUndo<T>(
+	data: OrbitMutation,
+	work: () => Promise<T>,
+): Promise<{ result: T; undo: MutationReceipt | null }> {
+	const tracked = [
+		"capture",
+		"create-item",
+		"file-item",
+		"toggle-task",
+		"archive-item",
+		"delete-item",
+	].includes(data.action);
+	if (!tracked && data.action !== "update-note")
+		return work().then((result) => ({ result, undo: null }));
+	const vault = getVaultRoot();
+	return serializeItemMutation(async () => {
+		if (vault !== getVaultRoot())
+			throw new Error("Vault changed during operation");
+		const before =
+			tracked && "id" in data ? await itemRevision(data.id, vault) : null;
+		const beforeItem =
+			tracked && "id" in data ? await getOrbitItem(data.id) : null;
+		const result = await work();
+		if (!tracked) return { result, undo: null };
+		const itemId = "id" in data ? data.id : (result as OrbitItem | null)?.id;
+		if (!itemId) return { result, undo: null };
+		const after = await itemRevision(itemId, vault);
+		if (
+			(!before && !after) ||
+			(before && after && !changedRevisionFields(before, after).length)
+		)
+			return { result, undo: null };
+		const afterItem = after ? await getOrbitItem(itemId) : null;
+		const id = randomUUID();
+		itemUndos.set(id, { vault, itemId, before, after });
+		while (itemUndos.size > 200) {
+			const oldest = itemUndos.keys().next().value;
+			if (oldest) itemUndos.delete(oldest);
+		}
+		return {
+			result,
+			undo: {
+				id,
+				itemId,
+				title: afterItem?.title ?? beforeItem?.title ?? "",
+				message: itemMutationMessage(data, beforeItem, afterItem),
+			},
+		};
+	});
+}
+
+export function undoOrbitMutation(id: string): Promise<UndoResult> {
+	return serializeItemMutation(async () => {
+		const entry = itemUndos.get(id);
+		if (!entry || entry.vault !== getVaultRoot())
+			throw new Error("되돌리기 기록을 찾을 수 없습니다.");
+		const { vault, itemId, before, after } = entry;
+		const current = await itemRevision(itemId, vault);
+		const conflict = () =>
+			new Error("이후 변경된 내용이 있어 되돌릴 수 없습니다.");
+		let fields: string[];
+		if (!before && after) {
+			if (!current || changedRevisionFields(after, current).length)
+				throw conflict();
+			await deleteOrbitItem(itemId);
+			fields = ["$existence"];
+		} else if (before && !after) {
+			if (current) throw conflict();
+			const destination = path.join(vault, before.path);
+			assertInsideVault(vault, destination);
+			// Exclusive creation never overwrites another file at the old path.
+			await mkdir(path.dirname(destination), { recursive: true });
+			await writeFile(destination, before.contents, { flag: "wx" });
+			fields = ["$existence"];
+		} else if (before && after && current) {
+			fields = changedRevisionFields(before, after);
+			const old = matter(before.contents);
+			const expected = matter(after.contents);
+			const live = matter(current.contents);
+			for (const field of fields) {
+				if (field === "$path") {
+					if (current.path !== after.path) throw conflict();
+				} else if (field === "$body") {
+					if (live.content.trim() !== expected.content.trim()) throw conflict();
+				} else if (!isDeepStrictEqual(live.data[field], expected.data[field]))
+					throw conflict();
+			}
+			const restored: Record<string, unknown> = {
+				...live.data,
+				updated: new Date().toISOString(),
+			};
+			for (const field of fields) {
+				if (field.startsWith("$")) continue;
+				if (Object.hasOwn(old.data, field)) restored[field] = old.data[field];
+				else delete restored[field];
+			}
+			const contents = matter.stringify(
+				fields.includes("$body") ? old.content : live.content,
+				restored,
+			);
+			const destination = path.join(
+				vault,
+				fields.includes("$path") ? before.path : current.path,
+			);
+			assertInsideVault(vault, destination);
+			if (destination !== path.join(vault, current.path)) {
+				await mkdir(path.dirname(destination), { recursive: true });
+				await writeFile(destination, contents, { flag: "wx" });
+				await unlink(path.join(vault, current.path));
+			} else await atomicWrite(destination, contents);
+		} else throw conflict();
+		itemUndos.delete(id);
+		return { itemId, item: await getOrbitItem(itemId), fields };
+	});
 }

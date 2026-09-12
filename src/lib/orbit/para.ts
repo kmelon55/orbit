@@ -122,8 +122,16 @@ export function folderOf(item: OrbitItem) {
 	return undefined;
 }
 
+export function isInboxItem(item: OrbitItem) {
+	return (
+		item.space === "inbox" && (item.type === "note" || item.type === "link")
+	);
+}
+
 export function itemsInSpace(items: OrbitItem[], space: OrbitSpace) {
-	return items.filter((item) => item.space === space);
+	return items.filter((item) =>
+		space === "inbox" ? isInboxItem(item) : item.space === space,
+	);
 }
 
 export function itemsInFolder(

@@ -19,11 +19,8 @@ import {
 	useState,
 } from "react";
 import { mutateOrbit } from "#/lib/orbit/functions";
-import {
-	formatDateTime,
-	formatDayKey,
-	ITEM_TYPE_LABEL,
-} from "#/lib/orbit/para";
+import { moveItemLocally } from "#/lib/orbit/item-move";
+import { formatDateTime, ITEM_TYPE_LABEL, isInboxItem } from "#/lib/orbit/para";
 import type {
 	OrbitCanvas,
 	OrbitItem,
@@ -31,12 +28,21 @@ import type {
 	OrbitSpace,
 } from "#/lib/orbit/schema";
 import { orbitItemSchema } from "#/lib/orbit/schema";
+import { onItemUndone } from "#/lib/orbit/undo-events";
+import {
+	type EventConversion,
+	EventConversionDialog,
+} from "@/components/event-conversion-dialog";
 import { FileItemForm } from "@/components/file-item-form";
 import {
 	ConfirmItemDialog,
 	type ItemConfirmAction,
 	ItemContextMenu,
 } from "@/components/item-context-menu";
+import {
+	type ConvertibleType,
+	ItemTypeMenu,
+} from "@/components/item-type-menu";
 import type {
 	NoteEditorAnchor,
 	NoteEditorHandle,
@@ -223,13 +229,18 @@ export function ItemWorkspace({
 	const [hiddenItemIds, setHiddenItemIds] = useState<ReadonlySet<string>>(
 		new Set(),
 	);
+	const movingIdsRef = useRef(new Set<string>());
+	const [movedItems, setMovedItems] = useState<Record<string, OrbitItem>>({});
 	const items = useMemo(() => {
 		const sourceIds = new Set(sourceItems.map((item) => item.id));
 		return [
 			...localItems.filter((item) => !sourceIds.has(item.id)),
 			...sourceItems,
-		].filter((item) => !hiddenItemIds.has(item.id));
-	}, [hiddenItemIds, localItems, sourceItems]);
+		]
+			.filter((item) => !hiddenItemIds.has(item.id))
+			.map((item) => movedItems[item.id] ?? item)
+			.filter((item) => create?.space !== "inbox" || isInboxItem(item));
+	}, [hiddenItemIds, localItems, movedItems, sourceItems, create?.space]);
 	useEffect(() => {
 		const sourceIds = new Set(sourceItems.map((item) => item.id));
 		setLocalItems((current) => {
@@ -242,12 +253,34 @@ export function ItemWorkspace({
 		setHiddenItemIds((current) => {
 			const next = new Set(
 				[...current].filter(
-					(id) => isOptimisticItemId(id) || sourceIds.has(id),
+					(id) =>
+						isOptimisticItemId(id) ||
+						movingIdsRef.current.has(id) ||
+						sourceIds.has(id),
 				),
 			);
 			return next.size === current.size ? current : next;
 		});
 	}, [sourceItems]);
+	useEffect(() => {
+		setMovedItems((current) => {
+			let changed = false;
+			const next = { ...current };
+			for (const item of snapshot.items) {
+				const moved = current[item.id];
+				if (
+					moved &&
+					!movingIdsRef.current.has(item.id) &&
+					item.space === moved.space &&
+					item.folder === moved.folder
+				) {
+					delete next[item.id];
+					changed = true;
+				}
+			}
+			return changed ? next : current;
+		});
+	}, [snapshot.items]);
 	const initialItem =
 		items.find((item) => item.id === initialSelectedId) ?? items[0];
 	const [selectedId, setSelectedId] = useState<string | null>(
@@ -259,11 +292,11 @@ export function ItemWorkspace({
 	const cachedSelectedRef = useRef<OrbitItem | undefined>(initialItem);
 	const selectedFromList = items.find((item) => item.id === selectedId);
 	const selected = scopeChanged
-		? items[0]
+		? undefined
 		: (selectedFromList ??
 			(cachedSelectedRef.current?.id === selectedId
 				? cachedSelectedRef.current
-				: items[0]));
+				: undefined));
 	const initialStoredDraft = noteDraft(selected);
 	const [draft, setDraft] = useState(() => ({
 		...initialStoredDraft,
@@ -274,9 +307,13 @@ export function ItemWorkspace({
 	}));
 	const [query, setQuery] = useState("");
 	const [filing, setFiling] = useState<OrbitItem | null>(null);
+	const [eventConversion, setEventConversion] = useState<OrbitItem | null>(
+		null,
+	);
+	const convertingIds = useRef(new Set<string>());
+	const [convertingId, setConvertingId] = useState<string | null>(null);
 	const [organizeOpen, setOrganizeOpen] = useState(false);
 	const [draggingId, setDraggingId] = useState<string | null>(null);
-	const [organizeMessage, setOrganizeMessage] = useState<string>();
 	const [confirm, setConfirm] = useState<ItemConfirmAction | null>(null);
 	const [mobilePane, setMobilePane] = useState<"list" | "editor">("list");
 	const [linkPickerAnchor, setLinkPickerAnchor] =
@@ -333,8 +370,8 @@ export function ItemWorkspace({
 		: undefined;
 	draftRef.current = latestLocalDraft ?? draft;
 	savedByIdRef.current = savedById;
-	if (selectedKey && !latestLocalDraft)
-		localDraftsRef.current[selectedKey] = draft;
+	// applyNote initializes newly selected items from their own stored content.
+	// The current draft may still belong to the previously selected (or empty) item.
 	if (selected) {
 		cachedSelectedRef.current = {
 			...selected,
@@ -428,6 +465,68 @@ export function ItemWorkspace({
 		const id = selectedKey;
 		return id ? persistSnapshot(id, draftRef.current) : Promise.resolve();
 	};
+	useEffect(() => {
+		const flush = (event: Event) => {
+			const { itemId, pending } = (
+				event as CustomEvent<{
+					itemId: string;
+					pending: Promise<unknown>[];
+				}>
+			).detail;
+			const next = localDraftsRef.current[itemId];
+			if (next) pending.push(persistSnapshot(itemId, next));
+		};
+		window.addEventListener("orbit:before-undo", flush);
+		const unsubscribe = onItemUndone(({ itemId, item, fields }) => {
+			setMovedItems((current) => {
+				const next = { ...current };
+				delete next[itemId];
+				return next;
+			});
+			setHiddenItemIds((current) => {
+				const next = new Set(current);
+				if (item) next.delete(itemId);
+				else next.add(itemId);
+				return next;
+			});
+			setLocalItems((current) =>
+				current.filter((entry) => entry.id !== itemId),
+			);
+			const prior = localDraftsRef.current[itemId];
+			if (item) {
+				const restored = noteDraft(item);
+				const next = prior
+					? {
+							title: fields.includes("title") ? restored.title : prior.title,
+							body: fields.includes("$body") ? restored.body : prior.body,
+							tags: fields.includes("tags") ? restored.tags : prior.tags,
+						}
+					: restored;
+				localDraftsRef.current[itemId] = next;
+				lastSavedByIdRef.current[itemId] = restored;
+				setSavedById((current) => ({ ...current, [itemId]: next }));
+				if (selectedKeyRef.current === itemId) {
+					cachedSelectedRef.current = item;
+					draftRef.current = next;
+					setDraft(next);
+				}
+			} else {
+				delete localDraftsRef.current[itemId];
+				delete lastSavedByIdRef.current[itemId];
+				if (selectedKeyRef.current === itemId) {
+					cachedSelectedRef.current = undefined;
+					selectedKeyRef.current = null;
+					draftRef.current = noteDraft();
+					setDraft(noteDraft());
+					setSelectedId(null);
+				}
+			}
+		});
+		return () => {
+			window.removeEventListener("orbit:before-undo", flush);
+			unsubscribe();
+		};
+	}, [persistSnapshot]);
 
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent) => {
@@ -712,14 +811,7 @@ export function ItemWorkspace({
 	}, [create?.space]);
 
 	async function archiveItem(item: OrbitItem) {
-		await persistRef.current();
-		await mutateOrbit({ data: { action: "archive-item", id: item.id } });
-		if (item.id === selectedKey) {
-			setSelectedId(null);
-			setMobilePane("list");
-		}
-		setLocalItems((current) => current.filter((entry) => entry.id !== item.id));
-		await router.invalidate();
+		await moveItem(item, "archive", item.folder);
 	}
 
 	async function deleteItem(item: OrbitItem) {
@@ -758,78 +850,152 @@ export function ItemWorkspace({
 	}
 
 	async function moveItem(item: OrbitItem, space: OrbitSpace, folder?: string) {
-		await persistRef.current();
-		await mutateOrbit({
-			data: {
-				action: "file-item",
-				id: item.id,
-				input: { space, folder },
-			},
-		});
-		if (
-			item.id === selectedKey &&
-			(space === "archive" || clearSelectionAfterMove)
-		) {
-			setSelectedId(null);
-			setMobilePane("list");
+		if (movingIdsRef.current.has(item.id) || isOptimisticItemId(item.id))
+			return;
+		const moved = moveItemLocally(item, space, folder);
+		const destinationSpace = moved.space;
+		if (item.space === moved.space && item.folder === moved.folder) return;
+		movingIdsRef.current.add(item.id);
+		setActionError(undefined);
+		const leavesList = item.space !== destinationSpace;
+		const wasSelected = selectedKeyRef.current === item.id;
+		const localDraft = localDraftsRef.current[item.id];
+		// Capture and queue this item's edits before switching the editor.
+		const saved = localDraft
+			? persistSnapshot(item.id, localDraft)
+			: (saveQueuesRef.current.get(item.id) ?? Promise.resolve());
+		setMovedItems((current) => ({ ...current, [item.id]: moved }));
+		if (leavesList) {
+			setHiddenItemIds((current) => new Set(current).add(item.id));
+			selectAfterRemoval(item.id);
+			if (wasSelected && (space === "archive" || clearSelectionAfterMove))
+				setMobilePane("list");
 		}
-		setLocalItems((current) => current.filter((entry) => entry.id !== item.id));
-		await router.invalidate();
-		const destination =
-			folder ??
-			(
-				{
-					inbox: "나중에 정리",
-					project: "프로젝트",
-					area: "영역",
-					resource: "자료",
-					event: "일정",
-					archive: "보관",
-				} satisfies Record<OrbitSpace, string>
-			)[space];
-		setOrganizeMessage(`“${item.title}” → ${destination}`);
-		window.setTimeout(() => setOrganizeMessage(undefined), 1800);
-	}
-
-	function moveItemById(id: string, space: OrbitSpace, folder?: string) {
-		const item = snapshot.items.find((entry) => entry.id === id);
-		setDraggingId(null);
-		if (item) void moveItem(item, space, folder);
-	}
-
-	async function convertItem(item: OrbitItem, kind: "note" | "task" | "event") {
-		if (item.type === kind) return;
-		await persistRef.current();
-		const scheduleValue = item.start ?? item.due;
-		const eventStart = scheduleValue ?? formatDayKey();
-		const saved = orbitItemSchema.parse(
+		const operation = saved.then(async () => {
+			if (
+				localDraft &&
+				!draftsEqual(
+					localDraft,
+					lastSavedByIdRef.current[item.id] ?? noteDraft(),
+				)
+			) {
+				throw new Error("Save pending edits before moving");
+			}
 			await mutateOrbit({
-				data: {
-					action: "file-item",
-					id: item.id,
-					input: {
-						type: kind,
-						space:
-							kind === "event"
-								? "event"
-								: item.space === "event"
-									? "inbox"
-									: item.space,
-						folder:
-							kind === "event" || item.space === "event"
-								? undefined
-								: item.folder,
-						status: kind === "task" ? item.status : undefined,
-						due: kind === "task" ? scheduleValue : null,
-						start: kind === "event" ? eventStart : null,
-						end: kind === "event" ? (item.end ?? eventStart) : null,
-					},
-				},
-			}),
-		);
+				data: { action: "file-item", id: item.id, input: { space, folder } },
+			});
+		});
+		// Later autosaves wait for the move instead of racing its file write.
+		saveQueuesRef.current.set(item.id, operation);
+		try {
+			await operation;
+			setLocalItems((current) =>
+				leavesList
+					? current.filter((entry) => entry.id !== item.id)
+					: current.map((entry) => (entry.id === item.id ? moved : entry)),
+			);
+		} catch {
+			setMovedItems((current) => {
+				const next = { ...current };
+				delete next[item.id];
+				return next;
+			});
+			setHiddenItemIds((current) => {
+				const next = new Set(current);
+				next.delete(item.id);
+				return next;
+			});
+			setActionError(
+				`“${item.title}” 노트를 옮기지 못했습니다. 다시 시도해 주세요.`,
+			);
+			return false;
+		} finally {
+			movingIdsRef.current.delete(item.id);
+			if (saveQueuesRef.current.get(item.id) === operation)
+				saveQueuesRef.current.delete(item.id);
+		}
+		// Keep the local result until the snapshot actually acknowledges the move.
 		await router.invalidate();
-		cachedSelectedRef.current = saved;
-		applyNote(saved, saved.id);
+	}
+
+	async function moveItemById(id: string, space: OrbitSpace, folder?: string) {
+		const item = items.find((entry) => entry.id === id);
+		setDraggingId(null);
+		if (!item || (await moveItem(item, space, folder)) === false)
+			throw new Error("Move failed");
+	}
+
+	async function convertItem(
+		item: OrbitItem,
+		kind: ConvertibleType,
+		schedule?: EventConversion,
+	) {
+		if (item.type === kind || convertingIds.current.has(item.id)) return;
+		if (kind === "event" && !schedule)
+			throw new Error("일정 날짜를 선택해 주세요.");
+		convertingIds.current.add(item.id);
+		setConvertingId(item.id);
+		try {
+			await runWithSavedItems([item.id], async () => {
+				const scheduleValue = item.start ?? item.due;
+				const saved = orbitItemSchema.parse(
+					await mutateOrbit({
+						data: {
+							action: "file-item",
+							id: item.id,
+							input: {
+								type: kind,
+								space:
+									kind === "event"
+										? "event"
+										: item.space === "event"
+											? "inbox"
+											: item.space,
+								folder:
+									kind === "event" || item.space === "event"
+										? undefined
+										: item.folder,
+								status: kind === "task" ? item.status : undefined,
+								due: kind === "task" ? scheduleValue : null,
+								start: kind === "event" ? schedule?.start : null,
+								end: kind === "event" ? schedule?.end : null,
+							},
+						},
+					}),
+				);
+				const leavesList =
+					saved.space !== (create?.space ?? item.space) ||
+					(create?.space === "inbox" && !isInboxItem(saved));
+				if (leavesList) {
+					setHiddenItemIds((current) => new Set(current).add(item.id));
+					setLocalItems((current) =>
+						current.filter((entry) => entry.id !== item.id),
+					);
+					selectAfterRemoval(item.id);
+				} else {
+					cachedSelectedRef.current = saved;
+					applyNote(saved, saved.id);
+				}
+			});
+			await router.invalidate();
+		} finally {
+			convertingIds.current.delete(item.id);
+			setConvertingId((current) => (current === item.id ? null : current));
+		}
+	}
+
+	function requestConversion(item: OrbitItem, kind: ConvertibleType) {
+		if (kind === "event") {
+			setEventConversion(
+				item.id === selectedKeyRef.current
+					? { ...item, title: draftRef.current.title || item.title }
+					: item,
+			);
+			return;
+		}
+		void convertItem(item, kind).catch(() => {
+			setActionError("종류를 바꾸지 못했습니다. 다시 시도해 주세요.");
+		});
 	}
 
 	function itemMenu(item: OrbitItem) {
@@ -844,10 +1010,48 @@ export function ItemWorkspace({
 			onToggleTask:
 				item.type === "task" ? () => void taskToggle.toggle(item) : undefined,
 			onConvert: (kind: "note" | "task" | "event") =>
-				void convertItem(item, kind),
-			onMove: (space: OrbitSpace, folder?: string) =>
-				void moveItem(item, space, folder),
+				requestConversion(item, kind),
+			onMove: async (space: OrbitSpace, folder?: string) => {
+				if ((await moveItem(item, space, folder)) === false)
+					throw new Error("Move failed");
+			},
 		};
+	}
+
+	async function runWithSavedItems(
+		ids: string[],
+		action: () => Promise<unknown>,
+	) {
+		const drafts = ids.map((id) => ({
+			id,
+			draft:
+				selectedKeyRef.current === id
+					? draftRef.current
+					: localDraftsRef.current[id],
+		}));
+		const saves = drafts.map(({ id, draft }) =>
+			draft
+				? persistSnapshot(id, draft)
+				: (saveQueuesRef.current.get(id) ?? Promise.resolve()),
+		);
+		const operation = Promise.all(saves).then(async () => {
+			for (const { id, draft } of drafts) {
+				if (
+					draft &&
+					!draftsEqual(draft, lastSavedByIdRef.current[id] ?? noteDraft())
+				)
+					throw new Error("노트 저장 후 다시 이동해 주세요.");
+			}
+			await action();
+		});
+		for (const id of ids) saveQueuesRef.current.set(id, operation);
+		try {
+			await operation;
+		} finally {
+			for (const id of ids)
+				if (saveQueuesRef.current.get(id) === operation)
+					saveQueuesRef.current.delete(id);
+		}
 	}
 
 	const renderedNavigator =
@@ -1015,6 +1219,16 @@ export function ItemWorkspace({
 
 	const dialogs = (
 		<>
+			{eventConversion && (
+				<EventConversionDialog
+					key={eventConversion.id}
+					item={eventConversion}
+					onClose={() => setEventConversion(null)}
+					onConvert={(schedule) =>
+						convertItem(eventConversion, "event", schedule)
+					}
+				/>
+			)}
 			<Dialog
 				open={filing !== null}
 				onOpenChange={(open) => {
@@ -1191,23 +1405,11 @@ export function ItemWorkspace({
 					<p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
 						{selected.path}
 					</p>
-					{selected.type !== "link" ? (
-						<select
-							value={selected.type}
-							onChange={(event) =>
-								void convertItem(
-									selected,
-									event.target.value as "note" | "task" | "event",
-								)
-							}
-							aria-label="항목 종류"
-							className="h-8 rounded-md border border-border bg-background px-2 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-						>
-							<option value="note">노트</option>
-							<option value="task">할 일</option>
-							<option value="event">일정</option>
-						</select>
-					) : null}
+					<ItemTypeMenu
+						item={selected}
+						busy={convertingId === selected.id}
+						onConvert={(kind) => requestConversion(selected, kind)}
+					/>
 					{saveErrors[selected.id] ? (
 						<output className="shrink-0 text-xs text-destructive">
 							자동 저장 실패
@@ -1270,7 +1472,6 @@ export function ItemWorkspace({
 					snapshot={snapshot}
 					activeItem={selected}
 					draggingId={draggingId}
-					message={organizeMessage}
 					hideInboxTarget={hideInboxTarget}
 					onClose={() => setOrganizeOpen(false)}
 					onMove={moveItemById}
@@ -1326,7 +1527,6 @@ export function ItemWorkspace({
 					snapshot={snapshot}
 					activeItem={selected}
 					draggingId={draggingId}
-					message={organizeMessage}
 					hideInboxTarget={hideInboxTarget}
 					onClose={() => setOrganizeOpen(false)}
 					onMove={moveItemById}
@@ -1367,7 +1567,6 @@ export function ItemWorkspace({
 				snapshot={snapshot}
 				activeItem={selected}
 				draggingId={draggingId}
-				message={organizeMessage}
 				hideInboxTarget={hideInboxTarget}
 				onClose={() => setOrganizeOpen(false)}
 				onMove={moveItemById}

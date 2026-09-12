@@ -83,6 +83,10 @@ export const updateNoteInputSchema = z.object({
 });
 
 export const fileItemInputSchema = z.object({
+	expectedLocation: z
+		.object({ space: orbitSpaceSchema, folder: z.string().optional() })
+		.optional(),
+	project: z.string().nullable().optional(),
 	title: z.string().trim().min(1).max(160).optional(),
 	body: z.string().max(100_000).optional(),
 	type: orbitItemTypeSchema.optional(),
@@ -210,7 +214,10 @@ export type OrbitFolder = {
 	descendantCount: number;
 };
 
+export type TreeOrder = Record<string, string[]>;
+
 export type OrbitSnapshot = {
+	treeOrder?: Partial<Record<OrbitFolder["space"], TreeOrder>>;
 	items: OrbitItem[];
 	canvases: OrbitCanvas[];
 	today: {

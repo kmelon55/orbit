@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { folderOf, formatDayKey } from "#/lib/orbit/para";
 import type { OrbitItem, OrbitSnapshot, OrbitSpace } from "#/lib/orbit/schema";
+import { onItemUndone } from "#/lib/orbit/undo-events";
 import {
 	ConfirmItemDialog,
 	type ItemConfirmAction,
@@ -25,6 +26,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useTaskToggle } from "@/hooks/use-task-toggle";
 import { cn } from "@/lib/utils";
+import { ItemLocation } from "./item-move-dialog";
 
 type TaskView = "open" | "done";
 type RescheduleTarget = "today" | "tomorrow";
@@ -63,10 +65,6 @@ function formatDue(item: OrbitItem, today: string) {
 	return time ? `${label} ${time}` : label;
 }
 
-function taskContext(item: OrbitItem) {
-	return folderOf(item) ?? (item.space === "inbox" ? "Inbox" : item.space);
-}
-
 function rescheduledDue(item: OrbitItem, day: string) {
 	return `${day}${item.due?.slice(10) ?? ""}`;
 }
@@ -96,6 +94,19 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 		Record<string, string>
 	>({});
 	const [rescheduleError, setRescheduleError] = useState<string>();
+	useEffect(
+		() =>
+			onItemUndone(({ itemId }) => {
+				setOptimisticDueById((current) => {
+					const next = { ...current };
+					delete next[itemId];
+					return next;
+				});
+				setDepartingIds((current) => current.filter((id) => id !== itemId));
+				setArrivingIds((current) => current.filter((id) => id !== itemId));
+			}),
+		[],
+	);
 	const taskToggle = useTaskToggle();
 	useEffect(() => {
 		taskToggle.sync(snapshot.items);
@@ -502,7 +513,11 @@ function TaskRows({
 	onCreate: () => void;
 	onArchive: (item: OrbitItem) => void;
 	onDelete: (item: OrbitItem) => void;
-	onMove: (item: OrbitItem, space: OrbitSpace, folder?: string) => void;
+	onMove: (
+		item: OrbitItem,
+		space: OrbitSpace,
+		folder?: string,
+	) => void | Promise<void>;
 }) {
 	const empty = items.every((item) => taskToggle.isExiting(item.id));
 
@@ -570,10 +585,12 @@ function TaskRows({
 									>
 										{item.title}
 									</span>
-									<span className="mt-0.5 block truncate text-xs text-muted-foreground">
-										{taskContext(item)}
-									</span>
 								</button>
+								<ItemLocation
+									item={item}
+									snapshot={snapshot}
+									onMove={(space, folder) => onMove(item, space, folder)}
+								/>
 								<span
 									className={cn(
 										"flex max-w-24 shrink-0 items-center gap-1 text-right text-[11px] text-muted-foreground sm:max-w-none sm:gap-1.5 sm:text-xs",

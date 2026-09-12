@@ -9,6 +9,7 @@ import {
 import type { ReactNode } from "react";
 import { getOrbitAuthStatus } from "#/lib/orbit/auth";
 import { loadOrbit } from "#/lib/orbit/functions";
+import { ActionUndoProvider } from "@/components/action-undo-provider";
 import { AppShell } from "@/components/app-shell";
 import { ServiceWorkerRegister } from "@/components/service-worker-register";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -70,9 +71,11 @@ function RootLayout() {
 	if (pathname === "/login") return <Outlet />;
 	if (!snapshot) return null;
 	return (
-		<AppShell snapshot={snapshot}>
-			<Outlet />
-		</AppShell>
+		<ActionUndoProvider key={snapshot.vaultPath}>
+			<AppShell snapshot={snapshot}>
+				<Outlet />
+			</AppShell>
+		</ActionUndoProvider>
 	);
 }
 

@@ -1,7 +1,8 @@
 import { useRouter } from "@tanstack/react-router";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import type { OrbitItem } from "#/lib/orbit/schema";
+import { onItemUndone } from "#/lib/orbit/undo-events";
 
 const COMPLETE_HOLD_MS = 560;
 const EXIT_MS = 320;
@@ -41,6 +42,7 @@ function prune(
 export function useTaskToggle() {
 	const router = useRouter();
 	const busyRef = useRef(new Set<string>());
+	const versions = useRef(new Map<string, number>());
 	const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
 	const [completing, setCompleting] = useState<ReadonlySet<string>>(new Set());
 	const [leavingOpen, setLeavingOpen] = useState<ReadonlySet<string>>(
@@ -51,6 +53,18 @@ export function useTaskToggle() {
 	);
 	const [hiddenOpen, setHiddenOpen] = useState<ReadonlySet<string>>(new Set());
 	const [hiddenDone, setHiddenDone] = useState<ReadonlySet<string>>(new Set());
+	useEffect(
+		() =>
+			onItemUndone(({ itemId }) => {
+				versions.current.set(itemId, (versions.current.get(itemId) ?? 0) + 1);
+				setCompleting((current) => without(current, itemId));
+				setLeavingOpen((current) => without(current, itemId));
+				setLeavingDone((current) => without(current, itemId));
+				setHiddenOpen((current) => without(current, itemId));
+				setHiddenDone((current) => without(current, itemId));
+			}),
+		[],
+	);
 
 	const sync = useCallback((items: OrbitItem[]) => {
 		const byId = new Map(items.map((item) => [item.id, item]));
@@ -75,6 +89,10 @@ export function useTaskToggle() {
 		async (item: OrbitItem, options?: { exit?: boolean }) => {
 			if (busyRef.current.has(item.id)) return;
 			busyRef.current.add(item.id);
+			const version = versions.current.get(item.id) ?? 0;
+			const undone = () =>
+				versions.current.get(item.id) !== version &&
+				versions.current.has(item.id);
 			setBusy(new Set(busyRef.current));
 			const toDone = item.status !== "done";
 			const shouldExit = Boolean(options?.exit);
@@ -84,15 +102,18 @@ export function useTaskToggle() {
 
 			try {
 				await mutateOrbit({ data: { action: "toggle-task", id: item.id } });
+				if (undone()) return;
 				if (shouldExit) {
 					if (toDone) await wait(COMPLETE_HOLD_MS);
 					else await wait(160);
+					if (undone()) return;
 					if (toDone) {
 						setLeavingOpen((current) => new Set(current).add(item.id));
 					} else {
 						setLeavingDone((current) => new Set(current).add(item.id));
 					}
 					await wait(EXIT_MS);
+					if (undone()) return;
 					if (toDone) {
 						setHiddenOpen((current) => new Set(current).add(item.id));
 					} else {

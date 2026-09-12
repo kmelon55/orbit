@@ -39,7 +39,7 @@ Capture -> Today / Tasks / Calendar -> PARA when useful -> Archive
              Web UI and MCP
 ```
 
-PARA is a filing policy, not a structure you must maintain before you can write. New notes and tasks can stay in Inbox. Events go straight to Calendar. When an item gains a clear context, move it into a Project, Area, or Resource.
+PARA is a filing policy, not a structure you must maintain before you can write. Inbox holds unprocessed notes and links. Confirming an item as a task or event removes it from Inbox; manage it in Tasks or Calendar. Tasks do not require a project or date. When an item gains a clear context, move it into a Project, Area, or Resource. The organize tray and task location picker share folder search, expandable folders, and recent destinations. Clicking a folder only browses; use the explicit move button after checking the path, or drop an item on its destination. Holding a dragged item over a folder expands it; list edges scroll automatically. Undo item creation, deletion, archiving, moves, completion, type conversion, date changes, and color changes from their notifications or with Cmd+Z / Ctrl+Z outside text editors. The current session retains up to 200 item actions; undo restores only values changed by that action. Text editing uses the editor’s own undo history.
 
 ## Quick start
 
