@@ -16,6 +16,7 @@ const mutateOrbitRequest = createServerFn({ method: "POST" })
 	.handler(async ({ data }) => {
 		const {
 			withItemUndo,
+			moveOrbitTreeEntry,
 			archiveOrbitItem,
 			captureOrbitItem,
 			createOrbitFolder,
@@ -32,6 +33,8 @@ const mutateOrbitRequest = createServerFn({ method: "POST" })
 		} = await import("./store");
 		return withItemUndo(data, async () => {
 			switch (data.action) {
+				case "move-tree-entry":
+					return moveOrbitTreeEntry(data.input);
 				case "capture":
 					return captureOrbitItem(data.input);
 				case "create-item":

@@ -16,6 +16,7 @@ import { Route as CalendarRouteImport } from './routes/calendar'
 import { Route as CaptureRouteImport } from './routes/capture'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as MailRouteImport } from './routes/mail'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as ResourcesRouteImport } from './routes/resources'
 import { Route as TasksRouteImport } from './routes/tasks'
@@ -26,6 +27,7 @@ import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
 import { Route as ProjectsFolderRouteImport } from './routes/projects.$folder'
 import { Route as ResourcesIndexRouteImport } from './routes/resources.index'
 import { Route as ResourcesFolderRouteImport } from './routes/resources.$folder'
+import { Route as ApiMailSplatRouteImport } from './routes/api.mail.$'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -60,6 +62,11 @@ const InboxRoute = InboxRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MailRoute = MailRouteImport.update({
+  id: '/mail',
+  path: '/mail',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectsRoute = ProjectsRouteImport.update({
@@ -112,6 +119,11 @@ const ResourcesFolderRoute = ResourcesFolderRouteImport.update({
   path: '/$folder',
   getParentRoute: () => ResourcesRoute,
 } as any)
+const ApiMailSplatRoute = ApiMailSplatRouteImport.update({
+  id: '/api/mail/$',
+  path: '/api/mail/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -121,6 +133,7 @@ export interface FileRoutesByFullPath {
   '/capture': typeof CaptureRoute
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
+  '/mail': typeof MailRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/resources': typeof ResourcesRouteWithChildren
   '/tasks': typeof TasksRoute
@@ -131,6 +144,7 @@ export interface FileRoutesByFullPath {
   '/areas/': typeof AreasIndexRoute
   '/projects/': typeof ProjectsIndexRoute
   '/resources/': typeof ResourcesIndexRoute
+  '/api/mail/$': typeof ApiMailSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -139,6 +153,7 @@ export interface FileRoutesByTo {
   '/capture': typeof CaptureRoute
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
+  '/mail': typeof MailRoute
   '/tasks': typeof TasksRoute
   '/whiteboards': typeof WhiteboardsRoute
   '/areas/$folder': typeof AreasFolderRoute
@@ -147,6 +162,7 @@ export interface FileRoutesByTo {
   '/areas': typeof AreasIndexRoute
   '/projects': typeof ProjectsIndexRoute
   '/resources': typeof ResourcesIndexRoute
+  '/api/mail/$': typeof ApiMailSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -157,6 +173,7 @@ export interface FileRoutesById {
   '/capture': typeof CaptureRoute
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
+  '/mail': typeof MailRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/resources': typeof ResourcesRouteWithChildren
   '/tasks': typeof TasksRoute
@@ -167,6 +184,7 @@ export interface FileRoutesById {
   '/areas/': typeof AreasIndexRoute
   '/projects/': typeof ProjectsIndexRoute
   '/resources/': typeof ResourcesIndexRoute
+  '/api/mail/$': typeof ApiMailSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -178,6 +196,7 @@ export interface FileRouteTypes {
     | '/capture'
     | '/inbox'
     | '/login'
+    | '/mail'
     | '/projects'
     | '/resources'
     | '/tasks'
@@ -188,6 +207,7 @@ export interface FileRouteTypes {
     | '/areas/'
     | '/projects/'
     | '/resources/'
+    | '/api/mail/$'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -196,6 +216,7 @@ export interface FileRouteTypes {
     | '/capture'
     | '/inbox'
     | '/login'
+    | '/mail'
     | '/tasks'
     | '/whiteboards'
     | '/areas/$folder'
@@ -204,6 +225,7 @@ export interface FileRouteTypes {
     | '/areas'
     | '/projects'
     | '/resources'
+    | '/api/mail/$'
   id:
     | '__root__'
     | '/'
@@ -213,6 +235,7 @@ export interface FileRouteTypes {
     | '/capture'
     | '/inbox'
     | '/login'
+    | '/mail'
     | '/projects'
     | '/resources'
     | '/tasks'
@@ -223,6 +246,7 @@ export interface FileRouteTypes {
     | '/areas/'
     | '/projects/'
     | '/resources/'
+    | '/api/mail/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -233,10 +257,12 @@ export interface RootRouteChildren {
   CaptureRoute: typeof CaptureRoute
   InboxRoute: typeof InboxRoute
   LoginRoute: typeof LoginRoute
+  MailRoute: typeof MailRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
   ResourcesRoute: typeof ResourcesRouteWithChildren
   TasksRoute: typeof TasksRoute
   WhiteboardsRoute: typeof WhiteboardsRoute
+  ApiMailSplatRoute: typeof ApiMailSplatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -288,6 +314,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mail': {
+      id: '/mail'
+      path: '/mail'
+      fullPath: '/mail'
+      preLoaderRoute: typeof MailRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/projects': {
@@ -360,6 +393,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ResourcesFolderRouteImport
       parentRoute: typeof ResourcesRoute
     }
+    '/api/mail/$': {
+      id: '/api/mail/$'
+      path: '/api/mail/$'
+      fullPath: '/api/mail/$'
+      preLoaderRoute: typeof ApiMailSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -411,10 +451,12 @@ const rootRouteChildren: RootRouteChildren = {
   CaptureRoute: CaptureRoute,
   InboxRoute: InboxRoute,
   LoginRoute: LoginRoute,
+  MailRoute: MailRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
   ResourcesRoute: ResourcesRouteWithChildren,
   TasksRoute: TasksRoute,
   WhiteboardsRoute: WhiteboardsRoute,
+  ApiMailSplatRoute: ApiMailSplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

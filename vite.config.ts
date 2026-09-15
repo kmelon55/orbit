@@ -11,5 +11,16 @@ export default defineConfig({
 			ignored: ["**/data/**", "**/vault/**"],
 		},
 	},
-	plugins: [tanstackStart(), nitro(), tailwindcss(), viteReact()],
+	plugins: [
+		tanstackStart(),
+		nitro({
+			plugins: ["./src/server/mail-plugin.ts"],
+			// Nitro re-bundles Vite's SSR chunks; splitting them again can create
+			// a circular dependency on Rolldown's initialization helpers.
+			// Keep only the server bundle together; client route splitting stays on.
+			inlineDynamicImports: true,
+		}),
+		tailwindcss(),
+		viteReact(),
+	],
 });

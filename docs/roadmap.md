@@ -4,7 +4,7 @@ Orbit's roadmap is organized around a small personal loop, not feature parity wi
 
 ## v0.1 — The personal loop (current)
 
-- [x] Markdown/YAML vault as the source of truth
+- [x] Embedded SQLite as the source of truth, with Markdown import/export
 - [x] Quick capture for notes, tasks, and events
 - [x] Today view for tasks, events, and active projects
 - [x] Task views, completion, editing, and lightweight rescheduling
@@ -18,7 +18,7 @@ Orbit's roadmap is organized around a small personal loop, not feature parity wi
 - [x] Docker deployment with a persistent filesystem vault
 - [x] Local stdio MCP tools for capture, reading, search, calendar, and PARA filing
 
-The browser UI, MCP server, and Markdown files now share one working storage contract. The PWA does not currently cache private data for offline access, and MCP is local stdio rather than a hosted endpoint.
+The browser UI and MCP server share the same transactional SQLite storage API. Existing Markdown vaults migrate without modifying their originals. The PWA does not currently cache private data for offline access, and MCP is local stdio rather than a hosted endpoint.
 
 ## v0.2 — Useful AI, under user control
 

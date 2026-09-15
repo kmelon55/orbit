@@ -13,6 +13,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 function pageTitle(pathname: string) {
 	if (pathname === "/") return "Today";
 	if (pathname === "/inbox") return "Inbox";
+	if (pathname === "/mail") return "Mail";
 	if (pathname === "/capture") return "빠른 기록";
 	if (pathname === "/tasks") return "Tasks";
 	if (pathname.startsWith("/calendar")) return "Calendar";

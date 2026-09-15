@@ -38,7 +38,7 @@ export const Route = createRootRoute({
 			{
 				name: "description",
 				content:
-					"A private, file-first second brain for notes, tasks, PARA, and calendar.",
+					"A private, self-hosted second brain for notes, tasks, PARA, and calendar.",
 			},
 			{ name: "theme-color", content: "#f3f3f7" },
 			{ name: "mobile-web-app-capable", content: "yes" },
@@ -49,7 +49,7 @@ export const Route = createRootRoute({
 			},
 			{ name: "apple-mobile-web-app-title", content: "Orbit" },
 			{ name: "format-detection", content: "telephone=no" },
-			{ title: "Orbit · File-first workspace" },
+			{ title: "Orbit · Personal workspace" },
 		],
 		links: [
 			{ rel: "stylesheet", href: appCss },

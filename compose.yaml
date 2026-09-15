@@ -1,0 +1,15 @@
+services:
+  orbit:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${ORBIT_BIND_ADDRESS:-127.0.0.1}:${ORBIT_PORT:-3000}:3000"
+    environment:
+      ORBIT_VAULT_DIR: /vault
+      ORBIT_AUTH_USERNAME: ${ORBIT_AUTH_USERNAME:-orbit}
+      ORBIT_AUTH_PASSWORD: ${ORBIT_AUTH_PASSWORD:?Set ORBIT_AUTH_PASSWORD in .env}
+      ORBIT_PUBLIC_URL: ${ORBIT_PUBLIC_URL:-}
+    volumes:
+      - orbit-data:/vault
+volumes:
+  orbit-data:

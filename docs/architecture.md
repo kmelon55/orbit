@@ -1,127 +1,53 @@
 # Orbit architecture
 
-## 1. 제품 경계
+Orbit is a personal, self-hosted workspace. One Node process serves the web app and mail worker; a persistent data directory holds embedded SQLite databases and attachments. No separate database service is required.
 
-Orbit의 코어는 노트 에디터나 AI 채팅이 아니라 다음 네 가지 계약이다.
-
-```text
-Capture → Markdown files → Today/Search → Agent interface
-```
-
-- Capture: 입력 형식을 강요하지 않고 먼저 저장한다.
-- Markdown files: 데이터베이스가 없어도 모든 핵심 데이터가 유지된다.
-- Today/Search: 지식과 실행 항목을 같은 파일 집합에서 투영한다.
-- Agent interface: UI와 외부 에이전트가 동일한 저장 계약을 사용한다.
-
-AI Organizer, Calendar Sync, Git Backup은 이 코어 위의 어댑터다. 없어도 Orbit은 기록·열람·실행 도구로 동작해야 한다.
-
-## 2. Vault 규칙
+## Storage contract
 
 ```text
-ORBIT_VAULT_DIR/
-├── inbox/       # 아직 정리되지 않은 모든 입력
-├── projects/    # 완료 조건이 있는 유한한 결과물
-├── areas/       # 지속적으로 관리하는 책임 영역
-├── resources/   # 참고 자료와 관심 주제
-├── events/      # 달력에 표시할 일정
-└── archive/     # 활성 상태가 아닌 파일
+Web UI / local MCP → store.ts transaction boundary → store-operations.ts
+                                      ↓
+                             database.ts (SQLite)
+                                      ↓
+ORBIT_VAULT_DIR/.orbit/orbit.sqlite + attachment files
 ```
 
-하위 폴더는 자유롭게 만들 수 있다. 파일의 위치가 기본 `space`를 결정하지만, frontmatter의 명시적 `space`가 있으면 이를 우선한다.
+`ORBIT_VAULT_DIR` takes precedence over the compatibility alias `ORBIT_DATA_DIR`. The default is `./vault`; production should use `/vault` or another persistent directory outside the application checkout.
 
-## 3. 최소 frontmatter
+- `documents`: complete Markdown/YAML or Excalidraw source text, stable identity, logical path, timestamps, and parsed item/canvas projections. Unknown frontmatter and invalid imported documents are retained in the original source text. Invalid documents remain exportable and appear in the migration report, but are excluded from the app's normal item list.
+- `directories`: logical folders, including empty folders. Item paths are portable NFC/POSIX paths, not promises that a live Markdown file exists on disk.
+- `metadata`: folder colors, mixed tree ordering, and the original migration manifest.
+- `assets`: logical attachment paths and their physical source paths. Existing attachments remain untouched at their old disk locations. Explicit imports copy new attachments beneath `.orbit/assets/`. Folder moves change logical references, not original attachment bytes.
+- `app_state`: persistent change counter. Parsed list caches are invalidated by transactions from the web process or a separate MCP process. Individual projections are refreshed by row revision, so a single save does not reparse every note.
 
-| 필드 | 필수 | 값 |
-| --- | --- | --- |
-| `id` | 권장 | 변경되지 않는 문자열 또는 UUID |
-| `title` | 필수 | 사람이 읽는 제목 |
-| `type` | 필수 | `note`, `task`, `event`, `link` |
-| `space` | 선택 | `inbox`, `project`, `area`, `resource`, `event`, `archive` |
-| `color` | 선택 | `amber`, `red`, `orange`, `lime`, `emerald`, `cyan`, `blue`, `violet`, `pink`, `slate`, `black`, `white` |
-| `status` | task | `open`, `in_progress`, `done`, `cancelled` |
-| `project` | 선택 | 프로젝트의 표시 이름 |
-| `due` | 선택 | ISO 8601 날짜 또는 시각 |
-| `start`, `end` | event | ISO 8601 시각 |
-| `url` | link | 원본 URL |
-| `tags` | 선택 | 문자열 배열 |
-| `created`, `updated` | 권장 | ISO 8601 시각 |
+Notes, tasks, and events remain one item model. A note body is still Markdown; the database also retains the complete Markdown/YAML document for lossless migration and export. Normal writes update raw text and projections in the same transaction. This is one authoritative store, not a bidirectional Markdown mirror.
 
-알 수 없는 frontmatter 필드는 보존해야 한다. 외부 편집기가 추가한 필드를 Orbit이 삭제하면 안 된다.
+## Atomicity and concurrency
 
-할 일과 일정의 선택 색상은 `color`에 저장한다. 색상이 없는 기존 파일도 그대로 읽으며, 기본 색상으로 되돌리면 필드를 제거한다. 예를 들어 다음 할 일은 날짜나 폴더를 바꿔도 보라색을 유지한다.
+Every public storage operation enters a SQLite transaction. Writes use `BEGIN IMMEDIATE`; nested operations, undo and folder moves share that transaction through AsyncLocalStorage. Failed operations roll back, and cache entries from failed transactions are discarded. WAL, a busy timeout, and `synchronous=FULL` are enabled. Prepared statements are reused for normal queries.
 
-```markdown
----
-id: 32e11ee7-df90-4f0f-bc35-9c0c32b48174
-title: 주간 계획 정리
-type: task
-space: inbox
-status: open
-color: violet
-due: 2026-09-10
----
-이번 주 할 일을 확인한다.
-```
+Run one application replica with the database on a local filesystem. Multiple browsers and local MCP processes access it through the storage API; do not mount the database over SMB/NFS or synchronize a live SQLite file between machines. High availability or multiple application replicas require a separate design.
 
-## 4. 쓰기 원칙
+Undo records remain bounded, process-local history. They do not survive a server restart. Changed-field conflict checks preserve subsequent edits; a failed undo never overwrites another item at the old path.
 
-- 신규 캡처는 항상 `inbox/`에 쓴다.
-- 같은 디렉터리에 임시 파일을 만든 뒤 `rename`하여 원자적으로 교체한다.
-- 파일명은 의미 있는 slug와 ID 일부를 결합한다.
-- 앱이 이해하지 못하는 Markdown 파일은 삭제하거나 이동하지 않고 건너뛴다.
-- 향후 동시 쓰기는 파일 단위 충돌 감지(`updated` 또는 content hash)로 보호한다.
+## Existing-vault migration
 
-## 5. AI Organizer 계약
+On first open, Orbit imports non-hidden Markdown, Excalidraw documents, all visible directories, attachments and `.orbit/folders.json` in one transaction. It verifies each stored document against the source SHA-256 and rescans the source before committing. Original documents and attachments are never rewritten or deleted.
 
-AI는 파일을 곧바로 옮기거나 덮어쓰지 않는다. 제안은 별도 재생성 가능 상태에 저장하고 다음 구조를 가진다.
+Duplicate legacy note IDs are preserved as separate documents: the first keeps its original ID, later paths receive deterministic distinct IDs. The `reassignedIds` migration report records every mapping. Existing ambiguous links to the original ID still refer to the first item; no automatic guess is made about their intended target. Export metadata preserves remapped identities. Distinct source paths that normalize to the same Unicode path fail migration rather than overwrite each other.
 
-```json
-{
-  "itemId": "...",
-  "baseHash": "sha256:...",
-  "operations": [
-    { "op": "move", "to": "projects/orbit" },
-    { "op": "set", "field": "type", "value": "task" }
-  ],
-  "reason": "첫 공개 릴리스라는 완료 조건이 있습니다."
-}
-```
+Unreadable files, symlinks, non-UTF-8 documents or invalid folder metadata stop migration. Fix the source and retry. A committed migration is never repeated; `.orbit/storage.json` prevents silent reimport if the database is missing. After conversion, editing old `.md` files does not edit Orbit. Use the application, MCP or explicit imports.
 
-사용자가 승인할 때 현재 파일 hash가 `baseHash`와 같은 경우에만 적용한다. 다르면 제안을 폐기하고 다시 분석한다. 이 경계가 UI, MCP, API 모두에 동일하게 적용되어야 한다.
+The SQLite schema uses `PRAGMA user_version`. Newer schema versions are rejected by older applications. Data migrations must be explicit, transactional and tested against existing data.
 
-## 6. 재생성 가능한 상태
+## Portability, backup and AI
 
-SQLite를 도입할 경우 다음 데이터만 허용한다.
+`pnpm storage export <new-directory>` exports current document sources, folders, attachments, colors, order and document timestamp/identity metadata. `pnpm storage import <directory>` imports a separate directory transactionally; identical contents are skipped and conflicting paths/IDs abort the batch. `pnpm migrate:obsidian` stages the existing Obsidian format conversion before importing into SQLite.
 
-- 전문 검색 및 임베딩 인덱스
-- 파일 hash와 watcher cursor
-- CalDAV 동기화 토큰 및 remote ID 매핑
-- Git 작업 큐와 마지막 성공 상태
-- AI 분석 캐시와 승인 대기 제안
+`pnpm storage backup <new-directory>` creates SQLite snapshots and copies attachments. It includes the mail database and key file when present, but environment-provided secrets must be backed up separately. See [vault and backup](./vault-and-backup.md).
 
-SQLite 파일을 지워도 Markdown에서 핵심 상태를 복원할 수 있어야 한다.
+The local stdio MCP server uses the same storage API and transactions as the web app. AI providers are optional. Direct raw SQL writes by external tools are unsupported because they can bypass projections and migration rules.
 
-## 7. 저장소와 백업 경계
+## Mail
 
-GitHub API나 S3 API는 Orbit의 실시간 데이터베이스가 아니다. 웹 UI와 MCP는 같은 로컬 vault에 원자적으로 쓰고, Git snapshot과 S3 호환 백업은 해당 vault를 비동기로 복제한다. 백업 장애가 캡처와 편집을 막지 않아야 하며, 복원할 때도 Markdown/YAML만으로 핵심 상태가 재구성되어야 한다.
-
-`OrbitItem.path`는 로컬 상대 경로이면서 미래 object key다. 새 경로는 `/` 구분자와 Unicode NFC를 사용하며 `s3://<bucket>/vaults/<vault-name>/<item.path>`로 직접 매핑할 수 있다. S3 adapter를 추가하더라도 앱의 개별 저장 요청이 Git commit이나 원격 object PUT을 기다리게 만들지 않는다.
-
-## 8. 현재 모듈
-
-- `src/lib/orbit/schema.ts`: 공유 데이터 계약
-- `src/lib/orbit/store.ts`: filesystem 읽기/쓰기
-- `src/lib/orbit/vault-key.ts`: portable filename과 object key 계약
-- `src/lib/orbit/functions.ts`: 웹 UI용 server functions
-- `src/lib/orbit/auth.server.ts`: 단일 사용자 로그인과 서명된 세션
-- `src/mcp/server.ts`: 외부 에이전트용 stdio MCP
-- `src/routes/index.tsx`: Today vertical slice
-- `src/routes/inbox.tsx`: 빠른 캡처와 PARA 분류
-- `src/routes/tasks.tsx`: 전체 할 일과 일정 변경
-- `src/routes/projects.tsx`, `areas.tsx`, `resources.tsx`, `archive.tsx`: PARA 폴더 탐색
-- `src/routes/calendar.tsx`: 일·주·월 캘린더
-- `src/routes/whiteboards.tsx`: Excalidraw 호환 화이트보드
-- `src/routes/capture.tsx`: 모바일 빠른 기록
-- `src/components/ui/`: shadcn/ui 기반 공통 컴포넌트
-
-웹 UI와 MCP는 별도 저장 구현을 만들지 않고 `store.ts`를 공유한다.
+Mail remains in `.orbit/mail/mail.sqlite` with its own encryption key and lifecycle. Provider mailbox content is fetched as needed; drafts, account credentials and notification state are durable application data, not disposable cache. The core database migration does not modify mail data. See [mail operations](./mail.md).

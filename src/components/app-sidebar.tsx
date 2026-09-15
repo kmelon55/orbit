@@ -9,6 +9,7 @@ import {
 	Layers,
 	ListTodo,
 	LogOut,
+	Mail,
 } from "lucide-react";
 import { useEffect } from "react";
 import { logoutOrbit } from "#/lib/orbit/auth";
@@ -71,6 +72,22 @@ export function AppSidebar({ snapshot }: { snapshot: OrbitSnapshot }) {
 	}
 
 	async function logout() {
+		if ("serviceWorker" in navigator) {
+			try {
+				const subscription = await (
+					await navigator.serviceWorker.getRegistration("/")
+				)?.pushManager?.getSubscription();
+				if (subscription) {
+					const { mailApi } = await import("#/lib/mail/client");
+					await mailApi("push/unsubscribe", {
+						endpoint: subscription.endpoint,
+					});
+					await subscription.unsubscribe();
+				}
+			} catch {
+				/* Logout remains available when push services are offline. */
+			}
+		}
 		await logoutOrbit();
 		window.location.replace("/login");
 	}
@@ -134,6 +151,18 @@ export function AppSidebar({ snapshot }: { snapshot: OrbitSnapshot }) {
 								) : null}
 							</SidebarMenuItem>
 						</ItemContextMenu>
+						<SidebarMenuItem>
+							<SidebarMenuButton
+								asChild
+								isActive={pathname === "/mail"}
+								tooltip="Mail"
+							>
+								<Link to="/mail">
+									<Mail />
+									<span>Mail</span>
+								</Link>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
 					</SidebarMenu>
 				</SidebarGroup>
 
@@ -219,7 +248,7 @@ export function AppSidebar({ snapshot }: { snapshot: OrbitSnapshot }) {
 				<div className="flex items-center justify-between px-1 group-data-[collapsible=icon]:justify-center">
 					<div className="flex items-center gap-2 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
 						<span className="size-1.5 rounded-full bg-emerald-500" />
-						Local files
+						Private workspace
 					</div>
 					<div className="flex items-center gap-0.5">
 						<SettingsDialog />

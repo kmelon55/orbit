@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import LZString from "lz-string";
 import { orbitFolderColorSchema } from "./schema";
+import { mkdir, readFile, writeFile } from "./storage-test-helpers";
 import {
 	archiveOrbitItem,
 	createOrbitCanvas,
@@ -463,5 +464,102 @@ test("Excalidraw files are listed and saved without changing their path", async 
 		if (previousVault === undefined) delete process.env.ORBIT_VAULT_DIR;
 		else process.env.ORBIT_VAULT_DIR = previousVault;
 		await rm(vault, { recursive: true, force: true });
+	}
+});
+
+test("database lookups stay fresh after document edits, renames, ID replacement, and deletion", async () => {
+	const { rename, unlink } = await import("./storage-test-helpers");
+	const { getOrbitItem, deleteOrbitItem } = await import("./store");
+	const previousVault = process.env.ORBIT_VAULT_DIR;
+	const vault = await mkdtemp(path.join(os.tmpdir(), "orbit-cache-"));
+	process.env.ORBIT_VAULT_DIR = vault;
+	try {
+		const created = await createOrbitItem({
+			title: "Cached note",
+			body: "Before",
+			type: "note",
+			space: "inbox",
+		});
+		assert.ok(created);
+		const first = await getOrbitSnapshot();
+		const second = await getOrbitSnapshot();
+		assert.deepEqual(
+			first.items[0],
+			second.items[0],
+			"unchanged notes retain the same values",
+		);
+		const originalPath = path.join(vault, created.path);
+		const raw = await readFile(originalPath, "utf8");
+		await writeFile(originalPath, raw.replace("Before", "After!"));
+		assert.equal((await getOrbitSnapshot()).items[0].body, "After!");
+		const renamedPath = path.join(vault, "inbox", "externally-renamed.md");
+		await rename(originalPath, renamedPath);
+		assert.equal(
+			(await getOrbitItem(created.id))?.path,
+			"inbox/externally-renamed.md",
+		);
+		await writeFile(
+			renamedPath,
+			(await readFile(renamedPath, "utf8")).replace(
+				created.id,
+				"replacement-id",
+			),
+		);
+		assert.equal(
+			await getOrbitItem(created.id),
+			null,
+			"a cached path must not identify a different note",
+		);
+		assert.equal((await getOrbitItem("replacement-id"))?.body, "After!");
+		const moved = await fileOrbitItem("replacement-id", {
+			space: "project",
+			folder: "Nested/Folder",
+		});
+		assert.ok(moved);
+		assert.equal((await getOrbitItem(moved.id))?.path, moved.path);
+		await updateOrbitNote(moved.id, {
+			title: "Edited after move",
+			body: "Saved",
+			tags: [],
+		});
+		assert.equal((await getOrbitSnapshot()).items[0].body, "Saved");
+		await deleteOrbitItem(moved.id);
+		assert.equal(await getOrbitItem(moved.id), null);
+		await writeFile(originalPath, raw);
+		assert.ok(await getOrbitItem(created.id));
+		await unlink(originalPath);
+		assert.equal((await getOrbitSnapshot()).items.length, 0);
+	} finally {
+		if (previousVault === undefined) delete process.env.ORBIT_VAULT_DIR;
+		else process.env.ORBIT_VAULT_DIR = previousVault;
+		await rm(vault, { recursive: true, force: true });
+	}
+});
+
+test("item path indexes are isolated between vaults with identical IDs", async () => {
+	const { getOrbitItem } = await import("./store");
+	const previousVault = process.env.ORBIT_VAULT_DIR;
+	const vaults = await Promise.all([
+		mkdtemp(path.join(os.tmpdir(), "orbit-cache-a-")),
+		mkdtemp(path.join(os.tmpdir(), "orbit-cache-b-")),
+	]);
+	try {
+		for (const [index, vault] of vaults.entries()) {
+			process.env.ORBIT_VAULT_DIR = vault;
+			await mkdir(path.join(vault, "inbox"), { recursive: true });
+			await writeFile(
+				path.join(vault, "inbox", "same.md"),
+				`---\nid: shared-id\ntitle: Vault ${index}\n---\nBody ${index}\n`,
+			);
+			assert.equal((await getOrbitItem("shared-id"))?.body, `Body ${index}`);
+		}
+		process.env.ORBIT_VAULT_DIR = vaults[0];
+		assert.equal((await getOrbitItem("shared-id"))?.body, "Body 0");
+	} finally {
+		if (previousVault === undefined) delete process.env.ORBIT_VAULT_DIR;
+		else process.env.ORBIT_VAULT_DIR = previousVault;
+		await Promise.all(
+			vaults.map((vault) => rm(vault, { recursive: true, force: true })),
+		);
 	}
 });

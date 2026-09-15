@@ -1,0 +1,477 @@
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
+import { mailApi } from "#/lib/mail/client";
+import type { MailStatus } from "#/lib/mail/types";
+import { Button } from "@/components/ui/button";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+
+type Status = MailStatus & { publicUrl: string; gmailClientId: string };
+function decodeKey(value: string) {
+	const raw = atob(value.replace(/-/g, "+").replace(/_/g, "/"));
+	return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+}
+export function MailSettings({
+	open,
+	onClose,
+	onChanged,
+}: {
+	open: boolean;
+	onClose: () => void;
+	onChanged: () => void;
+}) {
+	const [status, setStatus] = useState<Status | null>(null);
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState("");
+	const [provider, setProvider] = useState<"icloud" | "naver">("icloud");
+	const [email, setEmail] = useState("");
+	const [password, setPassword] = useState("");
+	const [publicUrl, setPublicUrl] = useState("");
+	const [clientId, setClientId] = useState("");
+	const [clientSecret, setClientSecret] = useState("");
+	const [preview, setPreview] = useState(true);
+	const [advanced, setAdvanced] = useState(false);
+	const [subscribed, setSubscribed] = useState(false);
+	const [remove, setRemove] = useState<string | null>(null);
+	const refresh = useCallback(async () => {
+		const next = await mailApi<Status>("status");
+		setStatus(next);
+		setPublicUrl(
+			next.publicUrl ||
+				(!window.location.hostname.includes("localhost")
+					? window.location.origin
+					: ""),
+		);
+		setClientId(next.gmailClientId);
+		setPreview(next.notificationPreview);
+	}, []);
+	useEffect(() => {
+		if (!open) return;
+		void refresh().catch((e) => setError(e.message));
+		if ("serviceWorker" in navigator)
+			void navigator.serviceWorker
+				.getRegistration("/")
+				.then((r) => r?.pushManager.getSubscription())
+				.then((s) => setSubscribed(Boolean(s)))
+				.catch(() => {});
+	}, [open, refresh]);
+	async function run(fn: () => Promise<void>) {
+		setBusy(true);
+		setError("");
+		try {
+			await fn();
+			onChanged();
+		} catch (e) {
+			setError(e instanceof Error ? e.message : "요청에 실패했습니다.");
+		} finally {
+			setBusy(false);
+		}
+	}
+	async function connect() {
+		await run(async () => {
+			await mailApi("connect", { provider, email, password });
+			setPassword("");
+			setEmail("");
+			await refresh();
+			toast.success("메일 계정을 연결했습니다.");
+			void mailApi("sync", {})
+				.then(onChanged)
+				.catch(() => {});
+		});
+	}
+	async function notifications() {
+		await run(async () => {
+			if (
+				!("serviceWorker" in navigator) ||
+				!("PushManager" in window) ||
+				!("Notification" in window)
+			)
+				throw new Error(
+					"이 브라우저에서는 푸시를 지원하지 않습니다. 아이폰에서는 홈 화면에 Orbit을 추가한 뒤 열어 주세요.",
+				);
+			if (subscribed) {
+				const registration = await navigator.serviceWorker.getRegistration("/");
+				const sub = await registration?.pushManager.getSubscription();
+				if (sub) {
+					await mailApi("push/unsubscribe", { endpoint: sub.endpoint });
+					await sub.unsubscribe();
+				}
+				setSubscribed(false);
+				return;
+			}
+			if (!status?.publicKey)
+				throw new Error(
+					"아래 서버 연결 설정에서 HTTPS Orbit 주소를 먼저 저장해 주세요.",
+				);
+			const permission = await Notification.requestPermission();
+			if (permission !== "granted")
+				throw new Error(
+					"브라우저 또는 기기 설정에서 Orbit 알림을 허용해 주세요.",
+				);
+			await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+			const registration = await navigator.serviceWorker.ready;
+			const sub =
+				(await registration.pushManager.getSubscription()) ||
+				(await registration.pushManager.subscribe({
+					userVisibleOnly: true,
+					applicationServerKey: decodeKey(status.publicKey),
+				}));
+			await mailApi("push/subscribe", sub.toJSON());
+			setSubscribed(true);
+			toast.success("이 기기의 메일 알림을 켰습니다.");
+		});
+	}
+	return (
+		<Dialog
+			open={open}
+			onOpenChange={(v) => {
+				if (!v && !busy) {
+					setPassword("");
+					setClientSecret("");
+					onClose();
+				}
+			}}
+		>
+			<DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-xl">
+				<DialogHeader>
+					<div className="flex items-center justify-between">
+						<DialogTitle>메일 설정</DialogTitle>
+						<Button variant="ghost" size="sm" disabled={busy} onClick={onClose}>
+							닫기
+						</Button>
+					</div>
+					<DialogDescription>
+						계정을 연결하고 이 기기의 알림을 관리하세요.
+					</DialogDescription>
+				</DialogHeader>
+				{error && (
+					<p
+						role="alert"
+						className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive"
+					>
+						{error}
+					</p>
+				)}
+				<div className="space-y-3">
+					{status?.accounts.map((a) => (
+						<div key={a.id} className="rounded-lg border p-3 text-sm">
+							<div className="flex items-center justify-between gap-2">
+								<div className="min-w-0">
+									<p className="truncate font-medium">{a.email}</p>
+									<p className="text-xs text-muted-foreground">
+										{a.provider} ·{" "}
+										{a.error ||
+											(a.lastSync
+												? `최근 동기화 ${new Date(a.lastSync).toLocaleTimeString("ko-KR")}`
+												: "첫 동기화 대기")}
+									</p>
+								</div>
+								<Button
+									size="sm"
+									variant="ghost"
+									disabled={busy}
+									onClick={() => setRemove(a.id)}
+								>
+									연결 해제
+								</Button>
+							</div>
+							{remove === a.id && (
+								<div className="mt-2 space-y-2">
+									<p>
+										Orbit의 연결과 캐시를 제거합니다. 원본 메일은 유지됩니다.
+									</p>
+									<Button
+										size="sm"
+										variant="destructive"
+										disabled={busy}
+										onClick={() =>
+											void run(async () => {
+												await mailApi("account", { id: a.id, remove: true });
+												setRemove(null);
+												await refresh();
+											})
+										}
+									>
+										연결 해제 확인
+									</Button>
+									<Button
+										size="sm"
+										variant="ghost"
+										onClick={() => setRemove(null)}
+									>
+										취소
+									</Button>
+								</div>
+							)}
+							<label className="mt-2 flex items-center gap-2">
+								<input
+									type="checkbox"
+									checked={a.notifications}
+									disabled={busy}
+									onChange={(e) =>
+										void run(async () => {
+											await mailApi("account", {
+												id: a.id,
+												notifications: e.target.checked,
+											});
+											await refresh();
+										})
+									}
+								/>
+								이 계정의 새 메일 알림
+							</label>
+						</div>
+					))}
+				</div>
+				<section className="space-y-3 border-t pt-4">
+					<h3 className="text-sm font-medium">계정 추가</h3>
+					<Button
+						variant="outline"
+						className="w-full"
+						disabled={busy || !status?.gmailConfigured}
+						onClick={() =>
+							void run(async () => {
+								const r = await mailApi<{ url: string }>("oauth/start", {});
+								window.location.assign(r.url);
+							})
+						}
+					>
+						Google로 Gmail 연결
+					</Button>
+					{!status?.gmailConfigured && (
+						<p className="text-xs text-muted-foreground">
+							먼저 아래 서버 연결 설정에서 Google OAuth 앱을 등록해 주세요.
+						</p>
+					)}
+					<form
+						className="space-y-3"
+						onSubmit={(e) => {
+							e.preventDefault();
+							void connect();
+						}}
+					>
+						<label className="block space-y-1 text-sm">
+							<span>메일 서비스</span>
+							<select
+								className="h-9 w-full rounded-md border bg-background px-3"
+								value={provider}
+								onChange={(e) => setProvider(e.target.value as typeof provider)}
+							>
+								<option value="icloud">iCloud</option>
+								<option value="naver">네이버</option>
+							</select>
+						</label>
+						<label
+							htmlFor="mail-mail-settings-1"
+							className="block space-y-1 text-sm"
+						>
+							<span>메일 주소</span>
+							<Input
+								id="mail-mail-settings-1"
+								type="email"
+								required
+								autoComplete="username"
+								value={email}
+								onChange={(e) => setEmail(e.target.value)}
+								placeholder={
+									provider === "icloud" ? "name@icloud.com" : "name@naver.com"
+								}
+							/>
+						</label>
+						<label
+							htmlFor="mail-mail-settings-2"
+							className="block space-y-1 text-sm"
+						>
+							<span>앱 비밀번호</span>
+							<Input
+								id="mail-mail-settings-2"
+								type="password"
+								required
+								autoComplete="new-password"
+								value={password}
+								onChange={(e) => setPassword(e.target.value)}
+							/>
+						</label>
+						<p className="text-xs leading-relaxed text-muted-foreground">
+							{provider === "icloud" ? (
+								<>
+									Apple 계정에서 발급한 앱 전용 비밀번호를 입력하세요.{" "}
+									<a
+										className="underline"
+										href="https://support.apple.com/102654"
+										target="_blank"
+										rel="noreferrer"
+									>
+										발급 방법
+									</a>
+								</>
+							) : (
+								<>
+									네이버에서 2단계 인증과 IMAP 사용을 켜고 애플리케이션
+									비밀번호를 발급하세요.{" "}
+									<a
+										className="underline"
+										href="https://help.naver.com/service/30029/contents/21344?osType=COMMONOS"
+										target="_blank"
+										rel="noreferrer"
+									>
+										설정 방법
+									</a>
+								</>
+							)}
+						</p>
+						<Button
+							type="submit"
+							disabled={busy || !email || !password}
+							className="w-full"
+						>
+							{busy ? "연결 중…" : "계정 연결"}
+						</Button>
+					</form>
+				</section>
+				<section className="space-y-3 border-t pt-4">
+					<h3 className="text-sm font-medium">이 기기의 알림</h3>
+					<p className="text-xs text-muted-foreground">
+						아이폰은 홈 화면에 Orbit을 추가한 뒤 알림을 켜세요. 기기별로 한 번씩
+						설정합니다.
+					</p>
+					<div className="flex gap-2">
+						<Button
+							variant="outline"
+							disabled={busy}
+							onClick={() => void notifications()}
+						>
+							{subscribed ? "이 기기 알림 끄기" : "이 기기 알림 켜기"}
+						</Button>
+						{subscribed && (
+							<Button
+								variant="ghost"
+								disabled={busy}
+								onClick={() =>
+									void run(async () => {
+										const sub = await (
+											await navigator.serviceWorker.ready
+										).pushManager.getSubscription();
+										if (sub) {
+											await mailApi("push/test", { endpoint: sub.endpoint });
+											toast.success("테스트 알림을 보냈습니다.");
+										}
+									})
+								}
+							>
+								테스트 알림
+							</Button>
+						)}
+					</div>
+					<label className="flex items-center gap-2 text-sm">
+						<input
+							type="checkbox"
+							checked={preview}
+							onChange={(e) => setPreview(e.target.checked)}
+						/>
+						보낸 사람과 제목 표시
+					</label>
+				</section>
+				<section className="space-y-3 border-t pt-4">
+					<Button
+						variant="ghost"
+						size="sm"
+						onClick={() => setAdvanced((v) => !v)}
+						aria-expanded={advanced}
+					>
+						서버 연결 설정 {advanced ? "접기" : "열기"}
+					</Button>
+					{advanced && (
+						<div className="space-y-3">
+							<label
+								htmlFor="mail-mail-settings-3"
+								className="block space-y-1 text-sm"
+							>
+								<span>Orbit HTTPS 주소</span>
+								<Input
+									id="mail-mail-settings-3"
+									type="url"
+									value={publicUrl}
+									onChange={(e) => setPublicUrl(e.target.value)}
+									placeholder="https://orbit.example.com"
+								/>
+							</label>
+							<p className="text-xs text-muted-foreground">
+								Google Cloud에서 Gmail API를 켜고 웹 애플리케이션 OAuth
+								클라이언트를 만드세요. 개인용 테스트 앱이면 본인 Gmail을 테스트
+								사용자에 추가하세요. 테스트 상태에서는 7일 후 재연결이 필요할 수
+								있습니다.
+							</p>
+							<label
+								htmlFor="mail-mail-settings-4"
+								className="block space-y-1 text-sm"
+							>
+								<span>승인된 리디렉션 URI</span>
+								<Input
+									id="mail-mail-settings-4"
+									readOnly
+									value={`${publicUrl.replace(/\/$/, "")}/api/mail/oauth/callback`}
+								/>
+							</label>
+							<label
+								htmlFor="mail-mail-settings-5"
+								className="block space-y-1 text-sm"
+							>
+								<span>Google 클라이언트 ID</span>
+								<Input
+									id="mail-mail-settings-5"
+									value={clientId}
+									onChange={(e) => setClientId(e.target.value)}
+									autoComplete="off"
+								/>
+							</label>
+							<label
+								htmlFor="mail-mail-settings-6"
+								className="block space-y-1 text-sm"
+							>
+								<span>Google 클라이언트 보안 비밀번호</span>
+								<Input
+									id="mail-mail-settings-6"
+									type="password"
+									value={clientSecret}
+									onChange={(e) => setClientSecret(e.target.value)}
+									placeholder={
+										status?.gmailConfigured
+											? "설정됨 · 변경할 때만 입력"
+											: "클라이언트 보안 비밀번호"
+									}
+									autoComplete="new-password"
+								/>
+							</label>
+						</div>
+					)}
+					<Button
+						disabled={busy || !publicUrl}
+						variant="outline"
+						onClick={() =>
+							void run(async () => {
+								await mailApi("settings", {
+									publicUrl,
+									gmailClientId: clientId,
+									gmailClientSecret: clientSecret,
+									notificationPreview: preview,
+								});
+								setClientSecret("");
+								await refresh();
+								toast.success("메일 설정을 저장했습니다.");
+							})
+						}
+					>
+						설정 저장
+					</Button>
+				</section>
+			</DialogContent>
+		</Dialog>
+	);
+}

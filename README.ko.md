@@ -2,7 +2,7 @@
   <img src="./public/orbit.png" width="72" alt="Orbit 로고" />
   <h1>Orbit</h1>
   <p><strong>노트, 할 일, 시간을 한곳에 모은 작은 개인 워크스페이스.</strong></p>
-  <p>일단 기록하고, 필요할 때만 정리하고, 내 데이터는 파일로 남깁니다.</p>
+  <p>일단 기록하고, 필요할 때만 정리하고, 내 데이터는 내 서버에 보관합니다.</p>
   <p><a href="./README.md">English</a></p>
 </div>
 
@@ -10,7 +10,7 @@ Orbit은 가볍게 셀프호스팅할 수 있는 개인 지식·일정 관리 �
 
 개인 지식 관리 시스템을 쓰기 위해 데이터베이스, 속성, 플러그인, 폴더 규칙부터 계속 관리하고 싶지 않은 사람을 위해 만들고 있습니다. Orbit의 흐름은 의도적으로 작습니다. 생각을 바로 기록하고, 필요하면 할 일이나 일정으로 만들고, 의미가 생겼을 때만 PARA로 정리합니다.
 
-노트, 할 일, 일정은 하나의 Markdown vault에 함께 저장됩니다. AI 제공자가 없어도 핵심 기능이 동작하며, 다음 큰 단계는 내 정보를 찾고 정리하되 원본을 몰래 바꾸지 않는 선택형 AI입니다.
+노트, 할 일, 일정은 내장 SQLite에 함께 저장되며 Markdown 입출력을 지원합니다. AI 제공자가 없어도 핵심 기능이 동작하며, 다음 큰 단계는 내 정보를 찾고 정리하되 원본을 몰래 바꾸지 않는 선택형 AI입니다.
 
 ## 지금 실제로 되는 것
 
@@ -24,7 +24,8 @@ Orbit은 가볍게 셀프호스팅할 수 있는 개인 지식·일정 관리 �
 | PARA | 항목을 Projects, Areas, Resources, Archive로 옮깁니다. 데이터베이스 구조를 먼저 만들지 않고도 중첩 폴더를 관리할 수 있습니다. |
 | 화이트보드 | Excalidraw 호환 화이트보드 파일을 만들고, 이름을 바꾸고, 편집하고, 자동 저장합니다. 노트에서 화이트보드를 연결할 수 있습니다. |
 | 모바일 | 반응형 내비게이션, 전용 빠른 기록 화면, 설치 안내, PWA manifest가 있습니다. 개인 페이지와 노트 데이터는 오프라인 캐시에 저장하지 않습니다. |
-| 셀프호스팅 | Docker 컨테이너 하나, 영구 vault 디렉터리 하나, 내장 단일 사용자 비밀번호 인증으로 동작합니다. 앱 데이터베이스는 필요하지 않습니다. |
+| 메일 | Gmail·iCloud·네이버 연결, 읽기·작성·답장·전달, 첨부파일, 웹 푸시를 지원합니다. [연결·운영 안내](./docs/mail.md)를 참고하세요. |
+| 셀프호스팅 | Docker 컨테이너 하나, 영구 vault 디렉터리 하나, 내장 단일 사용자 비밀번호 인증으로 동작합니다. SQLite가 내장되어 별도 DB 서버를 설치할 필요가 없습니다. |
 | MCP | 웹 앱과 같은 vault를 사용하는 로컬 stdio 서버와 9개 도구가 구현되어 있습니다. |
 
 아직 없는 것: 내장 AI, AI 정리와 변경 검토 화면, 외부 캘린더 동기화, 자동 백업, 다중 사용자 협업, 원격 HTTP MCP endpoint.
@@ -34,7 +35,7 @@ Orbit은 가볍게 셀프호스팅할 수 있는 개인 지식·일정 관리 �
 ```text
 기록 -> Today / 할 일 / 캘린더 -> 필요할 때 PARA 정리 -> Archive
                     |
-                Markdown 파일
+              SQLite + 첨부파일
                     |
                  웹 UI와 MCP
 ```
@@ -65,22 +66,16 @@ ORBIT_AUTH_PASSWORD=replace-with-a-long-random-password
 
 ## 내 데이터
 
-Markdown과 YAML frontmatter가 유일한 원본입니다.
+`<ORBIT_VAULT_DIR>/.orbit/orbit.sqlite`가 기본 저장소입니다. 노트 본문은 Markdown이며 첨부파일은 별도 파일로 보관합니다. 기존 vault는 처음 열 때 검증 후 자동 이관하고, 원본 파일은 수정하거나 삭제하지 않습니다. 이관 이후 원본 `.md` 파일은 자동으로 갱신되지 않습니다.
 
-```text
-ORBIT_VAULT_DIR/
-├── inbox/
-├── projects/
-├── areas/
-├── resources/
-├── events/
-├── whiteboards/
-└── archive/
+```bash
+pnpm storage status
+pnpm storage export /absolute/new-export
+pnpm storage import /absolute/source-export
+pnpm storage backup /absolute/new-backup
 ```
 
-할 일은 별도 데이터베이스에 들어가지 않습니다. `type: task`인 Markdown 항목은 Inbox, Project, Area 어디에 있어도 Orbit이 Today, Tasks, Calendar에 모아 보여줍니다. Orbit이 노트를 다시 쓸 때 알 수 없는 frontmatter도 보존합니다.
-
-파일 계약은 [아키텍처 문서](./docs/architecture.md), 운영과 백업 경계는 [vault 가이드](./docs/vault-and-backup.md)를 참고하세요.
+모든 명령은 같은 `ORBIT_VAULT_DIR`를 지정해서 실행하세요. 폴더 색상·순서, 화이트보드, 알 수 없는 frontmatter도 보존합니다. 이관·Docker·복원 절차는 [데이터 운영 안내](./docs/vault-and-backup.md), 저장 계약은 [아키텍처](./docs/architecture.md)를 참고하세요.
 
 ## MCP 연결
 
@@ -122,6 +117,8 @@ MCP 프로세스는 설정한 vault에 직접 읽기·쓰기 권한을 가집니
 
 ## Docker
 
+간편 설치는 제공된 `compose.yaml`과 [운영 안내](./docs/vault-and-backup.md)를 사용하세요. 기존 배포는 `/vault` 마운트를 유지합니다.
+
 ```bash
 docker build -t orbit .
 docker run --rm -p 3000:3000 \
@@ -142,7 +139,7 @@ docker run --rm -p 3000:3000 \
 2. 노트·할 일·일정을 함께 검색하고 요약하고 질문하기
 3. 제목·태그·날짜·PARA 위치 제안
 4. 파일을 바꾸기 전에 모든 변경 내용을 검토하는 화면
-5. 안정적인 파일 감지, snapshot, 복원 흐름
+5. 백업·복원 경험 개선
 6. 로컬 캘린더 계약이 안정된 뒤 import/export와 동기화
 
 자세한 순서는 [로드맵](./docs/roadmap.md)에 정리되어 있습니다.
@@ -161,11 +158,11 @@ pnpm mcp        # local stdio MCP server
 
 ## 원칙
 
-- 파일은 내보내기 형식이 아니라 제품 데이터 자체입니다.
+- 데이터는 내 서버에 보관하고 Markdown으로 가져오고 내보낼 수 있어야 합니다.
 - 노트, 할 일, 시간은 하나의 작은 개인 흐름 안에 있어야 합니다.
 - 기록은 정리보다 가벼워야 합니다.
 - AI는 선택 사항이며 검토할 변경을 제안합니다.
-- 셀프호스팅은 앱 하나, vault 하나, 필수 데이터베이스 없음으로 이해 가능해야 합니다.
+- 셀프호스팅은 앱 하나, 영구 데이터 폴더 하나, 별도 DB 서버 없음으로 이해 가능해야 합니다.
 
 ## License
 

@@ -109,6 +109,7 @@ export const createFolderInputSchema = z.object({
 });
 
 export const updateFolderInputSchema = z.object({
+	parent: z.string().trim().max(500).optional(),
 	space: paraFolderSpaceSchema,
 	path: z.string().trim().min(1).max(500),
 	name: z.string().trim().min(1).max(80).optional(),
@@ -120,7 +121,20 @@ export const deleteFolderInputSchema = z.object({
 	path: z.string().trim().min(1).max(500),
 });
 
+export const moveTreeInputSchema = z.object({
+	space: paraFolderSpaceSchema,
+	key: z.string().min(1).max(600),
+	target: z.string().min(1).max(600).optional(),
+	position: z.enum(["before", "after", "inside"]),
+});
+export type MoveTreeInput = z.infer<typeof moveTreeInputSchema>;
+export type TreeOrder = Record<string, string[]>;
+
 export const orbitMutationSchema = z.discriminatedUnion("action", [
+	z.object({
+		action: z.literal("move-tree-entry"),
+		input: moveTreeInputSchema,
+	}),
 	z.object({
 		action: z.literal("capture"),
 		input: captureInputSchema,
@@ -213,8 +227,6 @@ export type OrbitFolder = {
 	count: number;
 	descendantCount: number;
 };
-
-export type TreeOrder = Record<string, string[]>;
 
 export type OrbitSnapshot = {
 	treeOrder?: Partial<Record<OrbitFolder["space"], TreeOrder>>;

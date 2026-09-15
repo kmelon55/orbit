@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import type { FileItemInput, OrbitMutation } from "./schema";
+import { readFile, unlink, writeFile } from "./storage-test-helpers";
 import {
 	createOrbitItem,
 	deleteOrbitItem,
@@ -151,7 +152,7 @@ test("item actions share safe, field-specific undo", async (t) => {
 				await writeFile(p, "another file");
 				await assert.rejects(undoOrbitMutation(action.undo.id), /EEXIST/);
 				assert.equal(await readFile(p, "utf8"), "another file");
-				await rm(p);
+				await unlink(p);
 				await undoOrbitMutation(action.undo.id);
 				assert.equal(await readFile(p, "utf8"), original);
 			},
