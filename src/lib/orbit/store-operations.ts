@@ -470,6 +470,10 @@ export async function saveOrbitCanvas(objectKey: string, document: string) {
 			? { orbitTitle: currentDocument.orbitTitle }
 			: {}),
 	});
+	// Editor initialization can emit the same scene with reordered keys or without
+	// Orbit's title. Keep the original source bytes and modification date intact.
+	if (isDeepStrictEqual(currentDocument, JSON.parse(withMetadata)))
+		return readOrbitCanvas(filePath, vaultRoot);
 	await atomicWrite(
 		filePath,
 		replaceCanvasDocument(current, format, withMetadata),

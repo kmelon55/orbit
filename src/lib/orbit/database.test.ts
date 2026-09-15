@@ -12,6 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
+import LZString from "lz-string";
 import {
 	closeOrbitDatabases,
 	databaseFor,
@@ -28,8 +29,10 @@ import {
 	createOrbitFolder,
 	createOrbitItem,
 	fileOrbitItem,
+	getOrbitCanvas,
 	getOrbitItem,
 	getOrbitSnapshot,
+	saveOrbitCanvas,
 	toggleOrbitTask,
 	updateOrbitFolder,
 	updateOrbitNote,
@@ -59,6 +62,56 @@ function put(root: string, key: string, value: string | Buffer) {
 }
 const note =
 	"---\nid: migrated\ntitle: 한글 노트\ntype: task\nspace: project\nstatus: in_progress\ncolor: violet\ntags: [태그, second]\ndue: 2026-09-17T09:30:00\ncreated: '2024-01-02T03:04:05.000Z'\nupdated: '2025-06-07T08:09:10.000Z'\ncustom:\n  nested: [1, two]\n---\n\n  본문 공백도 보존  \n\n![asset](./photo.png)\n";
+
+test("unchanged canvas autosaves preserve migrated source bytes, dates, and revision", async () => {
+	const f = fixture();
+	try {
+		const document = {
+			type: "excalidraw",
+			version: 2,
+			orbitTitle: "Original title",
+			elements: [],
+			appState: {},
+			files: {},
+		};
+		const sources = {
+			"whiteboards/plain.excalidraw": JSON.stringify(document, null, 2),
+			"whiteboards/compressed.excalidraw.md": `---\ncustom: keep\n---\n\n\`\`\`compressed-json\n${LZString.compressToBase64(JSON.stringify(document))}\n\`\`\`\n`,
+		};
+		for (const [key, raw] of Object.entries(sources)) put(f.root, key, raw);
+		await getOrbitSnapshot();
+		for (const [key, raw] of Object.entries(sources)) {
+			const before = databaseFor()
+				.sql.prepare("SELECT * FROM documents WHERE path=?")
+				.get(key);
+			const loaded = JSON.parse((await getOrbitCanvas(key)).document);
+			// Excalidraw omits Orbit's title and may reorder JSON keys on initialization.
+			const unchanged = {
+				files: loaded.files,
+				appState: loaded.appState,
+				elements: loaded.elements,
+				version: loaded.version,
+				type: loaded.type,
+			};
+			await saveOrbitCanvas(key, JSON.stringify(unchanged));
+			assert.deepEqual(
+				databaseFor()
+					.sql.prepare("SELECT * FROM documents WHERE path=?")
+					.get(key),
+				before,
+			);
+			assert.equal(databaseFor().read(key).raw, raw);
+			await saveOrbitCanvas(
+				key,
+				JSON.stringify({ ...unchanged, elements: [{ id: "new-shape" }] }),
+			);
+			assert.equal(databaseFor().read(key).canvas?.elementCount, 1);
+			assert.notEqual(databaseFor().read(key).raw, raw);
+		}
+	} finally {
+		f.finish();
+	}
+});
 
 test("migration preserves raw bytes, unknown metadata, empty folders, ordering, canvas, and attachments; never rereads legacy files", async () => {
 	const f = fixture();
