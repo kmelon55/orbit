@@ -15,6 +15,7 @@ import { mutateOrbit } from "#/lib/orbit/functions";
 import { itemColor } from "#/lib/orbit/item-colors";
 import { formatDayKey, itemDayKey } from "#/lib/orbit/para";
 import type { OrbitItem, OrbitSnapshot } from "#/lib/orbit/schema";
+import { ScheduleColors } from "@/components/schedule-colors";
 import { ScheduleEditor } from "@/components/schedule-editor";
 import { Button } from "@/components/ui/button";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -287,10 +288,7 @@ function itemTimeLabel(item: OrbitItem) {
 }
 
 function eventTone(item: OrbitItem) {
-	if (item.color) return itemColor(item).surface;
-	return item.type === "task"
-		? "border-border bg-muted/75 text-foreground hover:bg-muted"
-		: "border-foreground/25 bg-foreground text-background hover:bg-foreground/85";
+	return itemColor(item).surface;
 }
 
 function itemAccent(item: OrbitItem) {
@@ -956,6 +954,7 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 							</Button>
 						))}
 					</div>
+					<ScheduleColors />
 					<Button size="sm" onClick={() => openNew(selectedDate)}>
 						<Plus /> <span className="hidden sm:inline">새 일정</span>
 					</Button>

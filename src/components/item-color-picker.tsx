@@ -2,7 +2,7 @@ import { Check, RotateCcw } from "lucide-react";
 import { Popover } from "radix-ui";
 import { useState } from "react";
 import { FOLDER_COLORS } from "#/lib/orbit/folder-colors";
-import { itemColor } from "#/lib/orbit/item-colors";
+import { paletteItemColor } from "#/lib/orbit/item-colors";
 import type { OrbitItem } from "#/lib/orbit/schema";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -19,7 +19,7 @@ export function ItemColorPicker({
 	disabled?: boolean;
 }) {
 	const [open, setOpen] = useState(false);
-	const selected = itemColor({ type, color: value });
+	const selected = paletteItemColor({ type, color: value });
 	return (
 		<Popover.Root open={open} onOpenChange={setOpen}>
 			<Popover.Trigger asChild>

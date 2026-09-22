@@ -21,7 +21,18 @@ const SURFACES: Record<OrbitFolderColor, string> = {
 	white: "border-neutral-400 bg-white text-black hover:bg-neutral-100",
 };
 
-export function itemColor(item: Pick<OrbitItem, "type" | "color">) {
+export function paletteItemColor(item: Pick<OrbitItem, "type" | "color">) {
 	const color = item.color ?? (item.type === "event" ? "blue" : "amber");
 	return { ...folderColor(color), surface: SURFACES[color] };
+}
+
+// Scheduled items use one color per kind; legacy per-item metadata is preserved.
+export function itemColor(item: Pick<OrbitItem, "type" | "color">) {
+	const kind = item.type === "event" ? "event" : "task";
+	return {
+		...paletteItemColor({ type: item.type, color: undefined }),
+		dot: `orbit-${kind}-dot`,
+		icon: `orbit-${kind}-icon`,
+		surface: `orbit-${kind}-surface`,
+	};
 }

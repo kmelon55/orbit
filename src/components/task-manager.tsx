@@ -16,6 +16,7 @@ import {
 	type ItemConfirmAction,
 	ItemContextMenu,
 } from "@/components/item-context-menu";
+import { ScheduleColors } from "@/components/schedule-colors";
 import { ScheduleEditor } from "@/components/schedule-editor";
 import {
 	TaskCheck,
@@ -311,9 +312,12 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 								날짜를 정하면 Today와 Calendar에도 함께 표시됩니다.
 							</p>
 						</div>
-						<Button onClick={() => void createTask()}>
-							<Plus /> 할 일
-						</Button>
+						<div className="flex items-center gap-1">
+							<ScheduleColors />
+							<Button onClick={() => void createTask()}>
+								<Plus /> 할 일
+							</Button>
+						</div>
 					</header>
 
 					<div className="mb-4 flex w-fit rounded-lg bg-muted p-0.5 sm:mb-6">

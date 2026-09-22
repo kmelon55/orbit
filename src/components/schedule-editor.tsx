@@ -11,7 +11,6 @@ import { mutateOrbit } from "#/lib/orbit/functions";
 import { itemColor } from "#/lib/orbit/item-colors";
 import { formatDayKey } from "#/lib/orbit/para";
 import { type OrbitItem, orbitItemSchema } from "#/lib/orbit/schema";
-import { ItemColorPicker } from "@/components/item-color-picker";
 import { DatePicker, TimePicker } from "@/components/schedule-controls";
 import {
 	AlertDialog,
@@ -76,7 +75,7 @@ export function ScheduleEditor({
 	const today = formatDayKey();
 	const [title, setTitle] = useState("");
 	const [body, setBody] = useState("");
-	const [color, setColor] = useState<OrbitItem["color"]>();
+	const color = item?.color;
 	const [startDate, setStartDate] = useState(initialDate ?? today);
 	const [endDate, setEndDate] = useState(initialDate ?? today);
 	const [startTime, setStartTime] = useState(initialTime);
@@ -100,7 +99,6 @@ export function ScheduleEditor({
 				: resolvedStart;
 		setTitle(item?.title ?? "");
 		setBody(item?.body ?? "");
-		setColor(item?.color);
 		setStartDate(resolvedStart);
 		setEndDate(dayOf(item?.end, defaultEndDate));
 		setStartTime(resolvedTime);
@@ -273,14 +271,6 @@ export function ScheduleEditor({
 						</DialogHeader>
 
 						<div className="grid gap-4 px-5 py-4">
-							<div>
-								<ItemColorPicker
-									type={kind}
-									value={color}
-									onChange={setColor}
-									disabled={saving}
-								/>
-							</div>
 							{kind === "event" ? (
 								<div className="grid gap-3">
 									<div className="flex items-center gap-3">

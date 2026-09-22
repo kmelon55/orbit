@@ -9,8 +9,7 @@ import {
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { formatDayKey, ITEM_TYPE_LABEL } from "#/lib/orbit/para";
-import type { OrbitItem, OrbitItemType } from "#/lib/orbit/schema";
-import { ItemColorPicker } from "@/components/item-color-picker";
+import type { OrbitItemType } from "#/lib/orbit/schema";
 import { QuickCaptureEditor } from "@/components/quick-capture-editor";
 import { DatePicker, TimePicker } from "@/components/schedule-controls";
 import { Button } from "@/components/ui/button";
@@ -79,7 +78,6 @@ export function QuickCapture({
 	const titleBreak = capture.indexOf("\n");
 	const captureTitle = titleBreak < 0 ? capture : capture.slice(0, titleBreak);
 	const captureBody = titleBreak < 0 ? "" : capture.slice(titleBreak + 1);
-	const [color, setColor] = useState<OrbitItem["color"]>();
 	const [kind, setKind] = useState<OrbitItemType>(initialKind);
 	const [date, setDate] = useState(() => formatDayKey());
 	const [endDate, setEndDate] = useState(() => formatDayKey());
@@ -189,7 +187,6 @@ export function QuickCapture({
 									type: kind,
 									body,
 									space: "event",
-									color,
 									...schedule,
 								},
 							}
@@ -199,7 +196,6 @@ export function QuickCapture({
 									title,
 									type: kind,
 									body,
-									color: kind === "task" ? color : undefined,
 									...schedule,
 								},
 							},
@@ -272,9 +268,6 @@ export function QuickCapture({
 			<Separator className="my-2" />
 			{kind === "task" || kind === "event" ? (
 				<div className="grid gap-2 px-1 pb-2">
-					<div>
-						<ItemColorPicker type={kind} value={color} onChange={setColor} />
-					</div>
 					{kind === "event" ? (
 						<>
 							<div className="grid items-center gap-2 sm:grid-cols-[2.5rem_minmax(0,1fr)_minmax(0,0.8fr)]">

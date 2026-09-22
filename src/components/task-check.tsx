@@ -23,11 +23,9 @@ export function TaskCheck({
 			data-animate={animate ? "true" : undefined}
 			className={cn(
 				"orbit-task-check relative grid size-5 shrink-0 place-items-center rounded-full border-2 transition-[background-color,border-color,box-shadow,color] duration-200 ease-[var(--interaction-ease)] after:absolute after:-inset-2 after:content-[''] disabled:opacity-100",
-				color
-					? itemColor({ type: "task", color }).surface
-					: checked
-						? "border-foreground bg-foreground text-background shadow-sm"
-						: "border-foreground/45 bg-background text-foreground/0 hover:border-foreground/80 hover:bg-muted hover:text-foreground/35",
+				itemColor({ type: "task", color }).surface,
+				!checked && "bg-background hover:bg-muted",
+
 				className,
 			)}
 			{...props}

@@ -641,3 +641,18 @@
 .markdown-body input[type="checkbox"] {
 	margin-right: 0.45rem;
 }
+
+.orbit-task-dot { background-color: var(--orbit-task-color, #f59e0b); }
+.orbit-event-dot { background-color: var(--orbit-event-color, #3b82f6); }
+.orbit-task-icon { color: var(--orbit-task-color, #f59e0b); }
+.orbit-event-icon { color: var(--orbit-event-color, #3b82f6); }
+.orbit-task-surface { --schedule-color: var(--orbit-task-color, #f59e0b); }
+.orbit-event-surface { --schedule-color: var(--orbit-event-color, #3b82f6); }
+.orbit-task-surface, .orbit-event-surface {
+ border-color: color-mix(in srgb, var(--schedule-color) 75%, var(--foreground));
+ background-color: color-mix(in srgb, var(--schedule-color) 23%, var(--background));
+ color: var(--foreground);
+}
+.orbit-task-surface:hover, .orbit-event-surface:hover {
+ background-color: color-mix(in srgb, var(--schedule-color) 34%, var(--background));
+}

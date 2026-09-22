@@ -11,6 +11,7 @@ import { getOrbitAuthStatus } from "#/lib/orbit/auth";
 import { loadOrbit } from "#/lib/orbit/functions";
 import { ActionUndoProvider } from "@/components/action-undo-provider";
 import { AppShell } from "@/components/app-shell";
+import { ScheduleColorProvider } from "@/components/schedule-colors";
 import { ServiceWorkerRegister } from "@/components/service-worker-register";
 import { ThemeProvider } from "@/components/theme-provider";
 import appCss from "../styles.css?url";
@@ -93,7 +94,9 @@ function RootDocument({ children }: { children: ReactNode }) {
 				<HeadContent />
 			</head>
 			<body>
-				<ThemeProvider>{children}</ThemeProvider>
+				<ThemeProvider>
+					<ScheduleColorProvider>{children}</ScheduleColorProvider>
+				</ThemeProvider>
 				<ServiceWorkerRegister />
 				<Scripts />
 			</body>
