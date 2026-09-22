@@ -78,6 +78,10 @@ type NoteDraft = {
 };
 
 export type ItemWorkspaceNavigatorContext = {
+	runWithSavedItems: (
+		ids: string[],
+		operation: () => Promise<unknown>,
+	) => Promise<void>;
 	selectedId: string | null;
 	items: OrbitItem[];
 	openItem: (id: string) => void;
@@ -1057,6 +1061,7 @@ export function ItemWorkspace({
 	const renderedNavigator =
 		typeof navigator === "function"
 			? navigator({
+					runWithSavedItems,
 					selectedId: selected?.id ?? null,
 					items,
 					openItem: chooseItem,
@@ -1068,7 +1073,7 @@ export function ItemWorkspace({
 				})
 			: navigator;
 
-	const listPane = (
+	const listPane = navigatorOnly ? null : (
 		<ItemContextMenu
 			onCreate={disableCreate ? undefined : () => void createItem()}
 		>

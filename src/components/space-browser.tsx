@@ -23,6 +23,7 @@ import {
 	useState,
 } from "react";
 import { FOLDER_COLORS, folderColor } from "#/lib/orbit/folder-colors";
+import { type FolderRow, folderAncestors } from "#/lib/orbit/folder-tree";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import {
 	type FolderSpaceId,
@@ -59,25 +60,14 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-
-type FolderTreeState = {
-	itemsByFolder: Map<string, OrbitItem[]>;
-	matchingItems: Set<string>;
-	matchingFolders: Set<string>;
-};
+import { FolderTreeList } from "./folder-tree-list";
 
 function itemIcon(item: OrbitItem) {
 	if (item.type === "task") return ListTodo;
 	if (item.type === "event") return CalendarDays;
 	if (item.type === "link") return LinkIcon;
 	return FileText;
-}
-
-function folderAncestors(folder: string) {
-	const parts = folder.split("/");
-	return parts.map((_, index) => parts.slice(0, index + 1).join("/"));
 }
 
 function UnifiedFolderWorkspace({
@@ -154,8 +144,6 @@ function UnifiedFolderWorkspace({
 		}
 		return result;
 	}, [folders]);
-
-	const normalizedQuery = query.trim().toLocaleLowerCase("ko");
 
 	function toggleFolder(folder: OrbitFolder) {
 		setCollapsed((current) => {
@@ -285,20 +273,10 @@ function UnifiedFolderWorkspace({
 	}
 
 	function renderFolder(
-		folder: OrbitFolder,
-		depth: number,
+		{ folder, depth, hasChildren, expanded }: FolderRow,
 		controls: ItemWorkspaceNavigatorContext,
-		tree: FolderTreeState,
 	): React.ReactNode {
-		if (!tree.matchingFolders.has(folder.slug)) return null;
 		const directFolders = childFolders.get(folder.slug) ?? [];
-		const directItems = (tree.itemsByFolder.get(folder.slug) ?? []).filter(
-			(item) => tree.matchingItems.has(item.id),
-		);
-		const hasChildren =
-			directFolders.length > 0 ||
-			(tree.itemsByFolder.get(folder.slug)?.length ?? 0) > 0;
-		const expanded = Boolean(normalizedQuery) || !collapsed.has(folder.slug);
 		const color = folderColor(folder.color);
 
 		return (
@@ -380,23 +358,6 @@ function UnifiedFolderWorkspace({
 						</ContextMenuItem>
 					</ContextMenuContent>
 				</ContextMenu>
-				<div
-					className={cn(
-						"grid transition-[grid-template-rows,opacity] duration-200 ease-[var(--interaction-ease)] motion-reduce:transition-none",
-						expanded
-							? "grid-rows-[1fr] opacity-100"
-							: "pointer-events-none grid-rows-[0fr] opacity-0",
-					)}
-					aria-hidden={!expanded}
-					inert={!expanded}
-				>
-					<div className="min-h-0 overflow-hidden">
-						{directFolders.map((child) =>
-							renderFolder(child, depth + 1, controls, tree),
-						)}
-						{directItems.map((item) => renderNote(item, depth + 1, controls))}
-					</div>
-				</div>
 			</Fragment>
 		);
 	}
@@ -433,60 +394,6 @@ function UnifiedFolderWorkspace({
 	}
 
 	function renderNavigator(controls: ItemWorkspaceNavigatorContext) {
-		const itemsByFolder = new Map<string, OrbitItem[]>();
-		for (const item of controls.items) {
-			const key = folderOf(item) ?? "";
-			const children = itemsByFolder.get(key) ?? [];
-			children.push(item);
-			itemsByFolder.set(key, children);
-		}
-		for (const children of itemsByFolder.values()) {
-			children.sort((left, right) =>
-				left.title.localeCompare(right.title, "ko"),
-			);
-		}
-		const matchingItems = normalizedQuery
-			? new Set(
-					controls.items
-						.filter((item) =>
-							[
-								item.title,
-								item.body,
-								item.tags.join(" "),
-								folderOf(item) ?? "",
-							].some((value) =>
-								value.toLocaleLowerCase("ko").includes(normalizedQuery),
-							),
-						)
-						.map((item) => item.id),
-				)
-			: new Set(controls.items.map((item) => item.id));
-		const matchingFolders = new Set<string>();
-		if (!normalizedQuery) {
-			for (const folder of folders) matchingFolders.add(folder.slug);
-		} else {
-			for (const folder of folders) {
-				if (!folder.slug.toLocaleLowerCase("ko").includes(normalizedQuery))
-					continue;
-				for (const ancestor of folderAncestors(folder.slug))
-					matchingFolders.add(ancestor);
-			}
-			for (const item of controls.items) {
-				if (!matchingItems.has(item.id) || !folderOf(item)) continue;
-				for (const ancestor of folderAncestors(folderOf(item) ?? "")) {
-					matchingFolders.add(ancestor);
-				}
-			}
-		}
-		const tree = { itemsByFolder, matchingItems, matchingFolders };
-		const rootFolders = childFolders.get("") ?? [];
-		const rootItems = (itemsByFolder.get("") ?? []).filter((item) =>
-			matchingItems.has(item.id),
-		);
-		const hasResults =
-			rootFolders.some((folder) => matchingFolders.has(folder.slug)) ||
-			rootItems.length > 0;
-
 		return (
 			<div className="flex h-full min-h-0 flex-col bg-sidebar/35">
 				<header className="shrink-0 border-b border-border/50 px-4 py-4">
@@ -508,7 +415,7 @@ function UnifiedFolderWorkspace({
 						</Button>
 					</div>
 					<p className="mt-1 text-xs leading-5 text-muted-foreground">
-						폴더를 펼치고 노트를 선택하세요.
+						드래그로 순서를 바꾸거나 폴더 안으로 옮기세요.
 					</p>
 				</header>
 
@@ -563,21 +470,43 @@ function UnifiedFolderWorkspace({
 					) : null}
 				</div>
 
-				<ScrollArea className="min-h-0 flex-1">
-					<div className="space-y-0.5 px-2 pb-4">
-						{rootFolders.map((folder) =>
-							renderFolder(folder, 0, controls, tree),
-						)}
-						{rootItems.map((item) => renderNote(item, 0, controls))}
-						{!hasResults ? (
-							<div className="px-3 py-10 text-center text-sm leading-6 text-muted-foreground">
-								{normalizedQuery
-									? "검색 결과가 없습니다."
-									: "폴더나 노트를 만들어 시작하세요."}
-							</div>
-						) : null}
-					</div>
-				</ScrollArea>
+				<FolderTreeList
+					space={space}
+					order={snapshot.treeOrder?.[space]}
+					onMove={async (input) => {
+						const sourceFolder = input.key.startsWith("folder:")
+							? input.key.slice(7)
+							: undefined;
+						const ids = controls.items
+							.filter(
+								(item) =>
+									input.key === `item:${item.id}` ||
+									(sourceFolder &&
+										(folderOf(item) === sourceFolder ||
+											folderOf(item)?.startsWith(`${sourceFolder}/`))),
+							)
+							.map((item) => item.id);
+						await controls.runWithSavedItems(ids, () =>
+							mutateOrbit({ data: { action: "move-tree-entry", input } }),
+						);
+						setCollapsed((current) => {
+							const next = new Set(current);
+							if (
+								input.position === "inside" &&
+								input.target?.startsWith("folder:")
+							)
+								next.delete(input.target.slice(7));
+							return next;
+						});
+						await router.invalidate();
+					}}
+					items={controls.items}
+					folders={folders}
+					collapsed={collapsed}
+					query={query}
+					renderFolder={(row) => renderFolder(row, controls)}
+					renderNote={(item, depth) => renderNote(item, depth, controls)}
+				/>
 
 				<footer className="shrink-0 border-t border-border/50 px-4 py-2.5 text-[11px] text-muted-foreground">
 					폴더를 우클릭하면 하위 폴더·색상·이름을 관리할 수 있습니다.
