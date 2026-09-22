@@ -90,14 +90,9 @@ export function getOrbitAuthConfig(
 	const password = environment.ORBIT_AUTH_PASSWORD;
 	const savedCredential = readSavedCredential(environment);
 	if (savedCredential) {
-		if (username !== savedCredential.username) {
-			throw new Error(
-				"저장된 로그인 계정과 서버의 아이디가 일치하지 않습니다.",
-			);
-		}
 		return {
 			enabled: true,
-			username,
+			username: savedCredential.username,
 			password: "",
 			savedCredential,
 			sessionDays: configuredSessionDays(environment.ORBIT_AUTH_SESSION_DAYS),
@@ -177,16 +172,24 @@ export async function orbitCredentialsMatch(
 	return safeEqual(username, config.username) && passwordMatches;
 }
 
-export class OrbitPasswordChangeError extends Error {}
+export class OrbitAccountChangeError extends Error {}
 
-export async function changeOrbitPassword(
+export async function updateOrbitCredentials(
 	username: string,
 	currentPassword: string,
-	newPassword: string,
+	newPassword: string | undefined,
 	environment: AuthEnvironment = process.env,
+	newUsername = username,
 ) {
-	if (newPassword.length < 12 || newPassword.length > 1_024) {
-		throw new OrbitPasswordChangeError(
+	newUsername = newUsername.trim();
+	if (!newUsername || newUsername.length > 128) {
+		throw new OrbitAccountChangeError("계정 이름은 1~128자로 입력해 주세요.");
+	}
+	if (
+		newPassword !== undefined &&
+		(newPassword.length < 12 || newPassword.length > 1_024)
+	) {
+		throw new OrbitAccountChangeError(
 			"새 비밀번호는 12~1,024자로 입력해 주세요.",
 		);
 	}
@@ -195,16 +198,29 @@ export async function changeOrbitPassword(
 		!config.enabled ||
 		!(await orbitCredentialsMatch(username, currentPassword, config))
 	) {
-		throw new OrbitPasswordChangeError(
+		throw new OrbitAccountChangeError(
 			"아이디 또는 현재 비밀번호가 올바르지 않습니다.",
 		);
 	}
-	if (safeEqual(currentPassword, newPassword)) {
-		throw new OrbitPasswordChangeError(
+	if (newPassword !== undefined && safeEqual(currentPassword, newPassword)) {
+		throw new OrbitAccountChangeError(
 			"현재 비밀번호와 다른 비밀번호를 입력해 주세요.",
 		);
 	}
-	const credential = await createSavedCredential(config.username, newPassword);
+	const unchanged =
+		newUsername === config.username && newPassword === undefined;
+	const credential = unchanged
+		? null
+		: newPassword === undefined && config.savedCredential
+			? {
+					...config.savedCredential,
+					username: newUsername,
+					sessionSecret: randomBytes(32).toString("hex"),
+				}
+			: await createSavedCredential(
+					newUsername,
+					newPassword ?? currentPassword,
+				);
 	const latest = getOrbitAuthConfig(environment);
 	// No async gap between this check and the atomic write: concurrent changes
 	// verified against an old password cannot overwrite the first successful change.
@@ -212,11 +228,12 @@ export async function changeOrbitPassword(
 		!latest.enabled ||
 		!timingSafeEqual(sessionKey(config), sessionKey(latest))
 	) {
-		throw new OrbitPasswordChangeError(
-			"비밀번호가 이미 변경되었습니다. 다시 로그인해 주세요.",
+		throw new OrbitAccountChangeError(
+			"계정 정보가 이미 변경되었습니다. 다시 로그인해 주세요.",
 		);
 	}
-	writeSavedCredential(environment, credential);
+	if (credential) writeSavedCredential(environment, credential);
+	return getOrbitAuthConfig(environment);
 }
 
 export function isOrbitRequestAuthenticated() {
@@ -225,38 +242,43 @@ export function isOrbitRequestAuthenticated() {
 	return verifyOrbitSessionToken(getCookie(SESSION_COOKIE), config);
 }
 
-export async function changeOrbitPasswordForSession(
+export async function updateOrbitAccountForSession(
 	token: string | undefined,
 	currentPassword: string,
-	newPassword: string,
+	newPassword: string | undefined,
 	environment: AuthEnvironment = process.env,
+	newUsername?: string,
 ) {
 	const config = getOrbitAuthConfig(environment);
 	if (!config.enabled || !verifyOrbitSessionToken(token, config)) {
-		throw new OrbitPasswordChangeError("로그인 후 비밀번호를 변경해 주세요.");
+		throw new OrbitAccountChangeError("로그인 후 계정 정보를 변경해 주세요.");
 	}
-	await changeOrbitPassword(
+	const updated = await updateOrbitCredentials(
 		config.username,
 		currentPassword,
 		newPassword,
 		environment,
+		newUsername,
 	);
-	const updated = getOrbitAuthConfig(environment);
 	if (!updated.enabled) throw new Error("로그인 설정을 확인해 주세요.");
 	return updated;
 }
 
-export async function changeOrbitRequestPassword(
-	currentPassword: string,
-	newPassword: string,
-) {
-	const updated = await changeOrbitPasswordForSession(
+export async function updateOrbitRequestAccount(data: {
+	username: string;
+	currentPassword: string;
+	newPassword?: string;
+}) {
+	const updated = await updateOrbitAccountForSession(
 		getCookie(SESSION_COOKIE),
-		currentPassword,
-		newPassword,
+		data.currentPassword,
+		data.newPassword,
+		process.env,
+		data.username,
 	);
 	// Keep this device signed in; rotating the key invalidates other sessions.
 	issueOrbitSession(updated);
+	return { username: updated.username };
 }
 
 function cookieSecure() {

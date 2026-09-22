@@ -63,11 +63,11 @@ ORBIT_AUTH_PASSWORD=replace-with-a-long-random-password
 
 `ORBIT_DATA_DIR` remains available for backward compatibility. Authentication may be omitted during local development. Initial production setup requires both authentication variables. `ORBIT_AUTH_SESSION_DAYS` can change the default 180-day session lifetime to a value from 1 to 365.
 
-Sign in with the initial server-configured password, then open **Settings → Account → Change password**. Enter your current password and a new password of at least 12 characters. This device stays signed in; sessions on other devices are invalidated. Password changes require an authenticated session.
+Sign in with the initial server-configured password, then open **Settings → Account** to change your login name and/or password. Confirm with your current password. Leave the new password blank to keep it, or enter at least 12 characters to change it. This device stays signed in; sessions on other devices are invalidated. Account changes require an authenticated session.
 
-The new credential is stored as a scrypt hash with a separate session key in `<ORBIT_VAULT_DIR>/.orbit/auth.json` (0600 permissions). It survives redeployment on the persistent volume and takes precedence over the bootstrap `ORBIT_AUTH_PASSWORD`; keep `ORBIT_AUTH_USERNAME` configured. Include this file in private volume backups; note exports do not include it. Corrupt credentials fail closed instead of restoring the initial password.
+The new credential is stored as a scrypt hash with a separate session key in `<ORBIT_VAULT_DIR>/.orbit/auth.json` (0600 permissions). It survives redeployment on the persistent volume and takes precedence over both bootstrap variables, `ORBIT_AUTH_USERNAME` and `ORBIT_AUTH_PASSWORD`. Once saved, the account also works without those variables. Include this file in private volume backups; note exports do not include it. Corrupt credentials fail closed instead of restoring the initial password.
 
-For administrator recovery, stop the service, move `auth.json` to a secure backup location, set a new `ORBIT_AUTH_PASSWORD`, and restart. Sign in and change it again through account settings. Routine password changes require no restart.
+For administrator recovery, stop the service, move `auth.json` to a secure backup location, set `ORBIT_AUTH_USERNAME` and a new `ORBIT_AUTH_PASSWORD`, and restart. Sign in and change it again through account settings. Routine password changes require no restart.
 
 ## Your data
 

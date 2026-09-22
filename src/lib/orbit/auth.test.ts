@@ -10,11 +10,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import {
-	changeOrbitPassword,
-	changeOrbitPasswordForSession,
 	createOrbitSessionToken,
 	getOrbitAuthConfig,
 	orbitCredentialsMatch,
+	updateOrbitAccountForSession,
+	updateOrbitCredentials,
 	verifyOrbitSessionToken,
 } from "./auth.server";
 
@@ -113,7 +113,7 @@ test("password change persists a hash, rejects bootstrap credentials and invalid
 	const old = getOrbitAuthConfig(environment);
 	assert.ok(old.enabled);
 	const oldToken = createOrbitSessionToken(old);
-	await changeOrbitPassword(
+	await updateOrbitCredentials(
 		"orbit",
 		config.password,
 		"a much newer password",
@@ -160,7 +160,7 @@ test("password change persists a hash, rejects bootstrap credentials and invalid
 		true,
 	);
 	const currentToken = createOrbitSessionToken(current);
-	await changeOrbitPassword(
+	await updateOrbitCredentials(
 		"orbit",
 		"a much newer password",
 		"yet another new password",
@@ -184,7 +184,7 @@ test("password changes require the correct current credential and a different lo
 		["orbit", config.password, config.password],
 	]) {
 		await assert.rejects(
-			changeOrbitPassword(username, current, next, environment),
+			updateOrbitCredentials(username, current, next, environment),
 		);
 	}
 	assert.throws(() => readFileSync(path.join(directory, ".orbit/auth.json")), {
@@ -194,13 +194,13 @@ test("password changes require the correct current credential and a different lo
 
 test("concurrent password changes cannot both overwrite the same credential", async () => {
 	const results = await Promise.allSettled([
-		changeOrbitPassword(
+		updateOrbitCredentials(
 			"orbit",
 			config.password,
 			"first new password",
 			environment,
 		),
-		changeOrbitPassword(
+		updateOrbitCredentials(
 			"orbit",
 			config.password,
 			"second new password",
@@ -224,16 +224,19 @@ test("concurrent password changes cannot both overwrite the same credential", as
 	assert.equal(await orbitCredentialsMatch("orbit", winner, current), true);
 });
 
-test("corrupt saved credentials and username changes fail closed instead of restoring the initial password", async () => {
-	await changeOrbitPassword(
+test("saved credentials take precedence over bootstrap variables and corruption fails closed", async () => {
+	await updateOrbitCredentials(
 		"orbit",
 		config.password,
 		"a much newer password",
 		environment,
 	);
-	assert.throws(() =>
-		getOrbitAuthConfig({ ...environment, ORBIT_AUTH_USERNAME: "another" }),
-	);
+	const persisted = getOrbitAuthConfig({
+		...environment,
+		ORBIT_AUTH_USERNAME: "another",
+	});
+	assert.ok(persisted.enabled);
+	assert.equal(persisted.username, "orbit");
 	for (const value of ["{", "{}", JSON.stringify({ version: 2 })]) {
 		writeFileSync(path.join(directory, ".orbit/auth.json"), value);
 		assert.throws(() => getOrbitAuthConfig(environment), /저장된 로그인 정보/);
@@ -249,7 +252,7 @@ test("password settings reject missing, invalid, and expired sessions even with 
 	);
 	for (const token of [undefined, "invalid-session", expired]) {
 		await assert.rejects(
-			changeOrbitPasswordForSession(
+			updateOrbitAccountForSession(
 				token,
 				config.password,
 				"new settings password",
@@ -269,7 +272,7 @@ test("authenticated settings require the current password and return a config fo
 	const thisSession = createOrbitSessionToken(current);
 	const otherSession = createOrbitSessionToken(current);
 	await assert.rejects(
-		changeOrbitPasswordForSession(
+		updateOrbitAccountForSession(
 			thisSession,
 			"wrong current password",
 			"new settings password",
@@ -277,7 +280,7 @@ test("authenticated settings require the current password and return a config fo
 		),
 		/현재 비밀번호/,
 	);
-	const updated = await changeOrbitPasswordForSession(
+	const updated = await updateOrbitAccountForSession(
 		thisSession,
 		config.password,
 		"new settings password",
@@ -296,7 +299,7 @@ test("authenticated settings require the current password and return a config fo
 		true,
 	);
 	await assert.rejects(
-		changeOrbitPasswordForSession(
+		updateOrbitAccountForSession(
 			thisSession,
 			"new settings password",
 			"another settings password",
@@ -308,7 +311,7 @@ test("authenticated settings require the current password and return a config fo
 
 test("password settings cannot bootstrap an account when authentication is disabled", async () => {
 	await assert.rejects(
-		changeOrbitPasswordForSession(
+		updateOrbitAccountForSession(
 			undefined,
 			"anything",
 			"new settings password",
@@ -318,5 +321,163 @@ test("password settings cannot bootstrap an account when authentication is disab
 			},
 		),
 		/로그인 후/,
+	);
+});
+
+test("renaming the initial account persists the current password and overrides bootstrap variables", async () => {
+	const initial = getOrbitAuthConfig(environment);
+	assert.ok(initial.enabled);
+	const token = createOrbitSessionToken(initial);
+	const renamed = await updateOrbitAccountForSession(
+		token,
+		config.password,
+		undefined,
+		environment,
+		"  새로운 이름  ",
+	);
+	assert.equal(renamed.username, "새로운 이름");
+	assert.equal(
+		await orbitCredentialsMatch("새로운 이름", config.password, renamed),
+		true,
+	);
+	assert.equal(
+		await orbitCredentialsMatch("orbit", config.password, renamed),
+		false,
+	);
+	assert.equal(verifyOrbitSessionToken(token, renamed), false);
+	assert.equal(
+		verifyOrbitSessionToken(createOrbitSessionToken(renamed), renamed),
+		true,
+	);
+	const reloaded = getOrbitAuthConfig({
+		NODE_ENV: "production",
+		ORBIT_VAULT_DIR: directory,
+	});
+	assert.ok(reloaded.enabled);
+	assert.equal(reloaded.username, "새로운 이름");
+	assert.equal(
+		await orbitCredentialsMatch("새로운 이름", config.password, reloaded),
+		true,
+	);
+});
+
+test("renaming a saved account preserves the hash; name and password can also change atomically", async () => {
+	await updateOrbitCredentials(
+		"orbit",
+		config.password,
+		"first saved password",
+		environment,
+	);
+	const current = getOrbitAuthConfig(environment);
+	assert.ok(current.enabled);
+	const renamed = await updateOrbitAccountForSession(
+		createOrbitSessionToken(current),
+		"first saved password",
+		undefined,
+		environment,
+		"renamed",
+	);
+	assert.equal(renamed.savedCredential?.hash, current.savedCredential?.hash);
+	assert.notEqual(
+		renamed.savedCredential?.sessionSecret,
+		current.savedCredential?.sessionSecret,
+	);
+	const updated = await updateOrbitAccountForSession(
+		createOrbitSessionToken(renamed),
+		"first saved password",
+		"second saved password",
+		environment,
+		"final-name",
+	);
+	assert.equal(
+		await orbitCredentialsMatch("final-name", "second saved password", updated),
+		true,
+	);
+	assert.equal(
+		await orbitCredentialsMatch("renamed", "second saved password", updated),
+		false,
+	);
+	assert.equal(
+		await orbitCredentialsMatch("final-name", "first saved password", updated),
+		false,
+	);
+});
+
+test("account renaming requires a session, current password, and a nonempty bounded name", async () => {
+	const current = getOrbitAuthConfig(environment);
+	assert.ok(current.enabled);
+	const token = createOrbitSessionToken(current);
+	await assert.rejects(
+		updateOrbitAccountForSession(
+			undefined,
+			config.password,
+			undefined,
+			environment,
+			"renamed",
+		),
+		/로그인 후/,
+	);
+	await assert.rejects(
+		updateOrbitAccountForSession(
+			token,
+			"wrong password",
+			undefined,
+			environment,
+			"renamed",
+		),
+		/현재 비밀번호/,
+	);
+	for (const name of ["", "   ", "x".repeat(129)]) {
+		await assert.rejects(
+			updateOrbitAccountForSession(
+				token,
+				config.password,
+				undefined,
+				environment,
+				name,
+			),
+			/계정 이름/,
+		);
+	}
+	const unchanged = await updateOrbitAccountForSession(
+		token,
+		config.password,
+		undefined,
+		environment,
+		"orbit",
+	);
+	assert.equal(verifyOrbitSessionToken(token, unchanged), true);
+	assert.throws(() => readFileSync(path.join(directory, ".orbit/auth.json")), {
+		code: "ENOENT",
+	});
+});
+
+test("concurrent account rename and password changes cannot overwrite one another", async () => {
+	const current = getOrbitAuthConfig(environment);
+	assert.ok(current.enabled);
+	const token = createOrbitSessionToken(current);
+	const results = await Promise.allSettled([
+		updateOrbitAccountForSession(
+			token,
+			config.password,
+			undefined,
+			environment,
+			"renamed",
+		),
+		updateOrbitAccountForSession(
+			token,
+			config.password,
+			"updated password",
+			environment,
+			"orbit",
+		),
+	]);
+	assert.equal(
+		results.filter((result) => result.status === "fulfilled").length,
+		1,
+	);
+	assert.equal(
+		results.filter((result) => result.status === "rejected").length,
+		1,
 	);
 });

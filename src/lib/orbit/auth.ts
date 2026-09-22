@@ -68,13 +68,22 @@ export const loginOrbit = createServerFn({ method: "POST" })
 		return { ok: true };
 	});
 
-export const changeOrbitLoginPassword = createServerFn({ method: "POST" })
+export const getOrbitAccount = createServerFn({ method: "GET" })
+	.middleware([orbitAuthMiddleware])
+	.handler(async () => {
+		const { getOrbitAuthConfig } = await import("./auth.server");
+		const config = getOrbitAuthConfig();
+		return { username: config.enabled ? config.username : null };
+	});
+
+export const updateOrbitAccount = createServerFn({ method: "POST" })
 	.middleware([orbitAuthMiddleware])
 	.validator((input: unknown) =>
 		z
 			.object({
+				username: z.string().trim().min(1).max(128),
 				currentPassword: z.string().min(1).max(1_024),
-				newPassword: z.string().min(12).max(1_024),
+				newPassword: z.string().min(12).max(1_024).optional(),
 			})
 			.parse(input),
 	)
@@ -82,29 +91,29 @@ export const changeOrbitLoginPassword = createServerFn({ method: "POST" })
 		const {
 			assertLoginAllowed,
 			assertSameOriginRequest,
-			changeOrbitRequestPassword,
+			updateOrbitRequestAccount,
 			clearLoginFailures,
 			markOrbitResponsePrivate,
 			recordLoginFailure,
-			OrbitPasswordChangeError,
+			OrbitAccountChangeError,
 		} = await import("./auth.server");
 		assertSameOriginRequest();
 		markOrbitResponsePrivate();
 		assertLoginAllowed();
 		recordLoginFailure();
 		try {
-			await changeOrbitRequestPassword(data.currentPassword, data.newPassword);
+			const account = await updateOrbitRequestAccount(data);
+			clearLoginFailures();
+			return { ok: true as const, username: account.username };
 		} catch (error) {
 			return {
 				ok: false as const,
 				error:
-					error instanceof OrbitPasswordChangeError
+					error instanceof OrbitAccountChangeError
 						? error.message
-						: "비밀번호를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+						: "계정 정보를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.",
 			};
 		}
-		clearLoginFailures();
-		return { ok: true as const };
 	});
 
 export const logoutOrbit = createServerFn({ method: "POST" }).handler(
