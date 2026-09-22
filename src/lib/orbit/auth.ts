@@ -53,18 +53,58 @@ export const loginOrbit = createServerFn({ method: "POST" })
 		} = await import("./auth.server");
 		assertSameOriginRequest();
 		assertLoginAllowed();
+		// Reserve the attempt before the asynchronous password hash check.
+		recordLoginFailure();
 		const config = getOrbitAuthConfig();
 		markOrbitResponsePrivate();
 		if (
 			!config.enabled ||
-			!orbitCredentialsMatch(data.username, data.password, config)
+			!(await orbitCredentialsMatch(data.username, data.password, config))
 		) {
-			recordLoginFailure();
 			throw new Error("아이디 또는 비밀번호가 올바르지 않습니다.");
 		}
 		clearLoginFailures();
 		issueOrbitSession(config);
 		return { ok: true };
+	});
+
+export const changeOrbitLoginPassword = createServerFn({ method: "POST" })
+	.validator((input: unknown) =>
+		loginSchema
+			.extend({
+				newPassword: z.string().min(12).max(1_024),
+			})
+			.parse(input),
+	)
+	.handler(async ({ data }) => {
+		const {
+			assertLoginAllowed,
+			assertSameOriginRequest,
+			changeOrbitPassword,
+			clearLoginFailures,
+			clearOrbitSession,
+			markOrbitResponsePrivate,
+			recordLoginFailure,
+			OrbitPasswordChangeError,
+		} = await import("./auth.server");
+		assertSameOriginRequest();
+		markOrbitResponsePrivate();
+		assertLoginAllowed();
+		recordLoginFailure();
+		try {
+			await changeOrbitPassword(data.username, data.password, data.newPassword);
+		} catch (error) {
+			return {
+				ok: false as const,
+				error:
+					error instanceof OrbitPasswordChangeError
+						? error.message
+						: "비밀번호를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+			};
+		}
+		clearLoginFailures();
+		clearOrbitSession();
+		return { ok: true as const };
 	});
 
 export const logoutOrbit = createServerFn({ method: "POST" }).handler(

@@ -13,13 +13,19 @@ import {
 	setCookie,
 	setResponseHeader,
 } from "@tanstack/react-start/server";
+import {
+	type AuthEnvironment,
+	createSavedCredential,
+	readSavedCredential,
+	type SavedCredential,
+	savedPasswordMatches,
+	writeSavedCredential,
+} from "./password-store.server";
 
 const SESSION_COOKIE = "orbit_session";
 const DEFAULT_SESSION_DAYS = 180;
 const MAX_LOGIN_ATTEMPTS = 8;
 const LOGIN_WINDOW_MS = 5 * 60 * 1000;
-
-type AuthEnvironment = Record<string, string | undefined>;
 
 export type OrbitAuthConfig =
 	| { enabled: false }
@@ -27,6 +33,7 @@ export type OrbitAuthConfig =
 			enabled: true;
 			username: string;
 			password: string;
+			savedCredential?: SavedCredential;
 			sessionDays: number;
 	  };
 
@@ -44,6 +51,9 @@ type LoginAttempt = {
 const loginAttempts = new Map<string, LoginAttempt>();
 
 function sessionKey(config: Extract<OrbitAuthConfig, { enabled: true }>) {
+	if (config.savedCredential) {
+		return Buffer.from(config.savedCredential.sessionSecret, "hex");
+	}
 	return createHash("sha256")
 		.update(`orbit-session\0${config.username}\0${config.password}`)
 		.digest();
@@ -78,6 +88,21 @@ export function getOrbitAuthConfig(
 ): OrbitAuthConfig {
 	const username = environment.ORBIT_AUTH_USERNAME?.trim();
 	const password = environment.ORBIT_AUTH_PASSWORD;
+	const savedCredential = readSavedCredential(environment);
+	if (savedCredential) {
+		if (username !== savedCredential.username) {
+			throw new Error(
+				"저장된 로그인 계정과 서버의 아이디가 일치하지 않습니다.",
+			);
+		}
+		return {
+			enabled: true,
+			username,
+			password: "",
+			savedCredential,
+			sessionDays: configuredSessionDays(environment.ORBIT_AUTH_SESSION_DAYS),
+		};
+	}
 
 	if (!username && !password) {
 		if (environment.NODE_ENV === "production") {
@@ -141,14 +166,57 @@ export function verifyOrbitSessionToken(
 	}
 }
 
-export function orbitCredentialsMatch(
+export async function orbitCredentialsMatch(
 	username: string,
 	password: string,
 	config: Extract<OrbitAuthConfig, { enabled: true }>,
 ) {
-	return (
-		safeEqual(username, config.username) && safeEqual(password, config.password)
-	);
+	const passwordMatches = config.savedCredential
+		? await savedPasswordMatches(password, config.savedCredential)
+		: safeEqual(password, config.password);
+	return safeEqual(username, config.username) && passwordMatches;
+}
+
+export class OrbitPasswordChangeError extends Error {}
+
+export async function changeOrbitPassword(
+	username: string,
+	currentPassword: string,
+	newPassword: string,
+	environment: AuthEnvironment = process.env,
+) {
+	if (newPassword.length < 12 || newPassword.length > 1_024) {
+		throw new OrbitPasswordChangeError(
+			"새 비밀번호는 12~1,024자로 입력해 주세요.",
+		);
+	}
+	const config = getOrbitAuthConfig(environment);
+	if (
+		!config.enabled ||
+		!(await orbitCredentialsMatch(username, currentPassword, config))
+	) {
+		throw new OrbitPasswordChangeError(
+			"아이디 또는 현재 비밀번호가 올바르지 않습니다.",
+		);
+	}
+	if (safeEqual(currentPassword, newPassword)) {
+		throw new OrbitPasswordChangeError(
+			"현재 비밀번호와 다른 비밀번호를 입력해 주세요.",
+		);
+	}
+	const credential = await createSavedCredential(config.username, newPassword);
+	const latest = getOrbitAuthConfig(environment);
+	// No async gap between this check and the atomic write: concurrent changes
+	// verified against an old password cannot overwrite the first successful change.
+	if (
+		!latest.enabled ||
+		!timingSafeEqual(sessionKey(config), sessionKey(latest))
+	) {
+		throw new OrbitPasswordChangeError(
+			"비밀번호가 이미 변경되었습니다. 다시 로그인해 주세요.",
+		);
+	}
+	writeSavedCredential(environment, credential);
 }
 
 export function isOrbitRequestAuthenticated() {

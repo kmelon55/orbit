@@ -35,6 +35,7 @@ beforeEach(() => {
 	oldEnv = { ...process.env };
 	directory = mkdtempSync(join(tmpdir(), "orbit-mail-test-"));
 	process.env.ORBIT_MAIL_DIR = directory;
+	process.env.ORBIT_VAULT_DIR = directory;
 	process.env.NODE_ENV = "test";
 	process.env.ORBIT_MAIL_WORKER = "off";
 	delete process.env.ORBIT_AUTH_USERNAME;
