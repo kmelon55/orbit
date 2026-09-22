@@ -11,6 +11,7 @@ import {
 	Plus,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { buildMonthLayout } from "#/lib/orbit/calendar-layout";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { itemColor } from "#/lib/orbit/item-colors";
 import { formatDayKey, itemDayKey } from "#/lib/orbit/para";
@@ -27,7 +28,6 @@ const HOUR_END = 24;
 const HOUR_HEIGHT = 56;
 
 type CalendarView = "day" | "week" | "month";
-type MobileMonthDensity = "compact" | "stacked" | "details";
 type EditorState = {
 	open: boolean;
 	kind: "event" | "task";
@@ -45,30 +45,6 @@ type CalendarVisibility = {
 	event: boolean;
 	task: boolean;
 };
-
-const MOBILE_MONTH_DENSITIES: MobileMonthDensity[] = [
-	"compact",
-	"stacked",
-	"details",
-];
-
-const MOBILE_MONTH_DENSITY_LABELS: Record<MobileMonthDensity, string> = {
-	compact: "축소형",
-	stacked: "스택형",
-	details: "상세형",
-};
-
-function shiftMobileMonthDensity(current: MobileMonthDensity, amount: -1 | 1) {
-	const index = MOBILE_MONTH_DENSITIES.indexOf(current);
-	return MOBILE_MONTH_DENSITIES[
-		Math.max(0, Math.min(MOBILE_MONTH_DENSITIES.length - 1, index + amount))
-	];
-}
-
-function cycleMobileMonthDensity(current: MobileMonthDensity) {
-	const index = MOBILE_MONTH_DENSITIES.indexOf(current);
-	return MOBILE_MONTH_DENSITIES[(index + 1) % MOBILE_MONTH_DENSITIES.length];
-}
 
 function startOfMonth(date: Date) {
 	return new Date(date.getFullYear(), date.getMonth(), 1);
@@ -373,96 +349,6 @@ function layoutTimedItems(items: OrbitItem[], dayKey: string) {
 	return result;
 }
 
-type MonthSegment = {
-	item: OrbitItem;
-	row: number;
-	startColumn: number;
-	endColumn: number;
-	startKey: string;
-	endKey: string;
-	lane: number;
-};
-
-function buildMonthLayout(byDay: Map<string, OrbitItem[]>, days: Date[]) {
-	const dayKeys = days.map((day) => formatDayKey(day));
-	const indexByKey = new Map(dayKeys.map((key, index) => [key, index]));
-	const uniqueItems = new Map<string, OrbitItem>();
-	for (const key of dayKeys) {
-		for (const item of byDay.get(key) ?? []) uniqueItems.set(item.id, item);
-	}
-
-	const segments: MonthSegment[] = [];
-	for (const item of uniqueItems.values()) {
-		const indices = visibleDayKeys(item)
-			.map((key) => indexByKey.get(key))
-			.filter((index): index is number => index !== undefined);
-		if (indices.length === 0) continue;
-		let index = Math.min(...indices);
-		const lastIndex = Math.max(...indices);
-		while (index <= lastIndex) {
-			const row = Math.floor(index / 7);
-			const segmentEnd = Math.min(lastIndex, row * 7 + 6);
-			segments.push({
-				item,
-				row,
-				startColumn: index % 7,
-				endColumn: segmentEnd % 7,
-				startKey: dayKeys[index],
-				endKey: dayKeys[segmentEnd],
-				lane: 0,
-			});
-			index = segmentEnd + 1;
-		}
-	}
-
-	segments.sort((left, right) => {
-		if (left.row !== right.row) return left.row - right.row;
-		const leftSpan = left.endColumn - left.startColumn;
-		const rightSpan = right.endColumn - right.startColumn;
-		if (leftSpan !== rightSpan) return rightSpan - leftSpan;
-		if (left.startColumn !== right.startColumn) {
-			return left.startColumn - right.startColumn;
-		}
-		return (left.item.start ?? left.item.due ?? "").localeCompare(
-			right.item.start ?? right.item.due ?? "",
-		);
-	});
-
-	const rowLanes = new Map<number, MonthSegment[][]>();
-	for (const segment of segments) {
-		const lanes = rowLanes.get(segment.row) ?? [];
-		const available = lanes.findIndex((lane) =>
-			lane.every(
-				(existing) =>
-					existing.endColumn < segment.startColumn ||
-					existing.startColumn > segment.endColumn,
-			),
-		);
-		segment.lane = available === -1 ? lanes.length : available;
-		if (!lanes[segment.lane]) lanes[segment.lane] = [];
-		lanes[segment.lane].push(segment);
-		rowLanes.set(segment.row, lanes);
-	}
-
-	const hiddenCounts = new Map<string, number>();
-	for (const segment of segments) {
-		if (segment.lane < 3) continue;
-		for (
-			let column = segment.startColumn;
-			column <= segment.endColumn;
-			column++
-		) {
-			const key = dayKeys[segment.row * 7 + column];
-			hiddenCounts.set(key, (hiddenCounts.get(key) ?? 0) + 1);
-		}
-	}
-
-	return {
-		segments: segments.filter((segment) => segment.lane < 3),
-		hiddenCounts,
-	};
-}
-
 function CalendarEvent({
 	item,
 	compact = false,
@@ -496,7 +382,10 @@ function CalendarEvent({
 		dayKey && startKey && spansMultipleDays(item) && dayKey > startKey,
 	);
 	const continuesAfter = Boolean(
-		dayKey && endKey && spansMultipleDays(item) && dayKey < endKey,
+		dayKey &&
+			endKey &&
+			spansMultipleDays(item) &&
+			(resizeEndKey ?? dayKey) < endKey,
 	);
 	const canResize = Boolean(
 		onResizeStart &&
@@ -522,12 +411,12 @@ function CalendarEvent({
 				}}
 				onDoubleClick={(event) => event.stopPropagation()}
 				className={cn(
-					"flex h-full min-h-0 w-full min-w-0 items-start overflow-hidden border px-2 text-left transition-colors",
+					"flex h-full min-h-0 w-full min-w-0 items-start overflow-hidden border px-0.5 sm:px-2 text-left transition-colors",
 					eventTone(item),
 					continuesFromBefore ? "rounded-l-sm border-l-0" : "rounded-l-md",
 					continuesAfter ? "rounded-r-sm border-r-0" : "rounded-r-md",
 					compact
-						? "h-6 items-center text-[11px] leading-6"
+						? "h-6 items-center text-[9px] sm:text-[11px] leading-6"
 						: dense
 							? "items-center py-0.5 text-[11px] shadow-sm"
 							: "py-1.5 text-xs shadow-sm",
@@ -535,7 +424,7 @@ function CalendarEvent({
 			>
 				<GripVertical
 					className={cn(
-						"mr-0.5 size-3 shrink-0 opacity-0 transition-opacity group-hover/event:opacity-50",
+						"mr-0.5 hidden sm:block size-3 shrink-0 opacity-0 transition-opacity group-hover/event:opacity-50",
 						!dense && "mt-0.5",
 					)}
 				/>
@@ -544,7 +433,7 @@ function CalendarEvent({
 				>
 					<span className={cn("block truncate font-medium", dense && "flex-1")}>
 						{compact && !continuesFromBefore ? (
-							<span className="mr-1 font-normal tabular-nums opacity-65">
+							<span className="mr-1 hidden sm:inline font-normal tabular-nums opacity-65">
 								{displayTime ?? timeOf(item.start ?? item.due)}
 							</span>
 						) : null}
@@ -586,8 +475,6 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 	const router = useRouter();
 	const isMobile = useIsMobile();
 	const [view, setView] = useState<CalendarView>("month");
-	const [mobileMonthDensity, setMobileMonthDensity] =
-		useState<MobileMonthDensity>("details");
 	const [cursor, setCursor] = useState(() => new Date());
 	const [selectedDate, setSelectedDate] = useState(() => formatDayKey());
 	const [visibility, setVisibility] = useState<CalendarVisibility>({
@@ -617,20 +504,6 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 	useEffect(() => {
 		if (isMobile) setView("day");
 	}, [isMobile]);
-	useEffect(() => {
-		try {
-			const stored = window.localStorage.getItem("orbit-mobile-month-density");
-			if (
-				stored === "compact" ||
-				stored === "stacked" ||
-				stored === "details"
-			) {
-				setMobileMonthDensity(stored);
-			}
-		} catch {
-			// Storage can be unavailable in private browsing; the default still works.
-		}
-	}, []);
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent) => {
 			if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -741,15 +614,6 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 	function chooseView(next: CalendarView) {
 		setView(next);
 		if (next === "day") setCursor(parseDayKey(selectedDate));
-	}
-
-	function changeMobileMonthDensity(next: MobileMonthDensity) {
-		setMobileMonthDensity(next);
-		try {
-			window.localStorage.setItem("orbit-mobile-month-density", next);
-		} catch {
-			// Keep the in-memory choice when storage is unavailable.
-		}
 	}
 
 	function move(amount: number) {
@@ -955,7 +819,11 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 						))}
 					</div>
 					<ScheduleColors />
-					<Button size="sm" onClick={() => openNew(selectedDate)}>
+					<Button
+						size="sm"
+						aria-label="새 일정"
+						onClick={() => openNew(selectedDate)}
+					>
 						<Plus /> <span className="hidden sm:inline">새 일정</span>
 					</Button>
 				</header>
@@ -966,28 +834,9 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 							variant="ghost"
 							size="sm"
 							className={cn(view === value && "bg-muted")}
-							onClick={() => {
-								if (value === "month" && view === "month") {
-									changeMobileMonthDensity(
-										cycleMobileMonthDensity(mobileMonthDensity),
-									);
-									return;
-								}
-								chooseView(value);
-							}}
-							aria-label={
-								value === "month" && view === "month"
-									? `월간 ${MOBILE_MONTH_DENSITY_LABELS[mobileMonthDensity]} 보기. 다시 누르면 표시 방식 변경`
-									: undefined
-							}
+							onClick={() => chooseView(value)}
 						>
-							{value === "day"
-								? "일"
-								: value === "week"
-									? "주"
-									: view === "month"
-										? `월 · ${MOBILE_MONTH_DENSITY_LABELS[mobileMonthDensity]}`
-										: "월"}
+							{value === "day" ? "일" : value === "week" ? "주" : "월"}
 						</Button>
 					))}
 				</div>
@@ -998,7 +847,7 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 				) : null}
 
 				<div className="flex min-h-0 flex-1">
-					{isMobile ? (
+					{isMobile && view !== "month" ? (
 						<MobileCalendarView
 							view={view}
 							cursor={cursor}
@@ -1009,8 +858,6 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 							onCreate={openNew}
 							onOpen={openItem}
 							onMove={move}
-							monthDensity={mobileMonthDensity}
-							onMonthDensityChange={changeMobileMonthDensity}
 						/>
 					) : (
 						<>
@@ -1341,150 +1188,6 @@ function MobileWeekView({
 	);
 }
 
-function MobileMonthView({
-	cursor,
-	byDay,
-	today,
-	selectedDate,
-	onSelectDate,
-	onCreate,
-	onOpen,
-	density,
-}: {
-	cursor: Date;
-	byDay: Map<string, OrbitItem[]>;
-	today: string;
-	selectedDate: string;
-	onSelectDate: (date: string) => void;
-	onCreate: (date: string, time?: string) => void;
-	onOpen: (item: OrbitItem) => void;
-	density: MobileMonthDensity;
-}) {
-	const days = gridDays(cursor);
-	const items = byDay.get(selectedDate) ?? [];
-	return (
-		<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-			<div className="sticky top-0 z-10 grid grid-cols-7 border-b bg-background/95 px-1 py-1 text-center text-[10px] font-medium text-muted-foreground backdrop-blur">
-				{WEEKDAYS.map((day) => (
-					<span key={day} className="py-1">
-						{day}
-					</span>
-				))}
-			</div>
-			<div className="grid grid-cols-7 border-b border-border/60 p-1">
-				{days.map((day) => {
-					const key = formatDayKey(day);
-					const dayItems = byDay.get(key) ?? [];
-					const selected = key === selectedDate;
-					const hiddenItemCount = Math.max(
-						0,
-						dayItems.length - (density === "details" ? 3 : 4),
-					);
-					return (
-						<button
-							key={key}
-							type="button"
-							onClick={() => onSelectDate(key)}
-							aria-label={`${shortDayLabel(key)}, ${dayItems.length}개 항목`}
-							className={cn(
-								"flex min-w-0 flex-col items-center rounded-xl px-0.5 py-1 text-xs tabular-nums text-foreground transition-[min-height,background-color] duration-200",
-								density === "compact" && "min-h-12",
-								density === "stacked" && "min-h-16",
-								density === "details" && "min-h-[5.75rem]",
-								day.getMonth() !== cursor.getMonth() &&
-									"text-muted-foreground/45",
-								selected && "bg-muted ring-1 ring-foreground/10",
-							)}
-						>
-							<span
-								className={cn(
-									"grid size-6 place-items-center rounded-full",
-									key === today && "bg-blue-600 font-semibold text-white",
-								)}
-							>
-								{day.getDate()}
-							</span>
-							{density === "compact" ? (
-								<span className="mt-1 flex h-1 w-7 overflow-hidden rounded-full">
-									{dayItems.slice(0, 4).map((item) => (
-										<span
-											key={item.id}
-											className={cn("h-full min-w-0 flex-1", itemAccent(item))}
-										/>
-									))}
-								</span>
-							) : density === "stacked" ? (
-								<span className="mt-1 flex w-full flex-1 flex-col gap-1 overflow-hidden px-1.5">
-									{dayItems.slice(0, 4).map((item) => (
-										<span
-											key={item.id}
-											className={cn(
-												"h-1 w-full shrink-0 rounded-full",
-												itemAccent(item),
-											)}
-										/>
-									))}
-								</span>
-							) : (
-								<span className="mt-1 flex w-full min-w-0 flex-1 flex-col gap-0.5 overflow-hidden text-left">
-									{dayItems.slice(0, 3).map((item) => (
-										<span
-											key={item.id}
-											className="flex h-4 min-w-0 shrink-0 items-center gap-0.5 overflow-hidden rounded-[4px] bg-muted/80 px-0.5"
-										>
-											<span
-												className={cn(
-													"h-2.5 w-0.5 shrink-0 rounded-full",
-													itemAccent(item),
-												)}
-											/>
-											<span className="min-w-0 truncate text-[8px] leading-none font-medium tracking-tight">
-												{item.title}
-											</span>
-										</span>
-									))}
-									{hiddenItemCount > 0 ? (
-										<span className="px-0.5 text-[8px] leading-3 text-muted-foreground">
-											+{hiddenItemCount}
-										</span>
-									) : null}
-								</span>
-							)}
-						</button>
-					);
-				})}
-			</div>
-			<div className="bg-muted/20 px-3 py-3">
-				<div className="mb-2.5 flex items-center justify-between">
-					<div>
-						<h3 className="text-sm font-semibold">
-							{shortDayLabel(selectedDate)}
-						</h3>
-						<p className="text-[11px] text-muted-foreground">
-							{items.length ? `${items.length}개 항목` : "예정된 항목 없음"}
-						</p>
-					</div>
-					<Button
-						variant="ghost"
-						size="icon-sm"
-						onClick={() => onCreate(selectedDate)}
-						aria-label={`${selectedDate} 일정 추가`}
-					>
-						<Plus />
-					</Button>
-				</div>
-				<MobileAgenda
-					items={items}
-					date={selectedDate}
-					onCreate={onCreate}
-					onOpen={onOpen}
-					compact
-				/>
-			</div>
-		</div>
-	);
-}
-
 function MobileCalendarView({
 	view,
 	cursor,
@@ -1495,8 +1198,6 @@ function MobileCalendarView({
 	onCreate,
 	onOpen,
 	onMove,
-	monthDensity,
-	onMonthDensityChange,
 }: {
 	view: CalendarView;
 	cursor: Date;
@@ -1507,12 +1208,8 @@ function MobileCalendarView({
 	onCreate: (date: string, time?: string) => void;
 	onOpen: (item: OrbitItem) => void;
 	onMove: (amount: number) => void;
-	monthDensity: MobileMonthDensity;
-	onMonthDensityChange: (density: MobileMonthDensity) => void;
 }) {
 	const touchStart = useRef<{ x: number; y: number } | null>(null);
-	const pinchStart = useRef<number | null>(null);
-	const pinchHandled = useRef(false);
 	const shared = {
 		cursor,
 		byDay,
@@ -1529,13 +1226,7 @@ function MobileCalendarView({
 				view === "month" && "touch-pan-y",
 			)}
 			onTouchStart={(event) => {
-				if (view === "month" && event.touches.length === 2) {
-					const [first, second] = [event.touches[0], event.touches[1]];
-					pinchStart.current = Math.hypot(
-						second.clientX - first.clientX,
-						second.clientY - first.clientY,
-					);
-					pinchHandled.current = false;
+				if (event.touches.length !== 1) {
 					touchStart.current = null;
 					return;
 				}
@@ -1544,34 +1235,7 @@ function MobileCalendarView({
 					? { x: touch.clientX, y: touch.clientY }
 					: null;
 			}}
-			onTouchMove={(event) => {
-				if (
-					view !== "month" ||
-					event.touches.length !== 2 ||
-					pinchStart.current === null ||
-					pinchHandled.current
-				)
-					return;
-				const [first, second] = [event.touches[0], event.touches[1]];
-				const distance = Math.hypot(
-					second.clientX - first.clientX,
-					second.clientY - first.clientY,
-				);
-				const delta = distance - pinchStart.current;
-				if (Math.abs(delta) < 28) return;
-				if (event.cancelable) event.preventDefault();
-				pinchHandled.current = true;
-				onMonthDensityChange(
-					shiftMobileMonthDensity(monthDensity, delta > 0 ? 1 : -1),
-				);
-			}}
 			onTouchEnd={(event) => {
-				if (pinchStart.current !== null) {
-					pinchStart.current = null;
-					pinchHandled.current = false;
-					touchStart.current = null;
-					return;
-				}
 				const start = touchStart.current;
 				const touch = event.changedTouches[0];
 				touchStart.current = null;
@@ -1584,16 +1248,12 @@ function MobileCalendarView({
 			}}
 			onTouchCancel={() => {
 				touchStart.current = null;
-				pinchStart.current = null;
-				pinchHandled.current = false;
 			}}
 		>
 			{view === "day" ? (
 				<MobileDayView {...shared} />
-			) : view === "week" ? (
-				<MobileWeekView {...shared} />
 			) : (
-				<MobileMonthView {...shared} density={monthDensity} />
+				<MobileWeekView {...shared} />
 			)}
 		</div>
 	);
@@ -2211,11 +1871,18 @@ function MonthView({
 		operation?: DragOperation,
 	) => void;
 }) {
+	const isMobile = useIsMobile();
 	const days = gridDays(cursor);
 	const monthLayout = buildMonthLayout(byDay, days);
+	const rowHeights = monthLayout.rowLaneCounts.map((count) =>
+		Math.max(112, 38 + count * 26),
+	);
+	const gridTemplateRows = rowHeights
+		.map((height) => `minmax(${height}px, 1fr)`)
+		.join(" ");
 	return (
 		<div className="min-h-0 flex-1 overflow-auto">
-			<div className="flex min-h-full min-w-[760px] flex-col">
+			<div className="flex min-h-full min-w-0 flex-col">
 				<div className="sticky top-0 z-20 grid shrink-0 grid-cols-7 border-b bg-background/95 backdrop-blur">
 					{WEEKDAYS.map((day, index) => (
 						<div
@@ -2229,17 +1896,24 @@ function MonthView({
 						</div>
 					))}
 				</div>
-				<div className="relative min-h-[672px] flex-1">
-					<div className="absolute inset-0 grid grid-cols-7 grid-rows-6">
+				<div
+					className="relative flex-1"
+					style={{
+						minHeight: rowHeights.reduce((sum, height) => sum + height, 0),
+					}}
+				>
+					<div
+						className="absolute inset-0 grid grid-cols-7"
+						style={{ gridTemplateRows }}
+					>
 						{days.map((day) => {
 							const key = formatDayKey(day);
-							const hiddenCount = monthLayout.hiddenCounts.get(key) ?? 0;
 							return (
 								// biome-ignore lint/a11y/noStaticElementInteractions: Month cells accept native date drops.
 								<div
 									key={key}
 									className={cn(
-										"group/day relative min-h-28 border-r border-b p-1.5 last:border-r-0",
+										"group/day relative min-h-28 border-r border-b p-0.5 sm:p-1.5 last:border-r-0",
 										(day.getDay() === 0 || day.getDay() === 6) &&
 											"bg-muted/[0.12]",
 										day.getMonth() !== cursor.getMonth() &&
@@ -2296,7 +1970,7 @@ function MonthView({
 										<Button
 											variant="ghost"
 											size="icon-xs"
-											className="relative z-20 opacity-0 transition-opacity group-hover/day:opacity-100 focus:opacity-100"
+											className="relative z-20 hidden opacity-0 transition-opacity group-hover/day:opacity-100 focus:opacity-100 sm:inline-flex"
 											onClick={(event) => {
 												event.stopPropagation();
 												onCreate(key);
@@ -2306,114 +1980,116 @@ function MonthView({
 											<Plus />
 										</Button>
 									</div>
-									{hiddenCount > 0 ? (
-										<button
-											type="button"
-											onClick={() => onSelectDate(key)}
-											className="absolute right-1.5 bottom-1 z-20 rounded bg-background/80 px-1 text-[10px] font-medium text-muted-foreground hover:text-foreground"
-										>
-											+{hiddenCount}개
-										</button>
-									) : null}
 								</div>
 							);
 						})}
 					</div>
 
-					<div className="pointer-events-none absolute inset-0 z-10 grid grid-cols-7 grid-rows-6">
-						{monthLayout.segments
-							.filter((segment) => segment.lane < 3)
-							.map((segment) => (
+					<div
+						className="pointer-events-none absolute inset-0 z-10 grid grid-cols-7"
+						style={{ gridTemplateRows }}
+					>
+						{monthLayout.segments.map((segment) => (
+							<div
+								key={`${segment.item.id}:${segment.row}`}
+								className="pointer-events-none min-w-0 px-0.5"
+								style={{
+									gridColumn: `${segment.startColumn + 1} / ${segment.endColumn + 2}`,
+									gridRow: segment.row + 1,
+									paddingTop: 32 + segment.lane * 26,
+								}}
+							>
+								{/* biome-ignore lint/a11y/noStaticElementInteractions: Calendar bars accept native drag-and-drop across their date span. */}
 								<div
-									key={`${segment.item.id}:${segment.row}`}
-									className="pointer-events-none min-w-0 px-0.5"
-									style={{
-										gridColumn: `${segment.startColumn + 1} / ${segment.endColumn + 2}`,
-										gridRow: segment.row + 1,
-										paddingTop: 32 + segment.lane * 26,
-									}}
-								>
-									{/* biome-ignore lint/a11y/noStaticElementInteractions: Calendar bars accept native drag-and-drop across their date span. */}
-									<div
-										className="pointer-events-auto h-6 min-w-0"
-										onDragOver={(event) => {
-											event.preventDefault();
-											event.dataTransfer.dropEffect = "move";
-											const columns =
-												segment.endColumn - segment.startColumn + 1;
-											const columnWidth =
-												event.currentTarget.clientWidth / columns;
-											const offset = Math.min(
-												columns - 1,
-												Math.max(
-													0,
-													Math.floor(
-														(event.clientX -
-															event.currentTarget.getBoundingClientRect()
-																.left) /
-															columnWidth,
-													),
+									className="pointer-events-auto h-6 min-w-0"
+									onDragOver={(event) => {
+										event.preventDefault();
+										event.dataTransfer.dropEffect = "move";
+										const columns = segment.endColumn - segment.startColumn + 1;
+										const columnWidth =
+											event.currentTarget.clientWidth / columns;
+										const offset = Math.min(
+											columns - 1,
+											Math.max(
+												0,
+												Math.floor(
+													(event.clientX -
+														event.currentTarget.getBoundingClientRect().left) /
+														columnWidth,
 												),
-											);
-											onDragPreview({
+											),
+										);
+										onDragPreview({
+											date: formatDayKey(
+												addDays(parseDayKey(segment.startKey), offset),
+											),
+											mode: "keep-time",
+										});
+									}}
+									onDrop={(event) => {
+										event.preventDefault();
+										event.stopPropagation();
+										const columns = segment.endColumn - segment.startColumn + 1;
+										const columnWidth =
+											event.currentTarget.clientWidth / columns;
+										const offset = Math.min(
+											columns - 1,
+											Math.max(
+												0,
+												Math.floor(
+													(event.clientX -
+														event.currentTarget.getBoundingClientRect().left) /
+														columnWidth,
+												),
+											),
+										);
+										const payload = dragPayload(event.dataTransfer);
+										onDrop(
+											{
 												date: formatDayKey(
 													addDays(parseDayKey(segment.startKey), offset),
 												),
 												mode: "keep-time",
-											});
-										}}
-										onDrop={(event) => {
-											event.preventDefault();
-											event.stopPropagation();
-											const columns =
-												segment.endColumn - segment.startColumn + 1;
-											const columnWidth =
-												event.currentTarget.clientWidth / columns;
-											const offset = Math.min(
-												columns - 1,
-												Math.max(
-													0,
-													Math.floor(
-														(event.clientX -
-															event.currentTarget.getBoundingClientRect()
-																.left) /
-															columnWidth,
-													),
-												),
-											);
-											const payload = dragPayload(event.dataTransfer);
-											onDrop(
-												{
-													date: formatDayKey(
-														addDays(parseDayKey(segment.startKey), offset),
-													),
-													mode: "keep-time",
-												},
-												payload.id,
-												payload.operation,
-											);
-										}}
-									>
-										<CalendarEvent
-											item={segment.item}
-											compact
-											dayKey={segment.startKey}
-											resizeEndKey={segment.endKey}
-											onClick={() => onOpen(segment.item)}
-											onDragStart={(event) => onDragStart(segment.item, event)}
-											onResizeStart={(event) =>
-												onResizeStart(segment.item, event)
-											}
-											onDragEnd={onDragEnd}
-											dragging={draggingId === segment.item.id}
-											dragOperation={dragOperation}
-										/>
-									</div>
+											},
+											payload.id,
+											payload.operation,
+										);
+									}}
+								>
+									<CalendarEvent
+										item={segment.item}
+										compact
+										dayKey={segment.startKey}
+										resizeEndKey={segment.endKey}
+										onClick={() => onOpen(segment.item)}
+										onDragStart={(event) => onDragStart(segment.item, event)}
+										onResizeStart={(event) =>
+											onResizeStart(segment.item, event)
+										}
+										onDragEnd={onDragEnd}
+										dragging={draggingId === segment.item.id}
+										dragOperation={dragOperation}
+									/>
 								</div>
-							))}
+							</div>
+						))}
 					</div>
 				</div>
 			</div>
+			{isMobile ? (
+				<div className="border-t bg-muted/20 p-3">
+					<h3 className="mb-2 text-sm font-semibold">
+						{shortDayLabel(selectedDate)}
+					</h3>
+					<MobileAgenda
+						items={byDay.get(selectedDate) ?? []}
+						date={selectedDate}
+						onCreate={onCreate}
+						onOpen={onOpen}
+						compact
+					/>
+				</div>
+			) : null}
 		</div>
 	);
 }
