@@ -577,3 +577,321 @@ test("expired Orbit sessions cannot continue receiving private mail notification
 	assert.equal(calls, 0);
 	assert.equal(s.subscriptions().length, 0);
 });
+
+test("body opens share a provider request, cache encrypted variants, and preserve current read state", async () => {
+	const { detailMessage } = await import("./service.server");
+	const s = mailStore();
+	const m = message();
+	s.saveMessages([m]);
+	mockGmail(await originalRaw());
+	const [hidden, visible] = await Promise.all([
+		detailMessage(m.id),
+		detailMessage(m.id, true),
+	]);
+	assert.equal(hidden.text.trim(), "한글 본문");
+	assert.doesNotMatch(hidden.html, /src="https:\/\/tracking/);
+	assert.match(visible.html, /src="https:\/\/tracking/);
+	const row = s.db.prepare("SELECT data FROM bodies WHERE id=?").get(m.id) as {
+		data: string;
+	};
+	assert.doesNotMatch(row.data, /한글|tracking|Sender/);
+	// Reopening remains available with the provider offline and reflects read mutations.
+	mock.method(globalThis, "fetch", async () => {
+		throw new Error("offline");
+	});
+	s.saveMessages([{ ...m, unread: false, snippet: "" }]);
+	assert.equal((await detailMessage(m.id)).unread, false);
+	assert.equal((await detailMessage(m.id, true)).html, visible.html);
+	assert.match(s.message(m.id).snippet, /한글 본문/);
+	s.deleteMessage(m.id);
+	assert.equal(
+		s.db.prepare("SELECT COUNT(*) AS count FROM bodies").get()?.count,
+		0,
+	);
+	await assert.rejects(() => detailMessage(m.id), /메일을 찾을 수 없습니다/);
+});
+
+test("IMAP first page fetches a bounded sequence window and reuses its connection", async () => {
+	const { listImap } = await import("./imap.server");
+	account = { ...account, provider: "icloud" };
+	mailStore().saveAccount(account, { password: "app-password" });
+	let connects = 0;
+	mock.method(ImapFlow.prototype, "connect", async function (this: ImapFlow) {
+		connects++;
+		Object.defineProperty(this, "usable", { value: true, configurable: true });
+	});
+	mock.method(
+		ImapFlow.prototype,
+		"getMailboxLock",
+		async function (this: ImapFlow) {
+			this.mailbox = { uidValidity: 7n, exists: 10_000 } as Exclude<
+				ImapFlow["mailbox"],
+				false
+			>;
+			return { release() {} };
+		},
+	);
+	mock.method(ImapFlow.prototype, "search", async () => {
+		throw new Error("must not search every UID");
+	});
+	mock.method(ImapFlow.prototype, "fetchAll", async (range: unknown) => {
+		assert.equal(range, "9951:10000");
+		return [
+			{
+				uid: 12_345,
+				envelope: {
+					subject: "답장",
+					messageId: "<reply@example.com>",
+					inReplyTo: "<root@example.com>",
+				},
+				headers: Buffer.from(
+					"References: <root@example.com>\r\n <prior@example.com>",
+				),
+				flags: new Set(),
+				internalDate: new Date(),
+			},
+		];
+	});
+	const page = await listImap(account, "inbox");
+	assert.equal(page.cursor, "7:12345");
+	assert.deepEqual(page.messages[0].references, [
+		"<root@example.com>",
+		"<prior@example.com>",
+	]);
+	await listImap(account, "inbox");
+	assert.equal(connects, 1);
+});
+
+test("a slow IMAP list does not block opening a body", async () => {
+	const { usingImap } = await import("./imap.server");
+	account = { ...account, provider: "icloud" };
+	mailStore().saveAccount(account, { password: "app-password" });
+	mock.method(ImapFlow.prototype, "connect", async function (this: ImapFlow) {
+		Object.defineProperty(this, "usable", { value: true, configurable: true });
+	});
+	let release = () => {};
+	const waiting = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const list = usingImap(account, () => waiting);
+	try {
+		assert.equal(
+			await usingImap(account, async () => "body ready", "body"),
+			"body ready",
+		);
+	} finally {
+		release();
+		await list;
+	}
+});
+
+test("conversation references connect inbox and sent replies but isolate accounts and repeated subjects", async () => {
+	const { conversations, relatedMessages } = await import("./conversations");
+	const root = { ...message(), threadId: undefined, messageId: "<root>" };
+	const reply = {
+		...root,
+		id: "reply",
+		remoteId: "reply",
+		messageId: "<reply>",
+		references: ["<root>"],
+		folder: "sent" as const,
+		date: root.date + 1,
+	};
+	const later = {
+		...reply,
+		id: "later",
+		remoteId: "later",
+		messageId: "<later>",
+		references: ["<reply>"],
+		date: root.date + 2,
+	};
+	const unrelated = {
+		...root,
+		id: "other",
+		remoteId: "other",
+		messageId: "<other>",
+	};
+	const otherAccount = { ...reply, id: "other-account", accountId: "another" };
+	assert.equal(
+		conversations([later, unrelated, root, reply, otherAccount]).length,
+		3,
+	);
+	assert.deepEqual(
+		relatedMessages(root, [later, reply, unrelated]).map((m) => m.id),
+		["later", "reply", root.id],
+	);
+	mailStore().saveMessages([root, reply, later, unrelated]);
+	const result = await handleMailRequest(request(`conversation?id=${root.id}`));
+	const data = await result.json();
+	assert.equal(data.messages.length, 3);
+	assert.equal(data.messages[0].id, root.id);
+});
+
+test("cached search includes recipients and cc with Korean text", () => {
+	const s = mailStore();
+	s.saveMessages([
+		{
+			...message(),
+			to: [{ name: "개발팀", address: "team@example.com" }],
+			cc: [{ name: "검토자", address: "review@example.com" }],
+		},
+	]);
+	assert.equal(s.messages(account.id, "inbox", "개발팀").length, 1);
+	assert.equal(s.messages(account.id, "inbox", "REVIEW@example.com").length, 1);
+});
+
+test("Gmail conversation retrieves sent replies even when the subject changed", async () => {
+	const { conversationMessages } = await import("./service.server");
+	const original = message();
+	mailStore().saveMessages([original]);
+	let calls = 0;
+	mock.method(globalThis, "fetch", async (url: unknown) => {
+		assert.match(String(url), /threads\/thread-1\?format=metadata$/);
+		calls++;
+		return Response.json({
+			messages: [
+				{
+					id: "123",
+					threadId: "thread-1",
+					labelIds: ["INBOX"],
+					internalDate: "100",
+					payload: {
+						headers: [
+							{ name: "Subject", value: "제안서" },
+							{ name: "Message-ID", value: "<original>" },
+						],
+					},
+				},
+				{
+					id: "sent-reply",
+					threadId: "thread-1",
+					labelIds: ["SENT"],
+					internalDate: "200",
+					payload: {
+						headers: [
+							{ name: "Subject", value: "수정된 제안" },
+							{ name: "Message-ID", value: "<reply>" },
+							{ name: "In-Reply-To", value: "<original>" },
+						],
+					},
+				},
+			],
+		});
+	});
+	const result = await conversationMessages(original.id, true);
+	assert.equal(result.messages.length, 2);
+	assert.equal(result.messages[1].folder, "sent");
+	assert.equal(result.messages[1].subject, "수정된 제안");
+	const again = await conversationMessages(result.messages[1].id, true);
+	assert.equal(again.messages.length, 2);
+	assert.equal(calls, 1);
+});
+
+test("HTML layout keeps safe newsletter styles and isolates its trusted resize script", async () => {
+	const parsed = await parseMail(
+		await new MailComposer({
+			from: account.email,
+			to: "reader@example.com",
+			subject: "Newsletter",
+			html: '<table width="640" cellpadding="24" style="max-width:640px;margin:0 auto;border-collapse:collapse"><tr><td style="padding:24px;font-family:Georgia,serif"><img src="cid:photo"><img src="https://images.example/a.jpg" onload="evil()"><script>evil()</script></td></tr></table>',
+			attachments: [
+				{
+					filename: "inline.png",
+					content: Buffer.from("image"),
+					cid: "photo",
+					contentDisposition: "inline",
+				},
+				{ filename: "notes.txt", content: Buffer.from("notes") },
+			],
+		})
+			.compile()
+			.build(),
+	);
+	const visible = toDetail(message(), parsed, true);
+	const hidden = toDetail(message(), parsed, false);
+	assert.match(visible.html, /max-width:640px/);
+	assert.match(visible.html, /cellpadding="24"/);
+	assert.match(visible.html, /data:image\/png;base64,/);
+	assert.match(visible.html, /https:\/\/images.example\/a.jpg/);
+	assert.doesNotMatch(hidden.html, /https:\/\/images.example\/a.jpg/);
+	assert.equal(visible.hasRemoteImages, true);
+	assert.equal(hidden.hasRemoteImages, true);
+	assert.doesNotMatch(visible.html, /evil\(\)|onload=/);
+	const nonce = visible.html.match(/script-src 'nonce-([^']+)'/)?.[1];
+	assert.ok(nonce);
+	assert.ok(visible.html.includes(`<script nonce="${nonce}">`));
+	assert.equal((visible.html.match(/<script /g) || []).length, 1);
+	assert.deepEqual(
+		visible.attachments.map((a) => [a.id, a.name]),
+		[["1", "notes.txt"]],
+	);
+});
+
+test("demo mailbox supports accounts, HTML, search, conversations and simulated send without changing real mail", async () => {
+	const smtp = mock.method(nodemailer, "createTransport", () => {
+		throw new Error("Demo must never use SMTP");
+	});
+	const call = async (path: string, body?: unknown) => {
+		const response = await handleMailRequest(request(`demo/${path}`, body));
+		assert.equal(response.status, 200, path);
+		return response.json();
+	};
+	await call("reset", {});
+	const status = await call("status");
+	assert.equal(status.accounts.length, 2);
+	assert.ok(status.accounts.every((a: MailAccount) => a.provider === "icloud"));
+	const inbox = await call("messages?folder=inbox");
+	assert.equal(inbox.messages.length, 7);
+	const newsletter = await call("message?id=demo-newsletter");
+	assert.match(newsletter.html, /data:image\/jpeg;base64,/);
+	assert.equal(newsletter.attachments.length, 0);
+	const search = await call(`messages?q=${encodeURIComponent("목요일")}`);
+	assert.equal(search.messages.length, 1);
+	const personal = await call(`messages?account=${status.accounts[0].id}`);
+	assert.equal(personal.messages.length, 3);
+	const thread = await call("conversation?id=demo-review-latest");
+	assert.equal(thread.messages.length, 3);
+	assert.ok(thread.messages.some((m: MailMessage) => m.folder === "sent"));
+	const attachment = await handleMailRequest(
+		request("demo/attachment?message=demo-review-latest&part=0"),
+	);
+	assert.match(await attachment.text(), /프로젝트 검토사항/);
+	const requestId = randomUUID();
+	const payload = {
+		requestId,
+		accountId: status.accounts[1].id,
+		to: ["recipient@example.com"],
+		cc: [],
+		bcc: [],
+		subject: "Demo reply",
+		text: "데모 답장",
+		attachments: [],
+		replyId: "demo-review-latest",
+	};
+	const result = await call("send", payload);
+	assert.equal(result.status, "sent");
+	assert.match(result.warning, /실제로 발송하지/);
+	await call("send", payload);
+	const sent = await call("messages?folder=sent");
+	assert.equal(sent.messages.length, 2);
+	assert.equal(
+		(await call("conversation?id=demo-review-latest")).messages.length,
+		4,
+	);
+	assert.equal(smtp.mock.callCount(), 0);
+	assert.deepEqual(
+		mailStore()
+			.accounts()
+			.map((a) => a.id),
+		[account.id],
+	);
+	assert.equal(
+		(
+			mailStore()
+				.db.prepare("SELECT COUNT(*) AS count FROM messages")
+				.get() as { count: number }
+		).count,
+		0,
+	);
+	await call("reset", {});
+});

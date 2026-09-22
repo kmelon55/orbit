@@ -1,10 +1,11 @@
+import { createHash } from "node:crypto";
 import {
 	type FetchMessageObject,
 	ImapFlow,
 	type MessageAddressObject,
 } from "imapflow";
 import nodemailer from "nodemailer";
-import { mailStore, messageKey } from "./store.server";
+import { mailDirectory, mailStore, messageKey } from "./store.server";
 import {
 	MAX_RAW_BYTES,
 	type MailAccount,
@@ -59,16 +60,57 @@ export function smtpClient(
 		disableUrlAccess: true,
 	});
 }
+type Connection = {
+	client: ImapFlow;
+	tail: Promise<unknown>;
+	timer?: ReturnType<typeof setTimeout>;
+};
+const connections = new Map<string, Connection>();
 export async function usingImap<T>(
 	account: MailAccount,
 	fn: (client: ImapFlow) => Promise<T>,
+	lane = "list",
 ) {
-	const client = imapClient(account);
+	const secret = mailStore().secret(account.id);
+	const key = `${mailDirectory()}:${account.id}:${lane}:${createHash("sha256")
+		.update(secret.password || "")
+		.digest("hex")}`;
+	let entry = connections.get(key);
+	if (!entry) {
+		entry = { client: imapClient(account, secret), tail: Promise.resolve() };
+		connections.set(key, entry);
+	}
+	if (entry.timer) clearTimeout(entry.timer);
+	const connection = entry;
+	const next = connection.tail
+		.catch(() => {})
+		.then(async () => {
+			if (!connection.client.usable) {
+				connection.client.close();
+				connection.client = imapClient(account, secret);
+				await connection.client.connect();
+			}
+			return fn(connection.client);
+		});
+	connection.tail = next;
 	try {
-		await client.connect();
-		return await fn(client);
+		return await next;
 	} finally {
-		await client.logout().catch(() => client.close());
+		if (connection.tail === next) {
+			connection.timer = setTimeout(() => {
+				connection.client.close();
+				connections.delete(key);
+			}, 60_000);
+			connection.timer.unref();
+		}
+	}
+}
+export function closeImapConnections(accountId?: string) {
+	for (const [key, entry] of connections) {
+		if (accountId && !key.includes(`:${accountId}:`)) continue;
+		if (entry.timer) clearTimeout(entry.timer);
+		entry.client.close();
+		connections.delete(key);
 	}
 }
 export async function findMailbox(client: ImapFlow, folder: MailFolder) {
@@ -114,6 +156,18 @@ function summary(
 		remoteId,
 		mailbox,
 		uidValidity: validity,
+		messageId: m.envelope?.messageId,
+		references: [
+			...new Set(
+				[
+					...(m.headers
+						?.toString()
+						.replace(/\r?\n[ \t]+/g, " ")
+						.match(/<[^<>]+>/g) || []),
+					m.envelope?.inReplyTo || "",
+				].filter(Boolean),
+			),
+		],
 		subject: m.envelope?.subject || "(제목 없음)",
 		from: envelopeAddresses(m.envelope?.from),
 		to: envelopeAddresses(m.envelope?.to),
@@ -139,43 +193,68 @@ export async function listImap(
 		try {
 			if (!client.mailbox) throw new Error("메일함을 열지 못했습니다.");
 			const validity = String(client.mailbox.uidValidity);
-			const ids = await client.search(
-				query
-					? { or: [{ subject: query }, { from: query }, { body: query }] }
-					: { all: true },
-				{ uid: true },
-			);
 			const [cursorValidity, cursorUid] = cursor?.split(":") || [];
 			if (cursor && cursorValidity !== validity)
 				throw new Error("메일함이 변경되었습니다. 목록을 새로고침해 주세요.");
 			const bound = cursor ? Number(cursorUid) : Infinity;
-			if (cursor && !Number.isSafeInteger(bound))
+			if (cursor && (!Number.isSafeInteger(bound) || bound <= 0))
 				throw new Error("페이지 정보가 올바르지 않습니다.");
-			const remaining = (ids || [])
-				.filter((id) => id < bound)
-				.sort((a, b) => b - a);
-			const page = remaining.slice(0, PAGE_SIZE);
-			const fetched = page.length
-				? await client.fetchAll(
-						page,
-						{
-							uid: true,
-							envelope: true,
-							flags: true,
-							internalDate: true,
-							bodyStructure: true,
-						},
-						{ uid: true },
-					)
-				: [];
+			const fields = {
+				uid: true,
+				envelope: true,
+				flags: true,
+				internalDate: true,
+				bodyStructure: true,
+				headers: ["References"],
+			};
+			let fetched: FetchMessageObject[];
+			let hasMore = false;
+			if (!query && !cursor) {
+				// The initial window needs only the last 50 sequence numbers, not every UID.
+				const count = client.mailbox.exists;
+				fetched = count
+					? await client.fetchAll(
+							`${Math.max(1, count - PAGE_SIZE + 1)}:${count}`,
+							fields,
+						)
+					: [];
+				hasMore = count > PAGE_SIZE;
+			} else {
+				const criteria = query
+					? {
+							or: [
+								{ subject: query },
+								{ from: query },
+								{ to: query },
+								{ cc: query },
+								{ body: query },
+							],
+						}
+					: { all: true };
+				const ids =
+					bound <= 1
+						? []
+						: await client.search(
+								{ ...criteria, ...(cursor ? { uid: `1:${bound - 1}` } : {}) },
+								{ uid: true },
+							);
+				const remaining = (ids || [])
+					.filter((id) => id < bound)
+					.sort((a, b) => b - a);
+				const page = remaining.slice(0, PAGE_SIZE);
+				fetched = page.length
+					? await client.fetchAll(page, fields, { uid: true })
+					: [];
+				hasMore = remaining.length > PAGE_SIZE;
+			}
 			return {
 				uidValidity: validity,
 				messages: fetched
 					.map((m) => summary(account, folder, mailbox, validity, m))
 					.sort((a, b) => b.date - a.date),
 				cursor:
-					remaining.length > PAGE_SIZE
-						? `${validity}:${page[page.length - 1]}`
+					hasMore && fetched.length
+						? `${validity}:${Math.min(...fetched.map((m) => m.uid))}`
 						: null,
 			};
 		} finally {
@@ -193,34 +272,40 @@ async function lockMessage(client: ImapFlow, m: MailMessage) {
 	return lock;
 }
 export async function imapRaw(account: MailAccount, m: MailMessage) {
-	return usingImap(account, async (client) => {
-		const lock = await lockMessage(client, m);
-		try {
-			const uid = m.remoteId.split(":")[1];
-			const meta = await client.fetchOne(uid, { size: true }, { uid: true });
-			if (!meta) throw new Error("원본 메일이 이동되거나 삭제되었습니다.");
-			if ((meta.size || 0) > MAX_RAW_BYTES)
-				throw new Error("35MB를 넘는 메일은 원본 메일 서비스에서 열어 주세요.");
-			const download = await client.download(uid, undefined, {
-				uid: true,
-				maxBytes: MAX_RAW_BYTES + 1,
-			});
-			const chunks: Buffer[] = [];
-			let size = 0;
-			for await (const chunk of download.content) {
-				const b = Buffer.from(chunk);
-				size += b.length;
-				if (size > MAX_RAW_BYTES) {
-					download.content.destroy();
-					throw new Error("메일이 너무 큽니다.");
+	return usingImap(
+		account,
+		async (client) => {
+			const lock = await lockMessage(client, m);
+			try {
+				const uid = m.remoteId.split(":")[1];
+				const meta = await client.fetchOne(uid, { size: true }, { uid: true });
+				if (!meta) throw new Error("원본 메일이 이동되거나 삭제되었습니다.");
+				if ((meta.size || 0) > MAX_RAW_BYTES)
+					throw new Error(
+						"35MB를 넘는 메일은 원본 메일 서비스에서 열어 주세요.",
+					);
+				const download = await client.download(uid, undefined, {
+					uid: true,
+					maxBytes: MAX_RAW_BYTES + 1,
+				});
+				const chunks: Buffer[] = [];
+				let size = 0;
+				for await (const chunk of download.content) {
+					const b = Buffer.from(chunk);
+					size += b.length;
+					if (size > MAX_RAW_BYTES) {
+						download.content.destroy();
+						throw new Error("메일이 너무 큽니다.");
+					}
+					chunks.push(b);
 				}
-				chunks.push(b);
+				return Buffer.concat(chunks);
+			} finally {
+				lock.release();
 			}
-			return Buffer.concat(chunks);
-		} finally {
-			lock.release();
-		}
-	});
+		},
+		"body",
+	);
 }
 export async function mutateImap(
 	account: MailAccount,

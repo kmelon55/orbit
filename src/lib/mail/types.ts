@@ -32,6 +32,8 @@ export type MailMessage = {
 	mailbox?: string;
 	uidValidity?: string;
 	threadId?: string;
+	messageId?: string;
+	references?: string[];
 	subject: string;
 	from: MailAddress[];
 	to: MailAddress[];
@@ -50,6 +52,7 @@ export type MailAttachment = {
 export type MailDetail = MailMessage & {
 	text: string;
 	html: string;
+	hasRemoteImages?: boolean;
 	replyTo: MailAddress[];
 	messageId: string;
 	references: string[];

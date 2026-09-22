@@ -7,6 +7,7 @@ import {
 	verifyOrbitSessionToken,
 } from "../orbit/auth.server";
 import { mailConfig } from "./config.server";
+import { demoMailRequest } from "./demo.server";
 import { clearGmailToken, gmailConfigured, oauthClient } from "./gmail.server";
 import {
 	pushConfigured,
@@ -18,6 +19,7 @@ import { startMailRuntime, stopAccount, syncAccount } from "./runtime.server";
 import {
 	accountQueue,
 	connectImap,
+	conversationMessages,
 	detailMessage,
 	listRemote,
 	mutateMessage,
@@ -111,6 +113,12 @@ export async function handleMailRequest(request: Request): Promise<Response> {
 		// OAuth callbacks are necessarily cross-site navigations, bound to both session and nonce.
 		if (path === "oauth/callback") return await oauthCallback(request);
 		assertMailAccess(request);
+		if (path.startsWith("demo/"))
+			return await demoMailRequest(
+				request,
+				path.slice(5),
+				request.method === "POST" ? await body(request) : undefined,
+			);
 		startMailRuntime();
 		const s = mailStore();
 		if (request.method === "GET") {
@@ -140,9 +148,7 @@ export async function handleMailRequest(request: Request): Promise<Response> {
 				if (url.searchParams.get("remote") === "1") {
 					if (accountId)
 						return json(
-							await accountQueue(accountId, () =>
-								listRemote(s.account(accountId), folder, cursor, query),
-							),
+							await listRemote(s.account(accountId), folder, cursor, query),
 						);
 					const results = await Promise.allSettled(
 						s
@@ -177,6 +183,13 @@ export async function handleMailRequest(request: Request): Promise<Response> {
 					cursor: null,
 				});
 			}
+			if (path === "conversation")
+				return json(
+					await conversationMessages(
+						id(url.searchParams.get("id")),
+						url.searchParams.get("remote") === "1",
+					),
+				);
 			if (path === "message")
 				return json(
 					await detailMessage(

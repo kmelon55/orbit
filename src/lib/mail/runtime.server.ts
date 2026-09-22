@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ImapFlow } from "imapflow";
 import { gmailRequest } from "./gmail.server";
-import { imapClient } from "./imap.server";
+import { closeImapConnections, imapClient } from "./imap.server";
 import { flushMailPush, notifyMail } from "./push.server";
 import { accountQueue, listRemote, publicError } from "./service.server";
 import { mailDirectory, mailStore } from "./store.server";
@@ -143,6 +143,7 @@ export async function syncAccount(id: string) {
 	}
 }
 export function stopAccount(id: string) {
+	closeImapConnections(id);
 	const r = runtime();
 	r.clients.get(id)?.close();
 	r.clients.delete(id);
@@ -171,6 +172,7 @@ export function startMailRuntime() {
 	tick();
 }
 export function stopMailRuntime() {
+	closeImapConnections();
 	const r = runtime();
 	r.stopped = true;
 	if (r.timer) clearInterval(r.timer);

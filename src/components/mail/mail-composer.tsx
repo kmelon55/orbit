@@ -19,6 +19,13 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
 type Form = {
@@ -47,19 +54,26 @@ function payload(form: Form) {
 }
 export function MailComposer({
 	accounts,
+	api = mailApi,
+	demo = false,
+	defaultAccountId,
 	original,
 	mode,
 	onClose,
 	onSent,
 }: {
 	accounts: MailAccount[];
+	api?: typeof mailApi;
+	demo?: boolean;
+	defaultAccountId?: string;
 	original?: MailDetail;
 	mode: "new" | "reply" | "all" | "forward";
 	onClose: () => void;
 	onSent: () => void;
 }) {
 	const first =
-		accounts.find((a) => a.id === original?.accountId) || accounts[0];
+		accounts.find((a) => a.id === (original?.accountId || defaultAccountId)) ||
+		accounts[0];
 	const recipients =
 		original && mode !== "forward"
 			? replyRecipients(original, first.email, mode === "all")
@@ -92,12 +106,12 @@ export function MailComposer({
 	const [discard, setDiscard] = useState(false);
 	const latest = useRef(form);
 	latest.current = form;
-	const draftKey = `orbit-mail-draft:${mode}:${original?.id || "new"}`;
+	const draftKey = `orbit-mail-draft:${demo ? "demo:" : ""}${mode}:${original?.id || "new"}`;
 	useEffect(() => {
 		let active = true;
 		draftId.current = localStorage.getItem(draftKey) || crypto.randomUUID();
 		localStorage.setItem(draftKey, draftId.current);
-		void mailApi<{ revision: number; value: SendMail } | null>(
+		void api<{ revision: number; value: SendMail } | null>(
 			`draft?id=${draftId.current}`,
 		)
 			.then((d) => {
@@ -122,18 +136,19 @@ export function MailComposer({
 		return () => {
 			active = false;
 		};
-	}, [draftKey]);
-	const save = useCallback((value: Form) => {
-		const rev = ++revision.current;
-		const id = draftId.current;
-		const next = queue.current
-			.catch(() => {})
-			.then(() =>
-				mailApi("draft", { id, revision: rev, value: payload(value) }),
-			);
-		queue.current = next;
-		return next;
-	}, []);
+	}, [draftKey, api]);
+	const save = useCallback(
+		(value: Form) => {
+			const rev = ++revision.current;
+			const id = draftId.current;
+			const next = queue.current
+				.catch(() => {})
+				.then(() => api("draft", { id, revision: rev, value: payload(value) }));
+			queue.current = next;
+			return next;
+		},
+		[api],
+	);
 	useEffect(() => {
 		if (!ready || busy || uncertain) return;
 		const timer = setTimeout(() => {
@@ -169,7 +184,7 @@ export function MailComposer({
 		setBusy(true);
 		try {
 			await queue.current.catch(() => {});
-			await mailApi("draft", {
+			await api("draft", {
 				id: draftId.current,
 				revision: ++revision.current,
 				value: null,
@@ -243,7 +258,7 @@ export function MailComposer({
 		setError("");
 		try {
 			await save(latest.current);
-			const result = await mailApi<SendResult>("send", {
+			const result = await api<SendResult>("send", {
 				...payload(form),
 				requestId: draftId.current,
 			});
@@ -256,7 +271,7 @@ export function MailComposer({
 			else toast.success("메일을 보냈습니다.");
 			// Cleanup failure must never make a successful delivery look like a failed send.
 			localStorage.removeItem(draftKey);
-			await mailApi("draft", {
+			await api("draft", {
 				id: draftId.current,
 				revision: ++revision.current,
 				value: null,
@@ -287,7 +302,9 @@ export function MailComposer({
 									: "답장"}
 					</DialogTitle>
 					<DialogDescription className="sr-only">
-						받는 사람과 내용을 작성하고 메일을 보내세요.
+						{demo
+							? "데모 보낸 메일함에만 저장되며, 실제로 발송되지 않습니다."
+							: "받는 사람과 내용을 작성하고 메일을 보내세요."}
 					</DialogDescription>
 				</DialogHeader>
 				{error && (
@@ -302,23 +319,33 @@ export function MailComposer({
 					disabled={busy || !ready || uncertain}
 					className="min-h-0 space-y-3"
 				>
-					<label className="flex items-center gap-3 text-sm">
+					<label
+						htmlFor="mail-sender"
+						className="flex items-center gap-3 text-sm"
+					>
 						<span className="w-20 shrink-0 whitespace-nowrap text-xs text-muted-foreground">
 							보내는 사람
 						</span>
-						<select
-							aria-label="보내는 계정"
-							className="h-9 min-w-0 flex-1 rounded-md border bg-background px-2"
+						<Select
 							value={form.accountId}
 							disabled={Boolean(form.replyId)}
-							onChange={(e) => change("accountId", e.target.value)}
+							onValueChange={(value) => change("accountId", value)}
 						>
-							{accounts.map((a) => (
-								<option key={a.id} value={a.id}>
-									{a.email}
-								</option>
-							))}
-						</select>
+							<SelectTrigger
+								id="mail-sender"
+								aria-label="보내는 계정"
+								className="min-w-0 flex-1"
+							>
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent>
+								{accounts.map((a) => (
+									<SelectItem key={a.id} value={a.id}>
+										{a.email}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
 					</label>
 					<label
 						htmlFor="mail-mail-composer-1"

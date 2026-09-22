@@ -14,7 +14,13 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { MailAccount, MailMessage, MailSecret, SendResult } from "./types";
+import type {
+	MailAccount,
+	MailDetail,
+	MailMessage,
+	MailSecret,
+	SendResult,
+} from "./types";
 
 export function mailDirectory() {
 	return resolve(
@@ -56,6 +62,7 @@ export class MailStore {
    CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, email TEXT NOT NULL COLLATE NOCASE UNIQUE, data TEXT NOT NULL, secret TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, folder TEXT NOT NULL, date INTEGER NOT NULL, data TEXT NOT NULL);
    CREATE INDEX IF NOT EXISTS messages_folder ON messages(account_id,folder,date DESC);
+   CREATE TABLE IF NOT EXISTS bodies (id TEXT PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE, cached_at INTEGER NOT NULL, data TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS seen (account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, remote_id TEXT NOT NULL, PRIMARY KEY(account_id,remote_id));
    CREATE TABLE IF NOT EXISTS sends (id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, hash TEXT NOT NULL, result TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS subscriptions (id TEXT PRIMARY KEY, data TEXT NOT NULL);
@@ -158,7 +165,13 @@ export class MailStore {
 			.filter(
 				(m) =>
 					!search ||
-					[m.subject, m.snippet, ...m.from.map((a) => `${a.name} ${a.address}`)]
+					[
+						m.subject,
+						m.snippet,
+						...[...m.from, ...m.to, ...m.cc].map(
+							(a) => `${a.name} ${a.address}`,
+						),
+					]
 						.join(" ")
 						.toLowerCase()
 						.includes(search),
@@ -178,13 +191,52 @@ export class MailStore {
 		);
 		this.db.exec("BEGIN IMMEDIATE");
 		try {
-			for (const m of messages)
-				stmt.run(m.id, m.accountId, m.folder, m.date, this.seal(m));
+			for (const m of messages) {
+				const previous = this.db
+					.prepare("SELECT data FROM messages WHERE id=?")
+					.get(m.id) as { data: string } | undefined;
+				const cached = previous
+					? this.unseal<MailMessage>(previous.data)
+					: undefined;
+				stmt.run(
+					m.id,
+					m.accountId,
+					m.folder,
+					m.date,
+					this.seal({ ...m, snippet: m.snippet || cached?.snippet || "" }),
+				);
+			}
 			this.db.exec("COMMIT");
 		} catch (e) {
 			this.db.exec("ROLLBACK");
 			throw e;
 		}
+	}
+	body(id: string): { hidden: MailDetail; visible: MailDetail } | null {
+		const row = this.db
+			.prepare("SELECT data FROM bodies WHERE id=? AND cached_at>?")
+			.get(id, Date.now() - 7 * 86_400_000) as { data: string } | undefined;
+		const body = row
+			? this.unseal<{
+					version?: number;
+					hidden: MailDetail;
+					visible: MailDetail;
+				}>(row.data)
+			: null;
+		return body?.version === 2 ? body : null;
+	}
+	saveBody(id: string, hidden: MailDetail, visible: MailDetail) {
+		// Cache sanitized body variants, never raw attachments. Bound both size and retention.
+		const data = this.seal({ version: 2, hidden, visible });
+		if (data.length > 4 * 1024 * 1024) return;
+		this.db
+			.prepare("INSERT OR REPLACE INTO bodies VALUES (?,?,?)")
+			.run(id, Date.now(), data);
+		this.db
+			.prepare(
+				"DELETE FROM bodies WHERE cached_at<? OR id IN (SELECT id FROM bodies ORDER BY cached_at DESC LIMIT -1 OFFSET 100)",
+			)
+			.run(Date.now() - 7 * 86_400_000);
 	}
 	deleteMessage(id: string) {
 		this.db.prepare("DELETE FROM messages WHERE id=?").run(id);

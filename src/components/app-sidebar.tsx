@@ -245,11 +245,7 @@ export function AppSidebar({ snapshot }: { snapshot: OrbitSnapshot }) {
 			</SidebarContent>
 
 			<SidebarFooter className="border-t border-sidebar-border/70">
-				<div className="flex items-center justify-between px-1 group-data-[collapsible=icon]:justify-center">
-					<div className="flex items-center gap-2 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
-						<span className="size-1.5 rounded-full bg-emerald-500" />
-						Private workspace
-					</div>
+				<div className="flex items-center justify-end px-1 group-data-[collapsible=icon]:justify-center">
 					<div className="flex items-center gap-0.5">
 						<SettingsDialog />
 						<Button

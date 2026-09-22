@@ -120,32 +120,70 @@ export async function listGmail(
 					account,
 					`messages/${encodeURIComponent(id)}?format=metadata`,
 				);
-				const headers = (m.payload?.headers || [])
-					.map((h) => `${h.name}: ${h.value}`)
-					.join("\r\n");
-				const parsed = await simpleParser(`${headers}\r\n\r\n`, {
-					skipTextToHtml: true,
-				});
-				return {
-					id: messageKey(account.id, folder, id),
-					accountId: account.id,
-					folder,
-					remoteId: id,
-					threadId: m.threadId,
-					subject: parsed.subject || "(제목 없음)",
-					from: addresses(parsed.from),
-					to: addresses(parsed.to),
-					cc: addresses(parsed.cc),
-					date: Number(m.internalDate) || Date.now(),
-					unread: (m.labelIds || []).includes("UNREAD"),
-					snippet: m.snippet || "",
-					hasAttachments: false,
-				} satisfies MailMessage;
+				return gmailSummary(account, folder, m);
 			}),
 		);
 		messages.push(...batch);
 	}
 	return { messages, cursor: list.nextPageToken || null };
+}
+async function gmailSummary(
+	account: MailAccount,
+	folder: MailFolder,
+	m: GmailMeta,
+): Promise<MailMessage> {
+	const headers = (m.payload?.headers || [])
+		.map((h) => `${h.name}: ${h.value}`)
+		.join("\r\n");
+	const parsed = await simpleParser(`${headers}\r\n\r\n`, {
+		skipTextToHtml: true,
+	});
+	return {
+		id: messageKey(account.id, folder, m.id),
+		accountId: account.id,
+		folder,
+		remoteId: m.id,
+		threadId: m.threadId,
+		messageId: parsed.messageId,
+		references: [
+			...(typeof parsed.references === "string"
+				? [parsed.references]
+				: parsed.references || []),
+			...(parsed.inReplyTo ? [parsed.inReplyTo] : []),
+		],
+		subject: parsed.subject || "(제목 없음)",
+		from: addresses(parsed.from),
+		to: addresses(parsed.to),
+		cc: addresses(parsed.cc),
+		date: Number(m.internalDate) || Date.now(),
+		unread: (m.labelIds || []).includes("UNREAD"),
+		snippet: m.snippet || "",
+		hasAttachments: false,
+	} satisfies MailMessage;
+}
+export async function gmailConversation(
+	account: MailAccount,
+	threadId: string,
+) {
+	const thread = await gmailRequest<{ messages?: GmailMeta[] }>(
+		account,
+		`threads/${encodeURIComponent(threadId)}?format=metadata`,
+	);
+	return Promise.all(
+		(thread.messages || [])
+			.filter((m) => !m.labelIds?.includes("DRAFT"))
+			.map((m) => {
+				const labels = m.labelIds || [];
+				const folder: MailFolder = labels.includes("TRASH")
+					? "trash"
+					: labels.includes("INBOX")
+						? "inbox"
+						: labels.includes("SENT")
+							? "sent"
+							: "archive";
+				return gmailSummary(account, folder, m);
+			}),
+	);
 }
 export async function gmailRaw(account: MailAccount, message: MailMessage) {
 	const meta = await gmailRequest<GmailMeta>(

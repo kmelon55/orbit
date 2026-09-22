@@ -14,3 +14,9 @@ export async function mailApi<T>(
 	if (!response.ok) throw new Error(value.error || "메일 요청에 실패했습니다.");
 	return value as T;
 }
+
+export function createMailClient(demo = false): typeof mailApi {
+	return demo
+		? (path, body, signal) => mailApi(`demo/${path}`, body, signal)
+		: mailApi;
+}

@@ -1,7 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import MailComposer from "nodemailer/lib/mail-composer";
 import { parseMail, toDetail } from "./content.server";
-import { gmailRaw, gmailRequest, listGmail, mutateGmail } from "./gmail.server";
+import { relatedMessages } from "./conversations";
+import {
+	gmailConversation,
+	gmailRaw,
+	gmailRequest,
+	listGmail,
+	mutateGmail,
+} from "./gmail.server";
 import {
 	findMailbox,
 	imapClient,
@@ -11,11 +18,12 @@ import {
 	smtpClient,
 	usingImap,
 } from "./imap.server";
-import { mailStore } from "./store.server";
+import { mailDirectory, mailStore } from "./store.server";
 import {
 	connectSchema,
 	MAX_SEND_BYTES,
 	type MailAccount,
+	type MailDetail,
 	type MailFolder,
 	type SendMail,
 	type SendResult,
@@ -74,7 +82,30 @@ export async function connectImap(input: unknown) {
 		return account;
 	});
 }
-export async function listRemote(
+const listRequests = new Map<string, ReturnType<typeof fetchRemote>>();
+export function listRemote(
+	account: MailAccount,
+	folder: MailFolder,
+	cursor?: string,
+	query?: string,
+) {
+	const key = JSON.stringify([
+		mailDirectory(),
+		account.id,
+		folder,
+		cursor,
+		query || "",
+	]);
+	let pending = listRequests.get(key);
+	if (!pending) {
+		pending = fetchRemote(account, folder, cursor, query).finally(() =>
+			listRequests.delete(key),
+		);
+		listRequests.set(key, pending);
+	}
+	return pending;
+}
+async function fetchRemote(
 	account: MailAccount,
 	folder: MailFolder,
 	cursor?: string,
@@ -112,9 +143,132 @@ export async function rawMessage(id: string) {
 		),
 	};
 }
+const bodyRequests = new Map<
+	string,
+	Promise<{ hidden: MailDetail; visible: MailDetail }>
+>();
 export async function detailMessage(id: string, remoteImages = false) {
-	const { message, parsed } = await rawMessage(id);
-	return toDetail(message, parsed, remoteImages);
+	const store = mailStore();
+	const message = store.message(id);
+	const cached = store.body(id);
+	if (cached)
+		return {
+			...(remoteImages ? cached.visible : cached.hidden),
+			unread: message.unread,
+			folder: message.folder,
+		};
+	const key = `${mailDirectory()}:${id}`;
+	let pending = bodyRequests.get(key);
+	if (!pending) {
+		pending = rawMessage(id)
+			.then(({ message, parsed }) => {
+				const hidden = toDetail(message, parsed);
+				const visible = toDetail(message, parsed, true);
+				// A message/account can be removed while the provider request is in flight.
+				try {
+					const current = store.message(id);
+					store.saveMessages([
+						{
+							...current,
+							messageId: hidden.messageId,
+							references: hidden.references,
+							snippet: hidden.text.replace(/\s+/g, " ").slice(0, 180),
+						},
+					]);
+					store.saveBody(id, hidden, visible);
+				} catch {
+					/* removed */
+				}
+				return { hidden, visible };
+			})
+			.finally(() => bodyRequests.delete(key));
+		bodyRequests.set(key, pending);
+	}
+	const body = await pending;
+	return {
+		...(remoteImages ? body.visible : body.hidden),
+		unread: store.message(id).unread,
+	};
+}
+const conversationRequests = new Map<
+	string,
+	{ expires: number; value: ReturnType<typeof fetchConversation> }
+>();
+export async function conversationMessages(id: string, remote = false) {
+	const m = mailStore().message(id);
+	const key = JSON.stringify([
+		mailDirectory(),
+		m.accountId,
+		m.threadId || m.references?.[0] || m.messageId || m.id,
+		remote,
+	]);
+	const cached = conversationRequests.get(key);
+	if (remote && cached && cached.expires > Date.now()) {
+		const result = await cached.value;
+		return {
+			...(await fetchConversation(id, false)),
+			incomplete: result.incomplete,
+			error: result.error,
+		};
+	}
+	const value = fetchConversation(id, remote);
+	if (remote) {
+		conversationRequests.set(key, { expires: Date.now() + 60_000, value });
+		void value.then(
+			(result) => {
+				if (result.incomplete) conversationRequests.delete(key);
+			},
+			() => conversationRequests.delete(key),
+		);
+		if (conversationRequests.size > 100)
+			conversationRequests.delete(
+				conversationRequests.keys().next().value as string,
+			);
+	}
+	return value;
+}
+async function fetchConversation(id: string, remote = false) {
+	const store = mailStore();
+	const selected = store.message(id);
+	const account = store.account(selected.accountId);
+	let incomplete = false;
+	const errors: string[] = [];
+	if (remote && account.provider === "gmail" && selected.threadId) {
+		try {
+			store.saveMessages(await gmailConversation(account, selected.threadId));
+		} catch (error) {
+			incomplete = true;
+			errors.push(publicError(error));
+		}
+	} else if (remote) {
+		const subject = selected.subject
+			.replace(/^(?:(?:re|fw|fwd)\s*:\s*)+/gi, "")
+			.trim();
+		if (subject && subject !== "(제목 없음)") {
+			const query =
+				account.provider === "gmail"
+					? `subject:"${subject.replace(/["\\]/g, " ")}"`
+					: subject;
+			const pages = await Promise.allSettled(
+				(["inbox", "sent"] as const).map((folder) =>
+					listRemote(account, folder, undefined, query),
+				),
+			);
+			for (const page of pages) {
+				if (page.status === "rejected") {
+					incomplete = true;
+					errors.push(publicError(page.reason));
+				} else if (page.value.cursor) incomplete = true;
+			}
+		}
+	}
+	const messages = relatedMessages(
+		store.message(id),
+		["inbox", "sent", "archive", "trash"].flatMap((folder) =>
+			store.messages(account.id, folder),
+		),
+	).sort((a, b) => a.date - b.date);
+	return { messages, incomplete, error: errors[0] };
 }
 export async function mutateMessage(
 	id: string,
@@ -140,6 +294,7 @@ export async function mutateMessage(
 						]);
 			}
 		} else mailStore().deleteMessage(id);
+		conversationRequests.clear();
 		return { ok: true };
 	});
 }
@@ -229,6 +384,7 @@ export async function sendMail(data: SendMail): Promise<SendResult> {
 					? "일부 받는 사람에게 발송하지 못했습니다. 보낸 메일과 수신 주소를 확인해 주세요."
 					: undefined;
 				// Record successful SMTP acceptance BEFORE the secondary sent-folder operation.
+				conversationRequests.clear();
 				s.finishSend(data.requestId, { status: "sent", warning });
 				try {
 					await usingImap(account, async (client) => {
@@ -251,12 +407,14 @@ export async function sendMail(data: SendMail): Promise<SendResult> {
 						warning:
 							"메일은 발송됐지만 보낸 메일함에 사본을 저장하지 못했습니다. 다시 발송하지 마세요.",
 					};
+					conversationRequests.clear();
 					s.finishSend(data.requestId, r);
 					return r;
 				}
 				return { status: "sent", warning };
 			}
 			const result: SendResult = { status: "sent" };
+			conversationRequests.clear();
 			s.finishSend(data.requestId, result);
 			return result;
 		} catch {
@@ -270,6 +428,7 @@ export async function sendMail(data: SendMail): Promise<SendResult> {
 						warning:
 							"발송 결과를 확인하지 못했습니다. 보낸 메일함을 확인해 주세요. 중복 발송을 막기 위해 자동 재시도하지 않습니다.",
 					};
+			conversationRequests.clear();
 			s.finishSend(data.requestId, result);
 			return result;
 		}

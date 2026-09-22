@@ -11,6 +11,13 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 
 type Status = MailStatus & { publicUrl: string; gmailClientId: string };
 function decodeKey(value: string) {
@@ -256,16 +263,24 @@ export function MailSettings({
 							void connect();
 						}}
 					>
-						<label className="block space-y-1 text-sm">
+						<label htmlFor="mail-provider" className="block space-y-1 text-sm">
 							<span>메일 서비스</span>
-							<select
-								className="h-9 w-full rounded-md border bg-background px-3"
+							<Select
 								value={provider}
-								onChange={(e) => setProvider(e.target.value as typeof provider)}
+								onValueChange={(value) => setProvider(value as typeof provider)}
 							>
-								<option value="icloud">iCloud</option>
-								<option value="naver">네이버</option>
-							</select>
+								<SelectTrigger
+									id="mail-provider"
+									aria-label="메일 서비스"
+									className="w-full"
+								>
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="icloud">iCloud</SelectItem>
+									<SelectItem value="naver">네이버</SelectItem>
+								</SelectContent>
+							</Select>
 						</label>
 						<label
 							htmlFor="mail-mail-settings-1"
