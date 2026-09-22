@@ -2,12 +2,14 @@ import { useRouter } from "@tanstack/react-router";
 import {
 	ArrowRight,
 	CalendarClock,
+	CalendarDays,
 	Circle,
 	GripVertical,
 	Plus,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { mutateOrbit } from "#/lib/orbit/functions";
+import { itemColor } from "#/lib/orbit/item-colors";
 import { folderOf, formatDayKey } from "#/lib/orbit/para";
 import type { OrbitItem, OrbitSnapshot, OrbitSpace } from "#/lib/orbit/schema";
 import { onItemUndone } from "#/lib/orbit/undo-events";
@@ -66,6 +68,10 @@ function formatDue(item: OrbitItem, today: string) {
 	return time ? `${label} ${time}` : label;
 }
 
+function taskContext(item: OrbitItem) {
+	return folderOf(item) ?? (item.space === "inbox" ? "소속 없음" : item.space);
+}
+
 function rescheduledDue(item: OrbitItem, day: string) {
 	return `${day}${item.due?.slice(10) ?? ""}`;
 }
@@ -82,7 +88,11 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 	const router = useRouter();
 	const today = formatDayKey();
 	const [view, setView] = useState<TaskView>("open");
-	const [editor, setEditor] = useState<{ open: boolean; item?: OrbitItem }>({
+	const [editor, setEditor] = useState<{
+		open: boolean;
+		item?: OrbitItem;
+		kind?: "task" | "event";
+	}>({
 		open: false,
 	});
 	const [confirm, setConfirm] = useState<ItemConfirmAction | null>(null);
@@ -139,6 +149,9 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 				),
 		[snapshot.items, optimisticDueById],
 	);
+	const events = snapshot.items
+		.filter((item) => item.type === "event" && item.space !== "archive")
+		.sort((a, b) => (a.start ?? "9999").localeCompare(b.start ?? "9999"));
 	const openTasks = tasks.filter((item) => taskToggle.keepInOpenList(item));
 	const doneTasks = tasks.filter((item) => taskToggle.keepInDoneList(item));
 	const groups = useMemo(
@@ -314,6 +327,12 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 						</div>
 						<div className="flex items-center gap-1">
 							<ScheduleColors />
+							<Button
+								variant="outline"
+								onClick={() => setEditor({ open: true, kind: "event" })}
+							>
+								<Plus /> 일정
+							</Button>
 							<Button onClick={() => void createTask()}>
 								<Plus /> 할 일
 							</Button>
@@ -348,6 +367,53 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 
 					{view === "open" ? (
 						<div className="space-y-4">
+							<section className="orbit-card overflow-hidden">
+								<div className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
+									<h3 className="text-xs font-semibold text-muted-foreground">
+										일정
+									</h3>
+									<span className="text-xs text-muted-foreground">
+										{events.length}
+									</span>
+								</div>
+								{events.map((item) => (
+									<button
+										key={item.id}
+										type="button"
+										onClick={() => setEditor({ open: true, item })}
+										className="flex min-h-14 w-full items-center gap-3 border-b border-border/55 px-3 text-left last:border-b-0 hover:bg-muted/40 sm:px-4"
+									>
+										<span
+											className={cn(
+												"grid size-5 shrink-0 place-items-center rounded-full border",
+												itemColor(item).surface,
+											)}
+										>
+											<CalendarDays className="size-3" />
+										</span>
+										<span className="min-w-0 flex-1 py-2">
+											<span className="block text-sm font-medium">
+												{item.title}
+											</span>
+											<span className="mt-0.5 block truncate text-xs text-muted-foreground">
+												{taskContext(item)}
+											</span>
+										</span>
+										<span className="max-w-32 shrink-0 text-right text-[11px] text-muted-foreground sm:max-w-none sm:text-xs">
+											{item.start?.slice(0, 16).replace("T", " ") ??
+												"날짜 없음"}
+											{item.end && item.end !== item.start
+												? ` ~ ${item.end.slice(0, 16).replace("T", " ")}`
+												: ""}
+										</span>
+									</button>
+								))}
+								{events.length === 0 ? (
+									<p className="px-4 py-4 text-sm text-muted-foreground">
+										예정된 일정이 없습니다.
+									</p>
+								) : null}
+							</section>
 							{groups.map((group) => (
 								<section key={group.key} className="orbit-card overflow-hidden">
 									<div className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
@@ -463,7 +529,7 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 			<ScheduleEditor
 				open={editor.open}
 				onOpenChange={(open) => setEditor((current) => ({ ...current, open }))}
-				kind="task"
+				kind={editor.item?.type === "event" ? "event" : (editor.kind ?? "task")}
 				item={editor.item}
 			/>
 			<ConfirmItemDialog
