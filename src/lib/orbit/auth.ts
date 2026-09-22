@@ -69,9 +69,11 @@ export const loginOrbit = createServerFn({ method: "POST" })
 	});
 
 export const changeOrbitLoginPassword = createServerFn({ method: "POST" })
+	.middleware([orbitAuthMiddleware])
 	.validator((input: unknown) =>
-		loginSchema
-			.extend({
+		z
+			.object({
+				currentPassword: z.string().min(1).max(1_024),
 				newPassword: z.string().min(12).max(1_024),
 			})
 			.parse(input),
@@ -80,9 +82,8 @@ export const changeOrbitLoginPassword = createServerFn({ method: "POST" })
 		const {
 			assertLoginAllowed,
 			assertSameOriginRequest,
-			changeOrbitPassword,
+			changeOrbitRequestPassword,
 			clearLoginFailures,
-			clearOrbitSession,
 			markOrbitResponsePrivate,
 			recordLoginFailure,
 			OrbitPasswordChangeError,
@@ -92,7 +93,7 @@ export const changeOrbitLoginPassword = createServerFn({ method: "POST" })
 		assertLoginAllowed();
 		recordLoginFailure();
 		try {
-			await changeOrbitPassword(data.username, data.password, data.newPassword);
+			await changeOrbitRequestPassword(data.currentPassword, data.newPassword);
 		} catch (error) {
 			return {
 				ok: false as const,
@@ -103,7 +104,6 @@ export const changeOrbitLoginPassword = createServerFn({ method: "POST" })
 			};
 		}
 		clearLoginFailures();
-		clearOrbitSession();
 		return { ok: true as const };
 	});
 

@@ -11,6 +11,7 @@ import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import {
 	changeOrbitPassword,
+	changeOrbitPasswordForSession,
 	createOrbitSessionToken,
 	getOrbitAuthConfig,
 	orbitCredentialsMatch,
@@ -237,4 +238,85 @@ test("corrupt saved credentials and username changes fail closed instead of rest
 		writeFileSync(path.join(directory, ".orbit/auth.json"), value);
 		assert.throws(() => getOrbitAuthConfig(environment), /저장된 로그인 정보/);
 	}
+});
+
+test("password settings reject missing, invalid, and expired sessions even with correct credentials", async () => {
+	const current = getOrbitAuthConfig(environment);
+	assert.ok(current.enabled);
+	const expired = createOrbitSessionToken(
+		current,
+		Date.now() - 366 * 24 * 60 * 60 * 1000,
+	);
+	for (const token of [undefined, "invalid-session", expired]) {
+		await assert.rejects(
+			changeOrbitPasswordForSession(
+				token,
+				config.password,
+				"new settings password",
+				environment,
+			),
+			/로그인 후/,
+		);
+	}
+	assert.throws(() => readFileSync(path.join(directory, ".orbit/auth.json")), {
+		code: "ENOENT",
+	});
+});
+
+test("authenticated settings require the current password and return a config for renewing this session", async () => {
+	const current = getOrbitAuthConfig(environment);
+	assert.ok(current.enabled);
+	const thisSession = createOrbitSessionToken(current);
+	const otherSession = createOrbitSessionToken(current);
+	await assert.rejects(
+		changeOrbitPasswordForSession(
+			thisSession,
+			"wrong current password",
+			"new settings password",
+			environment,
+		),
+		/현재 비밀번호/,
+	);
+	const updated = await changeOrbitPasswordForSession(
+		thisSession,
+		config.password,
+		"new settings password",
+		environment,
+	);
+	const renewedSession = createOrbitSessionToken(updated);
+	assert.equal(verifyOrbitSessionToken(renewedSession, updated), true);
+	assert.equal(verifyOrbitSessionToken(thisSession, updated), false);
+	assert.equal(verifyOrbitSessionToken(otherSession, updated), false);
+	assert.equal(
+		await orbitCredentialsMatch(
+			config.username,
+			"new settings password",
+			updated,
+		),
+		true,
+	);
+	await assert.rejects(
+		changeOrbitPasswordForSession(
+			thisSession,
+			"new settings password",
+			"another settings password",
+			environment,
+		),
+		/로그인 후/,
+	);
+});
+
+test("password settings cannot bootstrap an account when authentication is disabled", async () => {
+	await assert.rejects(
+		changeOrbitPasswordForSession(
+			undefined,
+			"anything",
+			"new settings password",
+			{
+				NODE_ENV: "development",
+				ORBIT_VAULT_DIR: directory,
+			},
+		),
+		/로그인 후/,
+	);
 });

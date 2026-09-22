@@ -225,6 +225,40 @@ export function isOrbitRequestAuthenticated() {
 	return verifyOrbitSessionToken(getCookie(SESSION_COOKIE), config);
 }
 
+export async function changeOrbitPasswordForSession(
+	token: string | undefined,
+	currentPassword: string,
+	newPassword: string,
+	environment: AuthEnvironment = process.env,
+) {
+	const config = getOrbitAuthConfig(environment);
+	if (!config.enabled || !verifyOrbitSessionToken(token, config)) {
+		throw new OrbitPasswordChangeError("로그인 후 비밀번호를 변경해 주세요.");
+	}
+	await changeOrbitPassword(
+		config.username,
+		currentPassword,
+		newPassword,
+		environment,
+	);
+	const updated = getOrbitAuthConfig(environment);
+	if (!updated.enabled) throw new Error("로그인 설정을 확인해 주세요.");
+	return updated;
+}
+
+export async function changeOrbitRequestPassword(
+	currentPassword: string,
+	newPassword: string,
+) {
+	const updated = await changeOrbitPasswordForSession(
+		getCookie(SESSION_COOKIE),
+		currentPassword,
+		newPassword,
+	);
+	// Keep this device signed in; rotating the key invalidates other sessions.
+	issueOrbitSession(updated);
+}
+
 function cookieSecure() {
 	return (
 		process.env.NODE_ENV === "production" ||

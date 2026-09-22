@@ -10,10 +10,12 @@ import {
 	Smartphone,
 	SquarePlus,
 	Sun,
+	UserRound,
 	X,
 } from "lucide-react";
 import { Dialog as DialogPrimitive, Switch as SwitchPrimitive } from "radix-ui";
 import { useState } from "react";
+import { AccountSettings } from "@/components/account-settings";
 import { useTheme } from "@/components/theme-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,12 +33,13 @@ import {
 import { usePwaInstall } from "@/hooks/use-pwa-install";
 import { cn } from "@/lib/utils";
 
-type SettingsSection = "appearance" | "editor" | "install";
+type SettingsSection = "appearance" | "editor" | "install" | "account";
 
 const navigation = [
 	{ id: "appearance", label: "화면", icon: Palette },
 	{ id: "editor", label: "에디터", icon: Keyboard },
 	{ id: "install", label: "앱 설치", icon: Smartphone },
+	{ id: "account", label: "계정", icon: UserRound },
 ] as const;
 
 const exitSequences: Array<{
@@ -195,13 +198,16 @@ export function SettingsDialog() {
 					<span className="sr-only">설정</span>
 				</Button>
 			</DialogTrigger>
-			<DialogContent className="min-h-[34rem] overflow-hidden p-0 sm:max-w-3xl">
+			<DialogContent className="overflow-y-auto p-0 sm:max-w-3xl">
 				<div className="grid min-h-[34rem] sm:grid-cols-[12rem_1fr]">
 					<aside className="border-b border-border/70 bg-muted/35 p-3 sm:border-r sm:border-b-0">
 						<div className="flex h-11 items-center px-2 text-sm font-semibold">
 							설정
 						</div>
-						<nav aria-label="설정 메뉴" className="flex gap-1 sm:grid">
+						<nav
+							aria-label="설정 메뉴"
+							className="flex flex-wrap gap-1 sm:grid"
+						>
 							{navigation.map((item) => {
 								const Icon = item.icon;
 								return (
@@ -346,6 +352,8 @@ export function SettingsDialog() {
 									</section>
 								</div>
 							</>
+						) : section === "account" ? (
+							<AccountSettings />
 						) : (
 							<InstallSettings />
 						)}
