@@ -72,12 +72,27 @@ self.addEventListener("push", (event) => {
   const url = new URL(requested, self.location.origin);
   const target = url.origin === self.location.origin && url.pathname === "/mail"
     ? url.pathname + url.search : "/mail";
-  event.waitUntil(self.registration.showNotification(String(data.title || "Orbit 메일").slice(0, 200), {
-    body: String(data.body || "새 메일이 도착했습니다.").slice(0, 500),
-    icon: "/icons/orbit-192.png", badge: "/icons/orbit-192.png",
-    tag: String(data.tag || "orbit-mail").slice(0, 100),
-    data: { url: target },
-  }));
+  event.waitUntil((async () => {
+    let displayed = false;
+    try {
+      await self.registration.showNotification(String(data.title || "Orbit 메일").slice(0, 200), {
+        body: String(data.body || "새 메일이 도착했습니다.").slice(0, 500),
+        icon: "/icons/orbit-192.png", badge: "/icons/orbit-192.png",
+        tag: String(data.tag || "orbit-mail").slice(0, 100),
+        renotify: true,
+        data: { url: target },
+      });
+      displayed = true;
+    } finally {
+      // A receipt confirms the display API result, not that the OS showed a banner.
+      if (typeof data.testId === "string") {
+        const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+        for (const client of clients) client.postMessage({
+          type: "orbit-push-test", testId: data.testId, displayed,
+        });
+      }
+    }
+  })());
 });
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();

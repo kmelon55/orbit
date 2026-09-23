@@ -399,18 +399,25 @@ export async function handleMailRequest(request: Request): Promise<Response> {
 				return json({ ok: true });
 			}
 			if (path === "push/test") {
-				const v = z.object({ endpoint: z.string().max(2048) }).parse(input);
+				const v = z
+					.object({
+						endpoint: z.string().max(2048),
+						testId: z.string().uuid().optional(),
+					})
+					.parse(input);
 				const sub = s
 					.subscriptions<PushSubscription>()
 					.find((s) => s.endpoint === v.endpoint);
 				if (!sub) throw new Error("이 기기의 알림을 먼저 켜 주세요.");
+				const testId = v.testId || randomUUID();
 				await sendPush(sub, {
 					title: "Orbit 메일",
 					body: "이 기기로 메일 알림을 받을 수 있어요.",
 					url: "/mail",
-					tag: "orbit-mail-test",
+					tag: `orbit-mail-test-${testId}`,
+					testId,
 				});
-				return json({ ok: true });
+				return json({ ok: true, testId });
 			}
 			if (path === "draft") {
 				const v = z

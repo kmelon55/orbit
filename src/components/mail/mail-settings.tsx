@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { createMailClient } from "#/lib/mail/client";
+import {
+	assertPushSupport,
+	pushRegistration,
+	savePushSubscription,
+	waitForPushTest,
+} from "#/lib/mail/push-browser";
 import type { MailStatus } from "#/lib/mail/types";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -22,10 +28,6 @@ import {
 import { MailIdentitiesSettings } from "./mail-identities-settings";
 
 type Status = MailStatus & { publicUrl: string; gmailClientId: string };
-function decodeKey(value: string) {
-	const raw = atob(value.replace(/-/g, "+").replace(/_/g, "/"));
-	return Uint8Array.from(raw, (c) => c.charCodeAt(0));
-}
 export function MailSettings({
 	open,
 	onClose,
@@ -50,6 +52,7 @@ export function MailSettings({
 	const [preview, setPreview] = useState(true);
 	const [advanced, setAdvanced] = useState(false);
 	const [subscribed, setSubscribed] = useState(false);
+	const [notificationResult, setNotificationResult] = useState("");
 	const [remove, setRemove] = useState<string | null>(null);
 	const refresh = useCallback(async () => {
 		const next = await mailApi<Status>("status");
@@ -66,11 +69,21 @@ export function MailSettings({
 	useEffect(() => {
 		if (!open) return;
 		void refresh().catch((e) => setError(e.message));
-		if (!demo && "serviceWorker" in navigator)
+		setNotificationResult("");
+		setError("");
+		setSubscribed(false);
+		if (
+			!demo &&
+			"serviceWorker" in navigator &&
+			"PushManager" in window &&
+			"Notification" in window
+		)
 			void navigator.serviceWorker
 				.getRegistration("/")
 				.then((r) => r?.pushManager.getSubscription())
-				.then((s) => setSubscribed(Boolean(s)))
+				.then((s) =>
+					setSubscribed(Boolean(s) && Notification.permission === "granted"),
+				)
 				.catch(() => {});
 	}, [open, refresh, demo]);
 	async function run(fn: () => Promise<void>) {
@@ -99,14 +112,8 @@ export function MailSettings({
 	}
 	async function notifications() {
 		await run(async () => {
-			if (
-				!("serviceWorker" in navigator) ||
-				!("PushManager" in window) ||
-				!("Notification" in window)
-			)
-				throw new Error(
-					"이 브라우저에서는 푸시를 지원하지 않습니다. 아이폰에서는 홈 화면에 Orbit을 추가한 뒤 열어 주세요.",
-				);
+			assertPushSupport();
+			setNotificationResult("");
 			if (subscribed) {
 				const registration = await navigator.serviceWorker.getRegistration("/");
 				const sub = await registration?.pushManager.getSubscription();
@@ -126,19 +133,70 @@ export function MailSettings({
 				throw new Error(
 					"브라우저 또는 기기 설정에서 Orbit 알림을 허용해 주세요.",
 				);
-			await navigator.serviceWorker.register("/sw.js", { scope: "/" });
-			const registration = await navigator.serviceWorker.ready;
-			const sub =
-				(await registration.pushManager.getSubscription()) ||
-				(await registration.pushManager.subscribe({
-					userVisibleOnly: true,
-					applicationServerKey: decodeKey(status.publicKey),
-				}));
-			await mailApi("push/subscribe", sub.toJSON());
+			const registration = await pushRegistration();
+			await savePushSubscription(registration, status.publicKey);
 			setSubscribed(true);
 			toast.success("이 기기의 메일 알림을 켰습니다.");
 		});
 	}
+	async function testNotification(local = false) {
+		await run(async () => {
+			setNotificationResult("");
+			assertPushSupport();
+			if (Notification.permission !== "granted") {
+				setSubscribed(false);
+				throw new Error(
+					"브라우저 설정에서 Orbit 알림을 허용한 뒤 이 기기 알림을 켜 주세요.",
+				);
+			}
+			const registration = await pushRegistration();
+			const testId = crypto.randomUUID();
+			if (local) {
+				await registration.showNotification("Orbit 알림 표시 확인", {
+					body: "이 알림이 보이면 브라우저와 기기의 알림 표시가 동작합니다.",
+					icon: "/icons/orbit-192.png",
+					tag: `orbit-display-test-${testId}`,
+					data: { url: "/mail" },
+				});
+				setNotificationResult(
+					"브라우저에 표시를 요청했습니다. 알림이 보이지 않으면 Zen/Firefox의 사이트 알림 권한, 시스템 알림 설정과 집중 모드를 확인해 주세요.",
+				);
+				return;
+			}
+			if (!status?.publicKey)
+				throw new Error(
+					"서버 연결 설정에서 HTTPS Orbit 주소를 먼저 저장해 주세요.",
+				);
+			const sub = await savePushSubscription(registration, status.publicKey);
+			const receipt = waitForPushTest(navigator.serviceWorker, testId);
+			try {
+				setNotificationResult(
+					"테스트 알림을 보내고 이 브라우저의 수신을 확인하고 있습니다…",
+				);
+				await mailApi("push/test", { endpoint: sub.endpoint, testId });
+				const result = await receipt.result;
+				if (!result) {
+					setNotificationResult(
+						"푸시 서버에 전송했지만 이 브라우저의 수신은 아직 확인되지 않았습니다. ‘알림 표시 확인’으로 표시 설정을 확인하거나, 이 기기 알림을 껐다가 다시 켜 주세요.",
+					);
+				} else if (!result.displayed) {
+					throw new Error(
+						"테스트 알림은 수신했지만 브라우저가 표시하지 못했습니다. 사이트 알림 권한과 시스템 알림 설정을 확인해 주세요.",
+					);
+				} else {
+					setNotificationResult(
+						"이 브라우저가 테스트 알림을 수신하고 표시 요청을 완료했습니다. 배너가 보이지 않으면 시스템 알림 설정과 집중 모드를 확인해 주세요.",
+					);
+				}
+			} catch (error) {
+				setNotificationResult("");
+				throw error;
+			} finally {
+				receipt.cancel();
+			}
+		});
+	}
+
 	return (
 		<Dialog
 			open={open}
@@ -393,25 +451,29 @@ export function MailSettings({
 							{subscribed ? "이 기기 알림 끄기" : "이 기기 알림 켜기"}
 						</Button>
 						{subscribed && (
-							<Button
-								variant="ghost"
-								disabled={busy}
-								onClick={() =>
-									void run(async () => {
-										const sub = await (
-											await navigator.serviceWorker.ready
-										).pushManager.getSubscription();
-										if (sub) {
-											await mailApi("push/test", { endpoint: sub.endpoint });
-											toast.success("테스트 알림을 보냈습니다.");
-										}
-									})
-								}
-							>
-								테스트 알림
-							</Button>
+							<>
+								<Button
+									variant="ghost"
+									disabled={busy}
+									onClick={() => void testNotification()}
+								>
+									테스트 알림
+								</Button>
+								<Button
+									variant="ghost"
+									disabled={busy}
+									onClick={() => void testNotification(true)}
+								>
+									알림 표시 확인
+								</Button>
+							</>
 						)}
 					</div>
+					{notificationResult && (
+						<output className="block text-xs leading-relaxed text-muted-foreground">
+							{notificationResult}
+						</output>
+					)}
 					<label
 						htmlFor="mail-notification-preview"
 						className="flex items-center gap-2 text-sm"
