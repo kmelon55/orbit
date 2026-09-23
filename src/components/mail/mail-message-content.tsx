@@ -30,7 +30,7 @@ export function MailMessageContent({
 				{conversation ? (
 					<details className="text-xs text-muted-foreground">
 						<summary className="cursor-pointer truncate">
-							받는 사람: {detail.to.map((a) => a.name || a.address).join(", ")}
+							받는 사람: {detail.to.map((a) => a.address).join(", ")}
 						</summary>
 						<div className="mt-2 space-y-1 break-all">
 							<p>보낸 사람: {detail.from.map((a) => a.address).join(", ")}</p>

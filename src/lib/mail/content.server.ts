@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { type AddressObject, type ParsedMail, simpleParser } from "mailparser";
 import sanitizeHtml from "sanitize-html";
+import { deliveryAddresses } from "./identities";
 import type { MailAddress, MailDetail, MailMessage } from "./types";
 
 export function addresses(
@@ -179,6 +180,9 @@ export function toDetail(
 		from: addresses(parsed.from),
 		to: addresses(parsed.to),
 		cc: addresses(parsed.cc),
+		deliveredTo: deliveryAddresses(
+			(parsed.headerLines || []).map((header) => header.line).join("\r\n"),
+		),
 		text: parsed.text || "",
 		html: parsed.html ? mailDocument(parsed.html, remoteImages) : "",
 		hasRemoteImages: Boolean(

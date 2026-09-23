@@ -9,7 +9,7 @@ import { MailMessageContent } from "./mail-message-content";
 
 export function MailThreadMessage({
 	message,
-	accountEmail,
+	accountEmails,
 	api,
 	demo,
 	cache,
@@ -23,7 +23,7 @@ export function MailThreadMessage({
 	onRead,
 }: {
 	message: MailMessage;
-	accountEmail?: string;
+	accountEmails: string[];
 	api: typeof mailApi;
 	demo: boolean;
 	cache: Map<string, MailDetail>;
@@ -127,11 +127,9 @@ export function MailThreadMessage({
 	]);
 	const sent =
 		message.folder === "sent" ||
-		message.from.some(
-			(a) => a.address.toLowerCase() === accountEmail?.toLowerCase(),
-		);
+		message.from.some((a) => accountEmails.includes(a.address.toLowerCase()));
 	const sender = sent
-		? "나"
+		? `나 · ${message.from.map((a) => a.address).join(", ")}`
 		: message.from.map((a) => a.name || a.address).join(", ");
 	const time = new Date(message.date);
 	return (

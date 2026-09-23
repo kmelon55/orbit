@@ -20,6 +20,12 @@ import { toast } from "sonner";
 import { createMailClient } from "#/lib/mail/client";
 import { conversations } from "#/lib/mail/conversations";
 import {
+	accountAddresses,
+	mailScopes,
+	mailViews,
+	matchingAddresses,
+} from "#/lib/mail/identities";
+import {
 	folderLabels,
 	type MailDetail,
 	type MailFolder,
@@ -27,15 +33,9 @@ import {
 } from "#/lib/mail/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { MailAccountFilter } from "./mail-account-filter";
 import { MailComposer } from "./mail-composer";
 import { MailMessageContent } from "./mail-message-content";
 import { MailSettings } from "./mail-settings";
@@ -50,7 +50,7 @@ export function MailWorkspace({
 	demo?: boolean;
 }) {
 	const api = useMemo(() => createMailClient(demo), [demo]);
-	const [account, setAccount] = useState("");
+	const [accountIds, setAccountIds] = useState<string[] | null>(null);
 	const [folder, setFolder] = useState<MailFolder>("inbox");
 	const [query, setQuery] = useState("");
 	const [search, setSearch] = useState("");
@@ -84,7 +84,7 @@ export function MailWorkspace({
 		refresh,
 		refreshStatus,
 		refreshRef,
-	} = useMailList(account, folder, search, api);
+	} = useMailList(accountIds, folder, search, api);
 	const markThreadRead = useCallback(
 		(id: string) => {
 			setMessages((previous) =>
@@ -100,10 +100,19 @@ export function MailWorkspace({
 	const [detailRetry, setDetailRetry] = useState(0);
 	const detailCache = useRef(new Map<string, MailDetail>());
 	const rows = useMemo(() => conversations(messages), [messages]);
+	const views = useMemo(
+		() => mailViews(status?.accounts || []),
+		[status?.accounts],
+	);
+	const selectedView =
+		accountIds?.length === 1
+			? views.find((view) => view.id === accountIds[0])
+			: undefined;
 	useEffect(() => {
-		if (account && status && !status.accounts.some((a) => a.id === account))
-			setAccount("");
-	}, [account, status]);
+		if (!status || accountIds === null) return;
+		const remaining = accountIds.filter((id) => views.some((a) => a.id === id));
+		if (remaining.length !== accountIds.length) setAccountIds(remaining);
+	}, [accountIds, status, views]);
 	useEffect(() => {
 		if (!selected) {
 			setThread([]);
@@ -249,8 +258,7 @@ export function MailWorkspace({
 		messages.find((m) => m.id === selected) ||
 		thread.find((m) => m.id === selected);
 	const activeThread = thread.some((m) => m.id === selected) ? thread : [];
-	const activeAccounts =
-		status?.accounts.filter((a) => !account || a.id === account) || [];
+	const activeAccounts = mailScopes(status?.accounts || [], accountIds);
 	const syncFailed = Object.keys(errors).length > 0;
 	const lastUpdated = activeAccounts.length
 		? Math.min(...activeAccounts.map((a) => updated[a.id] || a.lastSync || 0))
@@ -297,45 +305,23 @@ export function MailWorkspace({
 					selected && "hidden md:flex",
 				)}
 			>
-				<Select
-					value={account || "all"}
-					onValueChange={(value) => {
-						setAccount(value === "all" ? "" : value);
+				<MailAccountFilter
+					accounts={views}
+					selected={accountIds}
+					onChange={(ids) => {
+						setAccountIds(ids);
 						selectMessage("");
 					}}
-				>
-					<SelectTrigger
-						aria-label="메일 계정"
-						className="w-44 max-w-full sm:w-52"
-					>
-						<SelectValue placeholder="모든 계정" />
-					</SelectTrigger>
-					<SelectContent>
-						<SelectItem value="all">
-							모든 계정 · {status?.accounts.length || 0}
-						</SelectItem>
-						{status?.accounts.map((a) => (
-							<SelectItem key={a.id} value={a.id}>
-								<span
-									className={cn(
-										"inline-block size-1.5 shrink-0 rounded-full",
-										syncing.includes(a.id)
-											? "animate-pulse bg-amber-500"
-											: errors[a.id] || (!updated[a.id] && a.error)
-												? "bg-destructive"
-												: "bg-emerald-500",
-									)}
-								/>
-								{a.provider === "icloud"
-									? "iCloud"
-									: a.provider === "gmail"
-										? "Gmail"
-										: "네이버"}{" "}
-								· {a.email}
-							</SelectItem>
-						))}
-					</SelectContent>
-				</Select>
+					syncing={views
+						.filter((view) => syncing.includes(view.accountId))
+						.map((view) => view.id)}
+					errors={Object.fromEntries(
+						views.map((view) => [view.id, errors[view.accountId]]),
+					)}
+					updated={Object.fromEntries(
+						views.map((view) => [view.id, updated[view.accountId]]),
+					)}
+				/>
 				<div className="relative order-last w-full min-w-0 flex-[1_0_100%] sm:order-none sm:w-auto sm:flex-1">
 					<Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
 					<Input
@@ -419,7 +405,6 @@ export function MailWorkspace({
 					variant="ghost"
 					size="icon"
 					aria-label="메일 설정"
-					disabled={demo}
 					onClick={() => setSettings(true)}
 				>
 					<Settings className="size-4" />
@@ -529,9 +514,11 @@ export function MailWorkspace({
 								<p className="p-8 text-center text-sm text-muted-foreground">
 									{busy
 										? "메일을 불러오는 중…"
-										: search
-											? "검색 결과가 없습니다."
-											: "메일이 없습니다."}
+										: activeAccounts.length === 0
+											? "표시할 메일 계정을 선택해 주세요."
+											: search
+												? "검색 결과가 없습니다."
+												: "메일이 없습니다."}
 								</p>
 							)
 						)}
@@ -593,14 +580,17 @@ export function MailWorkspace({
 										</p>
 									)}
 									<div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
-										{!account && (
-											<span className="truncate">
-												{
-													status?.accounts.find((a) => a.id === m.accountId)
-														?.email
-												}
-											</span>
-										)}
+										<span className="truncate">
+											{(() => {
+												const a = status?.accounts.find(
+													(entry) => entry.id === m.accountId,
+												);
+												return a
+													? matchingAddresses(m, a).join(", ") ||
+															`${a.email} · 수신 주소 미확인`
+													: "";
+											})()}
+										</span>
 										{m.hasAttachments && <Paperclip className="size-3" />}
 									</div>
 								</button>
@@ -754,9 +744,10 @@ export function MailWorkspace({
 											onRead={markThreadRead}
 											key={m.id}
 											message={m}
-											accountEmail={
-												status?.accounts.find((a) => a.id === m.accountId)
-													?.email
+											accountEmails={
+												status?.accounts
+													.filter((a) => a.id === m.accountId)
+													.flatMap(accountAddresses) || []
 											}
 											api={api}
 											demo={demo}
@@ -824,6 +815,7 @@ export function MailWorkspace({
 				</div>
 			)}
 			<MailSettings
+				demo={demo}
 				open={settings}
 				onClose={() => setSettings(false)}
 				onChanged={changed}
@@ -833,7 +825,10 @@ export function MailWorkspace({
 					accounts={status.accounts}
 					api={api}
 					demo={demo}
-					defaultAccountId={account}
+					defaultAccountId={
+						selectedView?.accountId || activeAccounts[0]?.id || ""
+					}
+					defaultFrom={selectedView?.address || undefined}
 					original={
 						compose === "new"
 							? undefined

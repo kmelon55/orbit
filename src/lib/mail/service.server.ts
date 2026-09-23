@@ -9,6 +9,7 @@ import {
 	listGmail,
 	mutateGmail,
 } from "./gmail.server";
+import { senderAddress } from "./identities";
 import {
 	findMailbox,
 	imapClient,
@@ -63,6 +64,8 @@ export async function connectImap(input: unknown) {
 		id: existing?.id || randomUUID(),
 		provider: data.provider,
 		email: data.email,
+		aliases: existing?.aliases,
+		defaultFrom: existing?.defaultFrom,
 		name: data.name || data.email,
 		notifications: existing?.notifications ?? true,
 		createdAt: existing?.createdAt || Date.now(),
@@ -88,6 +91,7 @@ export function listRemote(
 	folder: MailFolder,
 	cursor?: string,
 	query?: string,
+	addresses: string[] = [],
 ) {
 	const key = JSON.stringify([
 		mailDirectory(),
@@ -95,11 +99,12 @@ export function listRemote(
 		folder,
 		cursor,
 		query || "",
+		addresses,
 	]);
 	let pending = listRequests.get(key);
 	if (!pending) {
-		pending = fetchRemote(account, folder, cursor, query).finally(() =>
-			listRequests.delete(key),
+		pending = fetchRemote(account, folder, cursor, query, addresses).finally(
+			() => listRequests.delete(key),
 		);
 		listRequests.set(key, pending);
 	}
@@ -110,11 +115,12 @@ async function fetchRemote(
 	folder: MailFolder,
 	cursor?: string,
 	query?: string,
+	addresses: string[] = [],
 ) {
 	const result =
 		account.provider === "gmail"
 			? await listGmail(account, folder, cursor, query)
-			: await listImap(account, folder, cursor, query);
+			: await listImap(account, folder, cursor, query, addresses);
 	if ("uidValidity" in result) {
 		for (const cached of mailStore().messages(account.id, folder)) {
 			if (cached.uidValidity !== result.uidValidity)
@@ -123,7 +129,7 @@ async function fetchRemote(
 	}
 	mailStore().saveMessages(result.messages);
 	// Only a fresh, unfiltered page can establish removal from the visible window.
-	if (!cursor && !query)
+	if (!cursor && !query && !addresses.length)
 		mailStore().reconcile(
 			account.id,
 			folder,
@@ -171,6 +177,7 @@ export async function detailMessage(id: string, remoteImages = false) {
 						{
 							...current,
 							messageId: hidden.messageId,
+							deliveredTo: hidden.deliveredTo,
 							references: hidden.references,
 							snippet: hidden.text.replace(/\s+/g, " ").slice(0, 180),
 						},
@@ -322,6 +329,7 @@ export async function sendMail(data: SendMail): Promise<SendResult> {
 				throw new Error("이 발송 요청은 다른 내용으로 이미 사용되었습니다.");
 			return JSON.parse(existing.result) as SendResult;
 		}
+		const from = senderAddress(account, data.from);
 		const original = data.replyId ? await detailMessage(data.replyId) : null;
 		if (original && original.accountId !== account.id)
 			throw new Error("메일을 받은 계정으로 답장해 주세요.");
@@ -341,7 +349,7 @@ export async function sendMail(data: SendMail): Promise<SendResult> {
 		const messageId = `<${data.requestId}@orbit.local>`;
 		const composer = new MailComposer({
 			keepBcc: account.provider === "gmail",
-			from: { name: account.name, address: account.email },
+			from: { name: account.name, address: from },
 			to: data.to,
 			cc: data.cc,
 			bcc: data.bcc,
@@ -374,7 +382,7 @@ export async function sendMail(data: SendMail): Promise<SendResult> {
 				const result = await smtpClient(account).sendMail({
 					raw,
 					envelope: {
-						from: account.email,
+						from,
 						to: [...data.to, ...data.cc, ...data.bcc],
 					},
 				});

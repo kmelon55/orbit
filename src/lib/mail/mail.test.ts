@@ -895,3 +895,244 @@ test("demo mailbox supports accounts, HTML, search, conversations and simulated 
 	);
 	await call("reset", {});
 });
+
+test("iCloud identities persist, validate the default sender and survive notification edits", async () => {
+	account = { ...account, provider: "icloud" };
+	mailStore().saveAccount(account, { password: "app-password" });
+	const response = await handleMailRequest(
+		request("account", {
+			id: account.id,
+			aliases: ["WORK@company.com", "work@company.com", account.email],
+			defaultFrom: "WORK@company.com",
+		}),
+	);
+	assert.equal(response.status, 200);
+	assert.deepEqual(mailStore().account(account.id).aliases, [
+		"work@company.com",
+	]);
+	assert.equal(mailStore().account(account.id).defaultFrom, "work@company.com");
+	assert.equal(
+		(
+			await handleMailRequest(
+				request("account", { id: account.id, notifications: false }),
+			)
+		).status,
+		200,
+	);
+	assert.deepEqual(mailStore().account(account.id).aliases, [
+		"work@company.com",
+	]);
+	assert.equal(
+		(
+			await handleMailRequest(
+				request("account", {
+					id: account.id,
+					defaultFrom: "unregistered@example.com",
+				}),
+			)
+		).status,
+		400,
+	);
+	assert.equal(
+		(
+			await handleMailRequest(
+				request("account", { id: account.id, aliases: [] }),
+			)
+		).status,
+		200,
+	);
+	assert.equal(mailStore().account(account.id).defaultFrom, account.email);
+});
+
+test("alias sender reaches MIME and SMTP envelope while authentication keeps the primary account", async () => {
+	account = { ...account, provider: "icloud", aliases: ["work@company.com"] };
+	mailStore().saveAccount(account, { password: "app-password" });
+	let raw: Buffer = Buffer.alloc(0);
+	let envelope: unknown;
+	const transport = mock.method(
+		nodemailer,
+		"createTransport",
+		(options: unknown) => {
+			assert.deepEqual((options as { auth: unknown }).auth, {
+				user: account.email,
+				pass: "app-password",
+			});
+			return {
+				sendMail: async (value: { raw: Buffer; envelope: unknown }) => {
+					raw = value.raw;
+					envelope = value.envelope;
+					return { accepted: ["recipient@example.com"], rejected: [] };
+				},
+			};
+		},
+	);
+	mock.method(ImapFlow.prototype, "connect", async () => {
+		throw new Error("offline");
+	});
+	const data = sendSchema.parse({
+		accountId: account.id,
+		from: "work@company.com",
+		requestId: randomUUID(),
+		to: ["recipient@example.com"],
+		subject: "Alias",
+		text: "Body",
+	});
+	assert.equal((await sendMail(data)).status, "sent");
+	assert.equal(
+		(await parseMail(raw)).from?.value[0].address,
+		"work@company.com",
+	);
+	assert.deepEqual(envelope, {
+		from: "work@company.com",
+		to: ["recipient@example.com"],
+	});
+	assert.equal((await sendMail(data)).status, "sent");
+	assert.equal(transport.mock.callCount(), 1);
+	await assert.rejects(
+		() =>
+			sendMail({ ...data, requestId: randomUUID(), from: "spoof@example.com" }),
+		/등록된 발신 주소/,
+	);
+	assert.equal(transport.mock.callCount(), 1);
+});
+
+test("address-filtered IMAP searches old mail, preserves unrelated cache, and keeps pagination after exact matching", async () => {
+	const { listRemote } = await import("./service.server");
+	account = { ...account, provider: "icloud", aliases: ["work@company.com"] };
+	mailStore().saveAccount(account, { password: "app-password" });
+	const unrelated = {
+		...message(),
+		uidValidity: "7",
+		remoteId: "7:9000",
+		mailbox: "INBOX",
+	};
+	mailStore().saveMessages([unrelated]);
+	mock.method(ImapFlow.prototype, "connect", async function (this: ImapFlow) {
+		Object.defineProperty(this, "usable", { value: true, configurable: true });
+	});
+	mock.method(
+		ImapFlow.prototype,
+		"getMailboxLock",
+		async function (this: ImapFlow) {
+			this.mailbox = { uidValidity: 7n, exists: 10000 } as Exclude<
+				ImapFlow["mailbox"],
+				false
+			>;
+			return { release() {} };
+		},
+	);
+	const search = mock.method(
+		ImapFlow.prototype,
+		"search",
+		async (criteria: unknown) => {
+			assert.match(JSON.stringify(criteria), /work@company.com/);
+			assert.match(JSON.stringify(criteria), /proposal/);
+			return Array.from({ length: 60 }, (_, i) => i + 1);
+		},
+	);
+	mock.method(ImapFlow.prototype, "fetchAll", async (range: number[]) =>
+		range.map((uid) => ({
+			uid,
+			envelope: {
+				from: [{ address: "sender@example.com" }],
+				to: [
+					{ address: uid === 60 ? "notwork@company.com" : "work@company.com" },
+				],
+				subject: "proposal",
+			},
+			headers: Buffer.from(
+				`References: <root@example.com>\r\nX-Original-To: <${uid === 60 ? "notwork@company.com" : "work@company.com"}>`,
+			),
+			flags: new Set(),
+			internalDate: new Date(uid * 1000),
+		})),
+	);
+	const page = await listRemote(account, "inbox", undefined, "proposal", [
+		"work@company.com",
+	]);
+	assert.equal(search.mock.callCount(), 1);
+	assert.equal(page.cursor, "7:11");
+	assert.equal(page.messages.length, 49); // Substring search candidates are checked against exact addresses.
+	assert.deepEqual(page.messages[0].references, ["<root@example.com>"]);
+	assert.equal(mailStore().message(unrelated.id).id, unrelated.id);
+	const cached = await handleMailRequest(
+		request(`messages?account=${account.id}&address=work%40company.com`),
+	);
+	const json = await cached.json();
+	assert.equal(json.messages.length, 49);
+	assert.ok(!json.messages.some((m: MailMessage) => m.id === unrelated.id));
+	assert.equal(
+		(
+			await handleMailRequest(
+				request(`messages?account=${account.id}&address=unknown%40company.com`),
+			)
+		).status,
+		400,
+	);
+});
+
+test("draft storage keeps the selected alias", async () => {
+	const draftId = randomUUID();
+	const value = {
+		accountId: account.id,
+		from: "work@company.com",
+		to: [],
+		cc: [],
+		bcc: [],
+		subject: "",
+		text: "",
+		attachments: [],
+	};
+	assert.equal(
+		(
+			await handleMailRequest(
+				request("draft", { id: draftId, revision: 1, value }),
+			)
+		).status,
+		200,
+	);
+	assert.equal(
+		(await (await handleMailRequest(request(`draft?id=${draftId}`))).json())
+			.value.from,
+		"work@company.com",
+	);
+});
+
+test("demo aliases support settings and simulated sending without touching real accounts", async () => {
+	const call = async (path: string, body?: unknown) => {
+		const response = await handleMailRequest(request(`demo/${path}`, body));
+		assert.equal(response.status, 200);
+		return response.json();
+	};
+	await call("reset", {});
+	const initial = await call("status");
+	const id = initial.accounts[0].id;
+	await call("account", {
+		id,
+		aliases: ["hello@mina.design", "work@mina.studio", "news@mina.example"],
+		defaultFrom: "work@mina.studio",
+	});
+	assert.equal(
+		(await call("status")).accounts[0].defaultFrom,
+		"work@mina.studio",
+	);
+	const inbox = await call(`messages?account=${id}&address=work%40mina.studio`);
+	assert.deepEqual(
+		inbox.messages.map((m: MailMessage) => m.id),
+		["demo-photo"],
+	);
+	await call("send", {
+		accountId: id,
+		requestId: randomUUID(),
+		from: "news@mina.example",
+		to: ["recipient@example.com"],
+		text: "Body",
+		subject: "Alias demo",
+	});
+	const sent = await call(
+		`messages?account=${id}&folder=sent&address=news%40mina.example`,
+	);
+	assert.equal(sent.messages.length, 1);
+	assert.equal(sent.messages[0].from[0].address, "news@mina.example");
+	assert.deepEqual(mailStore().account(account.id).aliases, undefined);
+});

@@ -15,6 +15,8 @@ export type MailAccount = {
 	id: string;
 	provider: MailProvider;
 	email: string;
+	aliases?: string[];
+	defaultFrom?: string;
 	name: string;
 	notifications: boolean;
 	createdAt: number;
@@ -38,6 +40,7 @@ export type MailMessage = {
 	from: MailAddress[];
 	to: MailAddress[];
 	cc: MailAddress[];
+	deliveredTo?: string[];
 	date: number;
 	unread: boolean;
 	snippet: string;
@@ -78,6 +81,7 @@ export const connectSchema = z.object({
 });
 export const sendSchema = z.object({
 	accountId: z.string().uuid(),
+	from: z.email().max(254).optional(),
 	requestId: z.string().uuid(),
 	to: z.array(z.email()).min(1).max(50),
 	cc: z.array(z.email()).max(50).default([]),
@@ -103,9 +107,12 @@ export function replyRecipients(
 	detail: MailDetail,
 	email: string,
 	all: boolean,
+	aliases: string[] = [],
 ) {
 	const primary = detail.replyTo.length ? detail.replyTo : detail.from;
-	const seen = new Set([email.toLowerCase()]);
+	const seen = new Set(
+		[email, ...aliases].map((address) => address.toLowerCase()),
+	);
 	const unique = (addresses: MailAddress[]) =>
 		addresses.filter((a) => {
 			const key = a.address.toLowerCase();

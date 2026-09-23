@@ -9,6 +9,7 @@ import {
 import { mailConfig } from "./config.server";
 import { demoMailRequest } from "./demo.server";
 import { clearGmailToken, gmailConfigured, oauthClient } from "./gmail.server";
+import { accountAddresses, aliasesSchema, matchesAddress } from "./identities";
 import {
 	pushConfigured,
 	pushKeys,
@@ -140,6 +141,20 @@ export async function handleMailRequest(request: Request): Promise<Response> {
 					url.searchParams.get("folder") || "inbox",
 				);
 				const accountId = url.searchParams.get("account") || undefined;
+				const addresses = aliasesSchema
+					.max(51)
+					.parse(url.searchParams.getAll("address"))
+					.map((address) => address.toLowerCase());
+				if (
+					addresses.length &&
+					(!accountId ||
+						s.account(accountId).provider !== "icloud" ||
+						addresses.some(
+							(address) =>
+								!accountAddresses(s.account(accountId)).includes(address),
+						))
+				)
+					throw new Error("등록된 iCloud 메일 주소를 선택해 주세요.");
 				const query = z
 					.string()
 					.max(200)
@@ -148,7 +163,13 @@ export async function handleMailRequest(request: Request): Promise<Response> {
 				if (url.searchParams.get("remote") === "1") {
 					if (accountId)
 						return json(
-							await listRemote(s.account(accountId), folder, cursor, query),
+							await listRemote(
+								s.account(accountId),
+								folder,
+								cursor,
+								query,
+								addresses,
+							),
 						);
 					const results = await Promise.allSettled(
 						s
@@ -179,7 +200,15 @@ export async function handleMailRequest(request: Request): Promise<Response> {
 					});
 				}
 				return json({
-					messages: s.messages(accountId, folder, query),
+					messages: s
+						.messages(accountId, folder, query)
+						.filter(
+							(message) =>
+								!addresses.length ||
+								addresses.some((address) =>
+									matchesAddress(message, address, folder),
+								),
+						),
 					cursor: null,
 				});
 			}
@@ -265,6 +294,8 @@ export async function handleMailRequest(request: Request): Promise<Response> {
 					.object({
 						id: z.string().uuid(),
 						notifications: z.boolean().optional(),
+						aliases: aliasesSchema.optional(),
+						defaultFrom: z.email().max(254).optional(),
 						remove: z.boolean().optional(),
 					})
 					.parse(input);
@@ -273,11 +304,35 @@ export async function handleMailRequest(request: Request): Promise<Response> {
 						stopAccount(v.id);
 						clearGmailToken(v.id);
 						s.removeAccount(v.id);
-					} else
-						s.saveAccount({
-							...s.account(v.id),
-							notifications: v.notifications ?? s.account(v.id).notifications,
-						});
+					} else {
+						const previous = s.account(v.id);
+						if ((v.aliases || v.defaultFrom) && previous.provider !== "icloud")
+							throw new Error(
+								"추가 발신 주소는 iCloud 계정에서 설정해 주세요.",
+							);
+						const aliases = v.aliases
+							? [
+									...new Set(v.aliases.map((address) => address.toLowerCase())),
+								].filter((address) => address !== previous.email.toLowerCase())
+							: previous.aliases;
+						const next = {
+							...previous,
+							aliases,
+							defaultFrom:
+								v.defaultFrom?.toLowerCase() ||
+								previous.defaultFrom ||
+								previous.email.toLowerCase(),
+							notifications: v.notifications ?? previous.notifications,
+						};
+						if (!accountAddresses(next).includes(next.defaultFrom)) {
+							if (v.defaultFrom)
+								throw new Error(
+									"기본 발신 주소는 등록한 주소 중에서 선택해 주세요.",
+								);
+							next.defaultFrom = previous.email.toLowerCase();
+						}
+						s.saveAccount(next);
+					}
 				});
 				return json({ ok: true });
 			}

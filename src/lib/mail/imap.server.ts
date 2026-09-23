@@ -3,8 +3,10 @@ import {
 	type FetchMessageObject,
 	ImapFlow,
 	type MessageAddressObject,
+	type SearchObject,
 } from "imapflow";
 import nodemailer from "nodemailer";
+import { deliveryAddresses, matchesAddress } from "./identities";
 import { mailDirectory, mailStore, messageKey } from "./store.server";
 import {
 	MAX_RAW_BYTES,
@@ -16,6 +18,23 @@ import {
 	PAGE_SIZE,
 } from "./types";
 
+export function imapAddressSearch(
+	addresses: string[],
+	folder: MailFolder,
+): SearchObject {
+	const terms: SearchObject[] = [];
+	for (const address of addresses) {
+		if (folder !== "sent")
+			terms.push(
+				{ to: address },
+				{ cc: address },
+				{ header: { "Delivered-To": address } },
+				{ header: { "X-Original-To": address } },
+			);
+		if (folder !== "inbox") terms.push({ from: address });
+	}
+	return terms.length === 1 ? terms[0] : { or: terms };
+}
 const hosts = {
 	icloud: { imap: "imap.mail.me.com", smtp: "smtp.mail.me.com" },
 	naver: { imap: "imap.naver.com", smtp: "smtp.naver.com" },
@@ -163,6 +182,9 @@ function summary(
 					...(m.headers
 						?.toString()
 						.replace(/\r?\n[ \t]+/g, " ")
+						.split(/\r?\n/)
+						.filter((line) => /^references:/i.test(line))
+						.join(" ")
 						.match(/<[^<>]+>/g) || []),
 					m.envelope?.inReplyTo || "",
 				].filter(Boolean),
@@ -172,6 +194,7 @@ function summary(
 		from: envelopeAddresses(m.envelope?.from),
 		to: envelopeAddresses(m.envelope?.to),
 		cc: envelopeAddresses(m.envelope?.cc),
+		deliveredTo: deliveryAddresses(m.headers?.toString() || ""),
 		date:
 			m.internalDate instanceof Date ? m.internalDate.getTime() : Date.now(),
 		unread: !m.flags?.has("\\Seen"),
@@ -186,6 +209,7 @@ export async function listImap(
 	folder: MailFolder,
 	cursor?: string,
 	query?: string,
+	addresses: string[] = [],
 ) {
 	return usingImap(account, async (client) => {
 		const mailbox = await findMailbox(client, folder);
@@ -205,11 +229,11 @@ export async function listImap(
 				flags: true,
 				internalDate: true,
 				bodyStructure: true,
-				headers: ["References"],
+				headers: ["References", "Delivered-To", "X-Original-To"],
 			};
 			let fetched: FetchMessageObject[];
 			let hasMore = false;
-			if (!query && !cursor) {
+			if (!query && !cursor && !addresses.length) {
 				// The initial window needs only the last 50 sequence numbers, not every UID.
 				const count = client.mailbox.exists;
 				fetched = count
@@ -235,7 +259,20 @@ export async function listImap(
 					bound <= 1
 						? []
 						: await client.search(
-								{ ...criteria, ...(cursor ? { uid: `1:${bound - 1}` } : {}) },
+								{
+									...criteria,
+									// NOT NOT groups a second OR clause as an AND with the text search.
+									...(addresses.length
+										? {
+												not: {
+													not: {
+														...imapAddressSearch(addresses, folder),
+													},
+												},
+											}
+										: {}),
+									...(cursor ? { uid: `1:${bound - 1}` } : {}),
+								},
 								{ uid: true },
 							);
 				const remaining = (ids || [])
@@ -251,6 +288,11 @@ export async function listImap(
 				uidValidity: validity,
 				messages: fetched
 					.map((m) => summary(account, folder, mailbox, validity, m))
+					.filter(
+						(m) =>
+							!addresses.length ||
+							addresses.some((address) => matchesAddress(m, address, folder)),
+					)
 					.sort((a, b) => b.date - a.date),
 				cursor:
 					hasMore && fetched.length

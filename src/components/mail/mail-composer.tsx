@@ -2,6 +2,7 @@ import { Paperclip, Send, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { mailApi } from "#/lib/mail/client";
+import { accountAddresses, replyAddress } from "#/lib/mail/identities";
 import {
 	MAX_SEND_BYTES,
 	type MailAccount,
@@ -30,6 +31,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 type Form = {
 	accountId: string;
+	from?: string;
 	to: string;
 	cc: string;
 	bcc: string;
@@ -57,6 +59,7 @@ export function MailComposer({
 	api = mailApi,
 	demo = false,
 	defaultAccountId,
+	defaultFrom,
 	original,
 	mode,
 	onClose,
@@ -66,6 +69,7 @@ export function MailComposer({
 	api?: typeof mailApi;
 	demo?: boolean;
 	defaultAccountId?: string;
+	defaultFrom?: string;
 	original?: MailDetail;
 	mode: "new" | "reply" | "all" | "forward";
 	onClose: () => void;
@@ -76,10 +80,20 @@ export function MailComposer({
 		accounts[0];
 	const recipients =
 		original && mode !== "forward"
-			? replyRecipients(original, first.email, mode === "all")
+			? replyRecipients(
+					original,
+					first.email,
+					mode === "all",
+					accounts.flatMap(accountAddresses),
+				)
 			: { to: [], cc: [] };
 	const [form, setForm] = useState<Form>({
 		accountId: first.id,
+		from: replyAddress(
+			first,
+			original,
+			first.id === defaultAccountId ? defaultFrom : undefined,
+		),
 		to: recipients.to.join(", "),
 		cc: recipients.cc.join(", "),
 		bcc: "",
@@ -99,6 +113,7 @@ export function MailComposer({
 	const [ready, setReady] = useState(false);
 	const [uncertain, setUncertain] = useState(false);
 	const [showCc, setShowCc] = useState(Boolean(recipients.cc.length));
+	const initialAccounts = useRef(accounts);
 	const draftId = useRef("");
 	const revision = useRef(0);
 	const queue = useRef<Promise<unknown>>(Promise.resolve());
@@ -106,20 +121,32 @@ export function MailComposer({
 	const [discard, setDiscard] = useState(false);
 	const latest = useRef(form);
 	latest.current = form;
-	const draftKey = `orbit-mail-draft:${demo ? "demo:" : ""}${mode}:${original?.id || "new"}`;
+	const draftKey = `orbit-mail-draft:${demo ? "demo:" : ""}${mode}:${original?.id || `new:${first.id}:${defaultFrom || first.defaultFrom || first.email}`}`;
 	useEffect(() => {
 		let active = true;
-		draftId.current = localStorage.getItem(draftKey) || crypto.randomUUID();
+		const legacyKey = `orbit-mail-draft:${demo ? "demo:" : ""}new`;
+		const legacyId =
+			mode === "new" && !localStorage.getItem(draftKey)
+				? localStorage.getItem(legacyKey)
+				: null;
+		draftId.current =
+			localStorage.getItem(draftKey) || legacyId || crypto.randomUUID();
 		localStorage.setItem(draftKey, draftId.current);
 		void api<{ revision: number; value: SendMail } | null>(
 			`draft?id=${draftId.current}`,
 		)
 			.then((d) => {
 				if (!active) return;
+				if (legacyId) localStorage.removeItem(legacyKey);
 				if (d) {
 					revision.current = d.revision;
 					setForm({
 						...d.value,
+						from:
+							d.value.from ||
+							initialAccounts.current
+								.find((a) => a.id === d.value.accountId)
+								?.email.toLowerCase(),
 						to: d.value.to.join(", "),
 						cc: d.value.cc.join(", "),
 						bcc: d.value.bcc.join(", "),
@@ -136,7 +163,7 @@ export function MailComposer({
 		return () => {
 			active = false;
 		};
-	}, [draftKey, api]);
+	}, [draftKey, api, demo, mode]);
 	const save = useCallback(
 		(value: Form) => {
 			const rev = ++revision.current;
@@ -327,23 +354,38 @@ export function MailComposer({
 							보내는 사람
 						</span>
 						<Select
-							value={form.accountId}
-							disabled={Boolean(form.replyId)}
-							onValueChange={(value) => change("accountId", value)}
+							value={`${form.accountId}/${form.from || accounts.find((a) => a.id === form.accountId)?.email.toLowerCase()}`}
+							onValueChange={(value) => {
+								const slash = value.indexOf("/");
+								dirty.current = true;
+								setSaved("");
+								setForm((previous) => ({
+									...previous,
+									accountId: value.slice(0, slash),
+									from: value.slice(slash + 1),
+								}));
+							}}
 						>
 							<SelectTrigger
 								id="mail-sender"
-								aria-label="보내는 계정"
+								aria-label="보내는 주소"
 								className="min-w-0 flex-1"
 							>
 								<SelectValue />
 							</SelectTrigger>
 							<SelectContent>
-								{accounts.map((a) => (
-									<SelectItem key={a.id} value={a.id}>
-										{a.email}
-									</SelectItem>
-								))}
+								{accounts
+									.filter((a) => !form.replyId || a.id === original?.accountId)
+									.flatMap((a) =>
+										accountAddresses(a).map((address) => (
+											<SelectItem
+												key={`${a.id}/${address}`}
+												value={`${a.id}/${address}`}
+											>
+												{address}
+											</SelectItem>
+										)),
+									)}
 							</SelectContent>
 						</Select>
 					</label>

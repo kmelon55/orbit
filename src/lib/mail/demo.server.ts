@@ -5,6 +5,7 @@ import MailComposer from "nodemailer/lib/mail-composer";
 import { z } from "zod";
 import { parseMail, toDetail } from "./content.server";
 import { relatedMessages } from "./conversations";
+import { aliasesSchema, matchesAddress, senderAddress } from "./identities";
 import {
 	canPreview,
 	type MailAccount,
@@ -19,6 +20,8 @@ const accounts: MailAccount[] = [
 		provider: "icloud",
 		name: "김민아 · 개인",
 		email: "mina.personal@example.com",
+		aliases: ["hello@mina.design", "work@mina.studio"],
+		defaultFrom: "hello@mina.design",
 		notifications: false,
 		createdAt: 0,
 		lastSync: null,
@@ -40,6 +43,7 @@ type DemoMail = {
 	parsed: Awaited<ReturnType<typeof parseMail>>;
 };
 type DemoState = {
+	accounts: MailAccount[];
 	mails: Map<string, DemoMail>;
 	drafts: Map<string, { revision: number; value: unknown }>;
 	sends: Set<string>;
@@ -143,7 +147,15 @@ async function seed(): Promise<DemoState> {
 		const account = accounts[spec.a];
 		const raw = await new MailComposer({
 			from: spec.from,
-			to: spec.sent ? "seoyun@example.com" : account.email,
+			to: spec.sent
+				? "seoyun@example.com"
+				: spec.a === 0
+					? spec.id === "demo-photo"
+						? "work@mina.studio"
+						: spec.id === "demo-newsletter"
+							? "hello@mina.design"
+							: account.email
+					: account.email,
 			subject: spec.subject,
 			text: spec.text,
 			html: spec.html,
@@ -195,7 +207,12 @@ async function seed(): Promise<DemoState> {
 			parsed,
 		});
 	}
-	return { mails, drafts: new Map(), sends: new Set() };
+	return {
+		accounts: structuredClone(accounts),
+		mails,
+		drafts: new Map(),
+		sends: new Set(),
+	};
 }
 const privateHeaders = {
 	"Cache-Control": "no-store",
@@ -210,11 +227,14 @@ export async function demoMailRequest(
 ) {
 	globalDemo.orbitMailDemo ??= seed();
 	const state = await globalDemo.orbitMailDemo;
+	state.accounts ??= structuredClone(accounts);
 	const url = new URL(request.url);
 	if (request.method === "GET") {
 		if (path === "status")
 			return json({
-				accounts: accounts.map((a) => ({ ...a, lastSync: Date.now() })),
+				accounts: state.accounts.map((a) => ({ ...a, lastSync: Date.now() })),
+				publicUrl: "",
+				gmailClientId: "",
 				gmailConfigured: false,
 				pushConfigured: false,
 				publicKey: null,
@@ -226,7 +246,7 @@ export async function demoMailRequest(
 			const folder = url.searchParams.get("folder") || "inbox";
 			if (url.searchParams.has("remote"))
 				await new Promise((resolve) =>
-					setTimeout(resolve, account === accounts[1].id ? 700 : 300),
+					setTimeout(resolve, account === state.accounts[1].id ? 700 : 300),
 				);
 			return json({
 				messages: [...state.mails.values()]
@@ -234,6 +254,10 @@ export async function demoMailRequest(
 						({ message: m, parsed }) =>
 							(!account || m.accountId === account) &&
 							m.folder === folder &&
+							(!url.searchParams.getAll("address").length ||
+								url.searchParams
+									.getAll("address")
+									.some((address) => matchesAddress(m, address))) &&
 							[
 								m.subject,
 								parsed.text,
@@ -285,6 +309,29 @@ export async function demoMailRequest(
 		}
 	}
 	if (request.method === "POST") {
+		if (path === "account") {
+			const value = z
+				.object({
+					id: z.string().uuid(),
+					aliases: aliasesSchema,
+					defaultFrom: z.email(),
+				})
+				.parse(input);
+			const index = state.accounts.findIndex(
+				(account) => account.id === value.id,
+			);
+			if (index < 0) return json({ error: "데모 계정을 선택해 주세요." }, 400);
+			const account = {
+				...state.accounts[index],
+				aliases: [
+					...new Set(value.aliases.map((address) => address.toLowerCase())),
+				],
+				defaultFrom: value.defaultFrom.toLowerCase(),
+			};
+			senderAddress(account);
+			state.accounts[index] = account;
+			return json({ ok: true });
+		}
 		if (path === "reset") {
 			globalDemo.orbitMailDemo = seed();
 			await globalDemo.orbitMailDemo;
@@ -323,11 +370,11 @@ export async function demoMailRequest(
 		if (path === "send") {
 			const v = sendSchema.parse(input);
 			if (state.sends.has(v.requestId)) return json({ status: "sent" });
-			const account = accounts.find((a) => a.id === v.accountId);
+			const account = state.accounts.find((a) => a.id === v.accountId);
 			if (!account) return json({ error: "데모 계정을 선택해 주세요." }, 400);
 			const original = state.mails.get(v.replyId || v.forwardId || "");
 			const raw = await new MailComposer({
-				from: account.email,
+				from: senderAddress(account, v.from),
 				to: v.to,
 				cc: v.cc,
 				subject: v.subject,

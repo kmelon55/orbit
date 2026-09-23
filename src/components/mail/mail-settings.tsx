@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { mailApi } from "#/lib/mail/client";
+import { createMailClient } from "#/lib/mail/client";
 import type { MailStatus } from "#/lib/mail/types";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
 	Dialog,
 	DialogContent,
@@ -18,6 +19,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { MailIdentitiesSettings } from "./mail-identities-settings";
 
 type Status = MailStatus & { publicUrl: string; gmailClientId: string };
 function decodeKey(value: string) {
@@ -28,11 +30,14 @@ export function MailSettings({
 	open,
 	onClose,
 	onChanged,
+	demo = false,
 }: {
 	open: boolean;
 	onClose: () => void;
 	onChanged: () => void;
+	demo?: boolean;
 }) {
+	const mailApi = useMemo(() => createMailClient(demo), [demo]);
 	const [status, setStatus] = useState<Status | null>(null);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState("");
@@ -57,17 +62,17 @@ export function MailSettings({
 		);
 		setClientId(next.gmailClientId);
 		setPreview(next.notificationPreview);
-	}, []);
+	}, [mailApi]);
 	useEffect(() => {
 		if (!open) return;
 		void refresh().catch((e) => setError(e.message));
-		if ("serviceWorker" in navigator)
+		if (!demo && "serviceWorker" in navigator)
 			void navigator.serviceWorker
 				.getRegistration("/")
 				.then((r) => r?.pushManager.getSubscription())
 				.then((s) => setSubscribed(Boolean(s)))
 				.catch(() => {});
-	}, [open, refresh]);
+	}, [open, refresh, demo]);
 	async function run(fn: () => Promise<void>) {
 		setBusy(true);
 		setError("");
@@ -154,7 +159,9 @@ export function MailSettings({
 						</Button>
 					</div>
 					<DialogDescription>
-						계정을 연결하고 이 기기의 알림을 관리하세요.
+						{demo
+							? "데모 계정의 도메인·발신 주소를 관리하세요."
+							: "계정을 연결하고 이 기기의 알림을 관리하세요."}
 					</DialogDescription>
 				</DialogHeader>
 				{error && (
@@ -182,7 +189,7 @@ export function MailSettings({
 								<Button
 									size="sm"
 									variant="ghost"
-									disabled={busy}
+									disabled={busy || demo}
 									onClick={() => setRemove(a.id)}
 								>
 									연결 해제
@@ -216,16 +223,19 @@ export function MailSettings({
 									</Button>
 								</div>
 							)}
-							<label className="mt-2 flex items-center gap-2">
-								<input
-									type="checkbox"
+							<label
+								htmlFor={`mail-notifications-${a.id}`}
+								className="mt-2 flex items-center gap-2"
+							>
+								<Checkbox
+									id={`mail-notifications-${a.id}`}
 									checked={a.notifications}
-									disabled={busy}
-									onChange={(e) =>
+									disabled={busy || demo}
+									onCheckedChange={(checked) =>
 										void run(async () => {
 											await mailApi("account", {
 												id: a.id,
-												notifications: e.target.checked,
+												notifications: checked === true,
 											});
 											await refresh();
 										})
@@ -233,10 +243,28 @@ export function MailSettings({
 								/>
 								이 계정의 새 메일 알림
 							</label>
+							{a.provider === "icloud" && (
+								<MailIdentitiesSettings
+									key={`${a.id}:${JSON.stringify(a.aliases)}:${a.defaultFrom}`}
+									account={a}
+									busy={busy}
+									onSave={(aliases, defaultFrom) =>
+										run(async () => {
+											await mailApi("account", {
+												id: a.id,
+												aliases,
+												defaultFrom,
+											});
+											await refresh();
+											toast.success("메일 주소를 저장했습니다.");
+										})
+									}
+								/>
+							)}
 						</div>
 					))}
 				</div>
-				<section className="space-y-3 border-t pt-4">
+				<section hidden={demo} className="space-y-3 border-t pt-4">
 					<h3 className="text-sm font-medium">계정 추가</h3>
 					<Button
 						variant="outline"
@@ -350,13 +378,13 @@ export function MailSettings({
 						</Button>
 					</form>
 				</section>
-				<section className="space-y-3 border-t pt-4">
+				<section hidden={demo} className="space-y-3 border-t pt-4">
 					<h3 className="text-sm font-medium">이 기기의 알림</h3>
 					<p className="text-xs text-muted-foreground">
 						아이폰은 홈 화면에 Orbit을 추가한 뒤 알림을 켜세요. 기기별로 한 번씩
 						설정합니다.
 					</p>
-					<div className="flex gap-2">
+					<div className="flex flex-wrap gap-2">
 						<Button
 							variant="outline"
 							disabled={busy}
@@ -384,16 +412,20 @@ export function MailSettings({
 							</Button>
 						)}
 					</div>
-					<label className="flex items-center gap-2 text-sm">
-						<input
-							type="checkbox"
+					<label
+						htmlFor="mail-notification-preview"
+						className="flex items-center gap-2 text-sm"
+					>
+						<Checkbox
+							id="mail-notification-preview"
 							checked={preview}
-							onChange={(e) => setPreview(e.target.checked)}
+							disabled={busy}
+							onCheckedChange={(checked) => setPreview(checked === true)}
 						/>
 						보낸 사람과 제목 표시
 					</label>
 				</section>
-				<section className="space-y-3 border-t pt-4">
+				<section hidden={demo} className="space-y-3 border-t pt-4">
 					<Button
 						variant="ghost"
 						size="sm"

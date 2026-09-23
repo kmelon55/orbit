@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { mailApi } from "#/lib/mail/client";
+import { mailScopes } from "#/lib/mail/identities";
 import type { MailFolder, MailMessage, MailStatus } from "#/lib/mail/types";
 
 type Page = { messages: MailMessage[]; cursor: string | null };
 export function useMailList(
-	account: string,
+	accountIds: string[] | null,
 	folder: MailFolder,
 	search: string,
 	api: typeof mailApi = mailApi,
@@ -21,7 +22,16 @@ export function useMailList(
 	const cache = useRef(new Map<string, MailMessage[]>());
 	const controller = useRef<AbortController | null>(null);
 	const active = useRef(false);
-	const scope = `${account}:${folder}:${search}`;
+	const scope = JSON.stringify([
+		accountIds === null ? null : [...accountIds].sort(),
+		folder,
+		search,
+		status?.accounts.map((account) => [
+			account.id,
+			account.email,
+			account.aliases || [],
+		]),
+	]);
 	const statusRef = useRef(status);
 	statusRef.current = status;
 	const cursorsRef = useRef(cursors);
@@ -42,26 +52,34 @@ export function useMailList(
 			active.current = true;
 			setError("");
 			try {
+				const next = statusRef.current || (await refreshStatus());
+				if (!valid()) return;
+				const scopes = mailScopes(next.accounts, accountIds);
 				if (!remote) {
-					const params = new URLSearchParams({ account, folder, q: search });
-					const page = await api<Page>(
-						`messages?${params}`,
-						undefined,
-						abort?.signal,
+					const pages = await Promise.all(
+						scopes.map(async (account) => {
+							const params = new URLSearchParams({
+								account: account.id,
+								folder,
+								q: search,
+							});
+							for (const address of account.addresses)
+								params.append("address", address);
+							return api<Page>(`messages?${params}`, undefined, abort?.signal);
+						}),
 					);
 					if (valid()) {
-						setMessages(page.messages);
-						cache.current.set(scope, page.messages);
+						const messages = pages
+							.flatMap((page) => page.messages)
+							.sort((a, b) => b.date - a.date);
+						setMessages(messages);
+						cache.current.set(scope, messages);
 					}
 					return;
 				}
 				setLoading(true);
-				const next = statusRef.current || (await refreshStatus());
-				if (!valid()) return;
-				const accounts = next.accounts.filter(
-					(a) =>
-						(!account || a.id === account) &&
-						(!more || cursorsRef.current[a.id]),
+				const accounts = scopes.filter(
+					(a) => !more || cursorsRef.current[a.id],
 				);
 				setSyncing(accounts.map((a) => a.id));
 				if (!more) setErrors({});
@@ -74,6 +92,8 @@ export function useMailList(
 								q: search,
 								remote: "1",
 							});
+							for (const address of a.addresses)
+								params.append("address", address);
 							if (more && cursorsRef.current[a.id])
 								params.set("cursor", cursorsRef.current[a.id] as string);
 							const page = await api<Page>(
@@ -136,7 +156,7 @@ export function useMailList(
 				}
 			}
 		},
-		[account, folder, search, scope, refreshStatus, api],
+		[accountIds, folder, search, scope, refreshStatus, api],
 	);
 	const refreshRef = useRef(refresh);
 	refreshRef.current = refresh;
