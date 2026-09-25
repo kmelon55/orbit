@@ -12,6 +12,7 @@ import { mutateOrbit } from "#/lib/orbit/functions";
 import { itemColor } from "#/lib/orbit/item-colors";
 import { folderOf, formatDayKey } from "#/lib/orbit/para";
 import type { OrbitItem, OrbitSnapshot, OrbitSpace } from "#/lib/orbit/schema";
+import { isCurrentOrUpcomingEvent } from "#/lib/orbit/task-events";
 import { onItemUndone } from "#/lib/orbit/undo-events";
 import {
 	ConfirmItemDialog,
@@ -86,7 +87,19 @@ function targetDays(item: OrbitItem, today: string): RescheduleTarget[] {
 
 export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 	const router = useRouter();
-	const today = formatDayKey();
+	const [now, setNow] = useState(() => new Date());
+	const today = formatDayKey(now);
+	useEffect(() => {
+		const refresh = () => setNow(new Date());
+		const timer = window.setInterval(refresh, 30_000);
+		window.addEventListener("focus", refresh);
+		document.addEventListener("visibilitychange", refresh);
+		return () => {
+			window.clearInterval(timer);
+			window.removeEventListener("focus", refresh);
+			document.removeEventListener("visibilitychange", refresh);
+		};
+	}, []);
 	const [view, setView] = useState<TaskView>("open");
 	const [editor, setEditor] = useState<{
 		open: boolean;
@@ -150,7 +163,7 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 		[snapshot.items, optimisticDueById],
 	);
 	const events = snapshot.items
-		.filter((item) => item.type === "event" && item.space !== "archive")
+		.filter((item) => isCurrentOrUpcomingEvent(item, now))
 		.sort((a, b) => (a.start ?? "9999").localeCompare(b.start ?? "9999"));
 	const openTasks = tasks.filter((item) => taskToggle.keepInOpenList(item));
 	const doneTasks = tasks.filter((item) => taskToggle.keepInDoneList(item));
@@ -211,7 +224,7 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 		await router.invalidate();
 	}
 
-	const tomorrow = new Date();
+	const tomorrow = new Date(now);
 	tomorrow.setDate(tomorrow.getDate() + 1);
 	const tomorrowKey = formatDayKey(tomorrow);
 	const draggingDay = draggingTask ? dueDay(draggingTask) : undefined;
@@ -370,7 +383,7 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 							<section className="orbit-card overflow-hidden">
 								<div className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
 									<h3 className="text-xs font-semibold text-muted-foreground">
-										일정
+										진행 중 · 예정된 일정
 									</h3>
 									<span className="text-xs text-muted-foreground">
 										{events.length}
