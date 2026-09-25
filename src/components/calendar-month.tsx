@@ -1,4 +1,4 @@
-import { useRouter } from "@tanstack/react-router";
+import { useNavigate, useRouter, useSearch } from "@tanstack/react-router";
 import {
 	CalendarDays,
 	Check,
@@ -10,10 +10,11 @@ import {
 	ListTodo,
 	Plus,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildMonthLayout } from "#/lib/orbit/calendar-layout";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { itemColor } from "#/lib/orbit/item-colors";
+import type { CalendarSearch } from "#/lib/orbit/navigation-search";
 import { formatDayKey, itemDayKey } from "#/lib/orbit/para";
 import type { OrbitItem, OrbitSnapshot } from "#/lib/orbit/schema";
 import { ScheduleColors } from "@/components/schedule-colors";
@@ -474,9 +475,21 @@ function CalendarEvent({
 export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 	const router = useRouter();
 	const isMobile = useIsMobile();
-	const [view, setView] = useState<CalendarView>("month");
-	const [cursor, setCursor] = useState(() => new Date());
-	const [selectedDate, setSelectedDate] = useState(() => formatDayKey());
+	const location = useSearch({ from: "/calendar" });
+	const navigate = useNavigate({ from: "/calendar" });
+	const view = location.view ?? "month";
+	const cursorKey = location.date ?? formatDayKey();
+	const cursor = useMemo(() => parseDayKey(cursorKey), [cursorKey]);
+	const selectedDate = location.selected ?? cursorKey;
+	const updateCalendar = useCallback(
+		(patch: CalendarSearch) => {
+			void navigate({
+				search: (previous) => ({ ...previous, ...patch }),
+				resetScroll: false,
+			});
+		},
+		[navigate],
+	);
 	const [visibility, setVisibility] = useState<CalendarVisibility>({
 		event: true,
 		task: true,
@@ -502,9 +515,6 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 		setLocalItems(snapshot.items);
 	}, [snapshot.items]);
 	useEffect(() => {
-		if (isMobile) setView("day");
-	}, [isMobile]);
-	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent) => {
 			if (event.metaKey || event.ctrlKey || event.altKey) return;
 			const target = event.target;
@@ -524,14 +534,19 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 							: null;
 			if (nextView) {
 				event.preventDefault();
-				setView(nextView);
+				updateCalendar({
+					view: nextView,
+					date: nextView === "day" ? selectedDate : cursorKey,
+				});
 				return;
 			}
 			if (event.key.toLowerCase() === "t") {
 				event.preventDefault();
 				const now = new Date();
-				setCursor(now);
-				setSelectedDate(formatDayKey(now));
+				updateCalendar({
+					date: formatDayKey(now),
+					selected: formatDayKey(now),
+				});
 				return;
 			}
 			if (event.key.toLowerCase() === "n") {
@@ -553,13 +568,15 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 						: view === "week"
 							? addDays(cursor, amount * 7)
 							: addMonths(cursor, amount);
-				setCursor(next);
-				if (view === "day") setSelectedDate(formatDayKey(next));
+				updateCalendar({
+					date: formatDayKey(next),
+					selected: formatDayKey(next),
+				});
 			}
 		};
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [cursor, selectedDate, view]);
+	}, [cursor, cursorKey, selectedDate, view, updateCalendar]);
 	const today = formatDayKey();
 	const dated = useMemo(
 		() =>
@@ -589,13 +606,13 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 	const selectedItems = byDay.get(selectedDate) ?? [];
 
 	function openNew(date = formatDayKey(cursor), time = "09:00") {
-		setSelectedDate(date);
+		updateCalendar({ selected: date });
 		setEditor({ open: true, kind: "event", date, time });
 	}
 
 	function openItem(item: OrbitItem) {
 		const date = itemDayKey(item);
-		if (date) setSelectedDate(date);
+		if (date) updateCalendar({ selected: date });
 		setEditor({
 			open: true,
 			kind: item.type === "task" ? "task" : "event",
@@ -606,14 +623,14 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 	}
 
 	function selectDate(date: string) {
-		setSelectedDate(date);
-		const next = parseDayKey(date);
-		setCursor(next);
+		updateCalendar({ selected: date, date });
 	}
 
 	function chooseView(next: CalendarView) {
-		setView(next);
-		if (next === "day") setCursor(parseDayKey(selectedDate));
+		updateCalendar({
+			view: next,
+			date: next === "day" ? selectedDate : cursorKey,
+		});
 	}
 
 	function move(amount: number) {
@@ -623,12 +640,13 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 				: view === "week"
 					? addDays(cursor, amount * 7)
 					: addMonths(cursor, amount);
-		setCursor(next);
-		setSelectedDate(
-			view === "week"
-				? formatDayKey(addDays(parseDayKey(selectedDate), amount * 7))
-				: formatDayKey(next),
-		);
+		updateCalendar({
+			date: formatDayKey(next),
+			selected:
+				view === "week"
+					? formatDayKey(addDays(parseDayKey(selectedDate), amount * 7))
+					: formatDayKey(next),
+		});
 	}
 
 	function startDrag(
@@ -766,8 +784,10 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 						className="hidden font-medium sm:inline-flex"
 						onClick={() => {
 							const now = new Date();
-							setCursor(now);
-							setSelectedDate(formatDayKey(now));
+							updateCalendar({
+								date: formatDayKey(now),
+								selected: formatDayKey(now),
+							});
 						}}
 					>
 						오늘
@@ -809,6 +829,7 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 									view === value &&
 										"bg-background shadow-sm hover:bg-background",
 								)}
+								aria-pressed={view === value}
 								onClick={() => chooseView(value)}
 							>
 								{value === "day" ? "일간" : value === "week" ? "주간" : "월간"}
@@ -834,6 +855,7 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 							variant="ghost"
 							size="sm"
 							className={cn(view === value && "bg-muted")}
+							aria-pressed={view === value}
 							onClick={() => chooseView(value)}
 						>
 							{value === "day" ? "일" : value === "week" ? "주" : "월"}
@@ -873,7 +895,9 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 									}))
 								}
 								onMoveMonth={(amount) =>
-									setCursor((current) => addMonths(current, amount))
+									updateCalendar({
+										date: formatDayKey(addMonths(cursor, amount)),
+									})
 								}
 								onSelectDate={selectDate}
 								onCreate={openNew}

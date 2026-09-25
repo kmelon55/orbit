@@ -9,6 +9,7 @@ import {
 import type { ReactNode } from "react";
 import { getOrbitAuthStatus } from "#/lib/orbit/auth";
 import { loadOrbit } from "#/lib/orbit/functions";
+import { noteSearch } from "#/lib/orbit/navigation-search";
 import { ActionUndoProvider } from "@/components/action-undo-provider";
 import { AppShell } from "@/components/app-shell";
 import { ScheduleColorProvider } from "@/components/schedule-colors";
@@ -19,6 +20,7 @@ import appCss from "../styles.css?url";
 const themeScript = `(()=>{try{const t=localStorage.getItem("orbit-ui-theme")||"system";const d=t==="dark"||(t==="system"&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.toggle("dark",d);document.documentElement.style.colorScheme=d?"dark":"light"}catch{}})()`;
 
 export const Route = createRootRoute({
+	validateSearch: noteSearch,
 	loader: async ({ location }) => {
 		const auth = await getOrbitAuthStatus();
 		if (location.pathname === "/login") {

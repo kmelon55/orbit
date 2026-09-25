@@ -1,3 +1,4 @@
+import { useNavigate, useRouter, useSearch } from "@tanstack/react-router";
 import {
 	Archive,
 	ArrowLeft,
@@ -31,6 +32,7 @@ import {
 	type MailFolder,
 	type MailMessage,
 } from "#/lib/mail/types";
+import type { MailSearch } from "#/lib/orbit/navigation-search";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -42,19 +44,16 @@ import { MailSettings } from "./mail-settings";
 import { MailThreadMessage } from "./mail-thread-message";
 import { useMailList } from "./use-mail-list";
 
-export function MailWorkspace({
-	initialMessage,
-	demo = false,
-}: {
-	initialMessage?: string;
-	demo?: boolean;
-}) {
+export function MailWorkspace({ demo = false }: { demo?: boolean }) {
+	const location = useSearch({ from: "/mail" });
+	const navigate = useNavigate({ from: "/mail" });
+	const router = useRouter();
 	const api = useMemo(() => createMailClient(demo), [demo]);
-	const [accountIds, setAccountIds] = useState<string[] | null>(null);
-	const [folder, setFolder] = useState<MailFolder>("inbox");
-	const [query, setQuery] = useState("");
-	const [search, setSearch] = useState("");
-	const [selected, setSelected] = useState(initialMessage || "");
+	const accountIds = location.accounts ?? null;
+	const folder = location.folder ?? "inbox";
+	const search = location.q ?? "";
+	const selected = location.message ?? "";
+	const [query, setQuery] = useState(search);
 	const [detail, setDetail] = useState<MailDetail | null>(null);
 	const [settings, setSettings] = useState(false);
 	const [compose, setCompose] = useState<
@@ -70,6 +69,22 @@ export function MailWorkspace({
 	const detailGeneration = useRef(0);
 	const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const composing = useRef(false);
+	const updateLocation = useCallback(
+		(patch: Partial<MailSearch>, replace = false) => {
+			if (searchTimer.current) clearTimeout(searchTimer.current);
+			void navigate({
+				search: (previous) => ({ ...previous, ...patch }),
+				state: { orbitDetailBack: undefined },
+				replace,
+				resetScroll: false,
+			});
+		},
+		[navigate],
+	);
+	useEffect(() => {
+		setQuery(location.q ?? "");
+		if (searchTimer.current) clearTimeout(searchTimer.current);
+	}, [location]);
 	const {
 		status,
 		messages,
@@ -111,8 +126,9 @@ export function MailWorkspace({
 	useEffect(() => {
 		if (!status || accountIds === null) return;
 		const remaining = accountIds.filter((id) => views.some((a) => a.id === id));
-		if (remaining.length !== accountIds.length) setAccountIds(remaining);
-	}, [accountIds, status, views]);
+		if (remaining.length !== accountIds.length)
+			updateLocation({ accounts: remaining }, true);
+	}, [accountIds, status, views, updateLocation]);
 	useEffect(() => {
 		if (!selected) {
 			setThread([]);
@@ -214,14 +230,24 @@ export function MailWorkspace({
 	);
 	function selectMessage(id: string) {
 		setRemoteImages(true);
-		setSelected(id);
 		setDetail(detailCache.current.get(`${id}:true`) || null);
 		setReading(Boolean(id) && !detailCache.current.has(`${id}:true`));
 		setDetailError("");
-		const url = new URL(window.location.href);
-		if (id) url.searchParams.set("message", id);
-		else url.searchParams.delete("message");
-		window.history.replaceState(null, "", url);
+		if (!id) {
+			updateLocation({ message: undefined }, true);
+			return;
+		}
+		if (searchTimer.current) clearTimeout(searchTimer.current);
+		void navigate({
+			search: (previous) => ({ ...previous, message: id }),
+			state: { orbitDetailBack: !selected ? "mail" : undefined },
+			resetScroll: false,
+		});
+	}
+	function closeMessage() {
+		if (router.state.location.state.orbitDetailBack === "mail")
+			router.history.back();
+		else selectMessage("");
 	}
 	async function action(kind: "read" | "unread" | "trash" | "archive") {
 		if (!detail) return;
@@ -309,8 +335,7 @@ export function MailWorkspace({
 					accounts={views}
 					selected={accountIds}
 					onChange={(ids) => {
-						setAccountIds(ids);
-						selectMessage("");
+						updateLocation({ accounts: ids ?? undefined, message: undefined });
 					}}
 					syncing={views
 						.filter((view) => syncing.includes(view.accountId))
@@ -337,15 +362,19 @@ export function MailWorkspace({
 							composing.current = false;
 							const value = e.currentTarget.value;
 							searchTimer.current = setTimeout(() => {
-								setSearch(value.trim());
-								selectMessage("");
+								updateLocation(
+									{ q: value.trim() || undefined, message: undefined },
+									true,
+								);
 							}, 350);
 						}}
 						onKeyDown={(e) => {
 							if (e.key === "Enter" && !e.nativeEvent.isComposing) {
 								if (searchTimer.current) clearTimeout(searchTimer.current);
-								setSearch(query.trim());
-								selectMessage("");
+								updateLocation(
+									{ q: query.trim() || undefined, message: undefined },
+									true,
+								);
 							}
 						}}
 						value={query}
@@ -355,8 +384,10 @@ export function MailWorkspace({
 							if (searchTimer.current) clearTimeout(searchTimer.current);
 							if (!composing.current)
 								searchTimer.current = setTimeout(() => {
-									setSearch(value.trim());
-									selectMessage("");
+									updateLocation(
+										{ q: value.trim() || undefined, message: undefined },
+										true,
+									);
 								}, 350);
 						}}
 					/>
@@ -369,7 +400,7 @@ export function MailWorkspace({
 							onClick={() => {
 								if (searchTimer.current) clearTimeout(searchTimer.current);
 								setQuery("");
-								setSearch("");
+								updateLocation({ q: undefined, message: undefined });
 							}}
 						>
 							<X className="size-3.5" />
@@ -434,8 +465,7 @@ export function MailWorkspace({
 						variant={folder === f ? "secondary" : "ghost"}
 						size="sm"
 						onClick={() => {
-							setFolder(f);
-							selectMessage("");
+							updateLocation({ folder: f, message: undefined });
 						}}
 					>
 						{folderLabels[f]}
@@ -620,7 +650,7 @@ export function MailWorkspace({
 									size="icon"
 									aria-label="메일 목록으로"
 									className="md:hidden"
-									onClick={() => selectMessage("")}
+									onClick={closeMessage}
 								>
 									<ArrowLeft className="size-4" />
 								</Button>

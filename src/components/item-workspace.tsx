@@ -1,4 +1,9 @@
-import { useRouter } from "@tanstack/react-router";
+import {
+	useBlocker,
+	useNavigate,
+	useRouter,
+	useSearch,
+} from "@tanstack/react-router";
 import {
 	Archive,
 	ChevronLeft,
@@ -216,6 +221,25 @@ export function ItemWorkspace({
 	emptyDescription?: string;
 }) {
 	const router = useRouter();
+	const { note: urlNote } = useSearch({ from: "__root__" });
+	const navigate = useNavigate();
+	const setNoteLocation = useCallback(
+		(note?: string, replace = false) => {
+			void navigate({
+				to: ".",
+				search: (previous) => ({ ...previous, note }),
+				state: {
+					orbitDetailBack:
+						note && !router.state.location.search.note && !replace
+							? "note"
+							: undefined,
+				},
+				replace,
+				resetScroll: false,
+			});
+		},
+		[navigate, router],
+	);
 	const isMobile = useIsMobile();
 	const taskToggle = useTaskToggle();
 	useEffect(() => {
@@ -285,8 +309,9 @@ export function ItemWorkspace({
 			return changed ? next : current;
 		});
 	}, [snapshot.items]);
-	const initialItem =
-		items.find((item) => item.id === initialSelectedId) ?? items[0];
+	const initialItem = urlNote
+		? snapshot.items.find((item) => item.id === urlNote)
+		: (items.find((item) => item.id === initialSelectedId) ?? items[0]);
 	const [selectedId, setSelectedId] = useState<string | null>(
 		initialItem?.id ?? null,
 	);
@@ -319,7 +344,10 @@ export function ItemWorkspace({
 	const [organizeOpen, setOrganizeOpen] = useState(false);
 	const [draggingId, setDraggingId] = useState<string | null>(null);
 	const [confirm, setConfirm] = useState<ItemConfirmAction | null>(null);
-	const [mobilePane, setMobilePane] = useState<"list" | "editor">("list");
+	const [mobilePane, setMobilePane] = useState<"list" | "editor">(
+		urlNote && initialItem ? "editor" : "list",
+	);
+	const lastUrlNoteRef = useRef(urlNote);
 	const [linkPickerAnchor, setLinkPickerAnchor] =
 		useState<NoteEditorAnchor | null>(null);
 	const [savedById, setSavedById] = useState<Record<string, NoteDraft>>({});
@@ -469,6 +497,28 @@ export function ItemWorkspace({
 		const id = selectedKey;
 		return id ? persistSnapshot(id, draftRef.current) : Promise.resolve();
 	};
+	useBlocker({
+		enableBeforeUnload: false,
+		shouldBlockFn: async ({ current, next }) => {
+			if (current.pathname === next.pathname) return false;
+			await persistRef.current();
+			await Promise.all(saveQueuesRef.current.values());
+			const unsaved = Object.entries(localDraftsRef.current).some(
+				([id, draft]) =>
+					!isOptimisticItemId(id) &&
+					!draftsEqual(draft, lastSavedByIdRef.current[id] ?? noteDraft()),
+			);
+			if (unsaved) {
+				setActionError(
+					"노트를 저장하지 못했습니다. 저장을 다시 시도한 뒤 이동해 주세요.",
+				);
+				return true;
+			}
+			// Refresh the cached root snapshot before another route can reopen this note.
+			await router.invalidate();
+			return false;
+		},
+	});
 	useEffect(() => {
 		const flush = (event: Event) => {
 			const { itemId, pending } = (
@@ -552,6 +602,7 @@ export function ItemWorkspace({
 		window.addEventListener("beforeunload", flush);
 		document.addEventListener("visibilitychange", onVisibility);
 		return () => {
+			flush();
 			window.removeEventListener("keydown", onKeyDown);
 			window.removeEventListener("beforeunload", flush);
 			document.removeEventListener("visibilitychange", onVisibility);
@@ -592,13 +643,19 @@ export function ItemWorkspace({
 	);
 
 	useEffect(() => {
-		if (scopeKeyRef.current === scopeKey) {
-			if (!selectedId && items[0]) applyNote(items[0], items[0].id);
+		const locationChanged = lastUrlNoteRef.current !== urlNote;
+		if (scopeKeyRef.current === scopeKey && !locationChanged) {
+			if (!urlNote && !selectedId && items[0]) applyNote(items[0], items[0].id);
 			return;
 		}
+		lastUrlNoteRef.current = urlNote;
 		scopeKeyRef.current = scopeKey;
 		void persistRef.current();
-		const next = items[0];
+		const next = urlNote
+			? (items.find((item) => item.id === urlNote) ??
+				snapshot.items.find((item) => item.id === urlNote))
+			: items[0];
+		setMobilePane(urlNote && next ? "editor" : "list");
 		if (next) {
 			applyNote(next, next.id);
 			return;
@@ -608,9 +665,10 @@ export function ItemWorkspace({
 		draftRef.current = noteDraft();
 		setDraft(noteDraft());
 		setSelectedId(null);
-	}, [applyNote, items, scopeKey, selectedId]);
+	}, [applyNote, items, scopeKey, selectedId, snapshot.items, urlNote]);
 
 	function chooseItem(id: string) {
+		if (!isOptimisticItemId(id)) setNoteLocation(id);
 		if (id === selectedKey) {
 			setMobilePane("editor");
 			return;
@@ -628,6 +686,7 @@ export function ItemWorkspace({
 		]);
 		applyNote(item, item.id);
 		setMobilePane("editor");
+		if (!isOptimisticItemId(item.id)) setNoteLocation(item.id);
 	}
 
 	function openLinkedNote(id: string) {
@@ -637,6 +696,7 @@ export function ItemWorkspace({
 		if (item) {
 			applyNote(item, id);
 			setMobilePane("editor");
+			setNoteLocation(id);
 		}
 	}
 
@@ -676,6 +736,7 @@ export function ItemWorkspace({
 	}
 
 	function clearSelection() {
+		setNoteLocation(undefined, true);
 		cachedSelectedRef.current = undefined;
 		selectedKeyRef.current = null;
 		draftRef.current = noteDraft();
@@ -689,6 +750,7 @@ export function ItemWorkspace({
 		const next = items.find((entry) => entry.id !== id);
 		if (next) {
 			applyNote(next, next.id);
+			setNoteLocation(next.id, true);
 			return;
 		}
 		clearSelection();
@@ -778,6 +840,7 @@ export function ItemWorkspace({
 						selectedKeyRef.current = created.id;
 						draftRef.current = latestDraft;
 						setSelectedId(created.id);
+						setNoteLocation(created.id);
 					}
 					void persistSnapshot(created.id, latestDraft);
 					void router.invalidate();
@@ -1401,6 +1464,9 @@ export function ItemWorkspace({
 							onClick={() => {
 								void persistRef.current();
 								setMobilePane("list");
+								if (router.state.location.state.orbitDetailBack === "note")
+									router.history.back();
+								else setNoteLocation(undefined, true);
 							}}
 							aria-label="목록으로 돌아가기"
 						>

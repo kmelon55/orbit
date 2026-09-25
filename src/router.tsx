@@ -14,6 +14,9 @@ export function getRouter() {
 }
 
 declare module "@tanstack/react-router" {
+	interface HistoryState {
+		orbitDetailBack?: "note" | "mail";
+	}
 	interface Register {
 		router: ReturnType<typeof getRouter>;
 	}
