@@ -1,8 +1,10 @@
-import { useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
+import { ListTodo, Mail } from "lucide-react";
 import type { ReactNode } from "react";
 import type { OrbitSnapshot } from "#/lib/orbit/schema";
 import { AppSidebar } from "@/components/app-sidebar";
 import { MobileNavigation } from "@/components/mobile-navigation";
+import { Button } from "@/components/ui/button";
 import {
 	SidebarInset,
 	SidebarProvider,
@@ -60,6 +62,36 @@ export function AppShell({
 							<span className="hidden text-muted-foreground md:inline">/</span>
 							<h1 className="truncate font-medium">{pageTitle(pathname)}</h1>
 						</div>
+						<nav
+							aria-label="빠른 이동"
+							className="ml-auto flex shrink-0 items-center gap-1"
+						>
+							<Button
+								asChild
+								variant={pathname === "/mail" ? "secondary" : "ghost"}
+								size="sm"
+							>
+								<Link
+									to="/mail"
+									aria-current={pathname === "/mail" ? "page" : undefined}
+								>
+									<Mail /> 메일
+								</Link>
+							</Button>
+							<Button
+								asChild
+								variant={pathname === "/tasks" ? "secondary" : "ghost"}
+								size="sm"
+								className="hidden md:inline-flex"
+							>
+								<Link
+									to="/tasks"
+									aria-current={pathname === "/tasks" ? "page" : undefined}
+								>
+									<ListTodo /> 할 일
+								</Link>
+							</Button>
+						</nav>
 					</header>
 					<div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
 						{children}
