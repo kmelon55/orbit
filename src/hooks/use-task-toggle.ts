@@ -1,11 +1,11 @@
-import { useRouter } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { mutateOrbit } from "#/lib/orbit/functions";
+import { isPendingItemId } from "#/lib/orbit/optimistic-mutations";
 import type { OrbitItem } from "#/lib/orbit/schema";
 import { onItemUndone } from "#/lib/orbit/undo-events";
 
-const COMPLETE_HOLD_MS = 560;
-const EXIT_MS = 320;
+const COMPLETE_HOLD_MS = 120;
+const EXIT_MS = 140;
 
 function prefersReducedMotion() {
 	return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -40,7 +40,6 @@ function prune(
 }
 
 export function useTaskToggle() {
-	const router = useRouter();
 	const busyRef = useRef(new Set<string>());
 	const versions = useRef(new Map<string, number>());
 	const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
@@ -69,25 +68,45 @@ export function useTaskToggle() {
 	const sync = useCallback((items: OrbitItem[]) => {
 		const byId = new Map(items.map((item) => [item.id, item]));
 		setCompleting((current) =>
-			prune(current, byId, (item) => Boolean(item && item.status !== "done")),
+			prune(current, byId, (item) =>
+				Boolean(
+					item && (busyRef.current.has(item.id) || item.status !== "done"),
+				),
+			),
 		);
 		setLeavingOpen((current) =>
-			prune(current, byId, (item) => Boolean(item && item.status !== "done")),
+			prune(current, byId, (item) =>
+				Boolean(
+					item && (busyRef.current.has(item.id) || item.status !== "done"),
+				),
+			),
 		);
 		setHiddenOpen((current) =>
-			prune(current, byId, (item) => Boolean(item && item.status !== "done")),
+			prune(current, byId, (item) =>
+				Boolean(
+					item && (busyRef.current.has(item.id) || item.status !== "done"),
+				),
+			),
 		);
 		setLeavingDone((current) =>
-			prune(current, byId, (item) => item?.status === "done"),
+			prune(current, byId, (item) =>
+				Boolean(
+					item && (busyRef.current.has(item.id) || item.status === "done"),
+				),
+			),
 		);
 		setHiddenDone((current) =>
-			prune(current, byId, (item) => item?.status === "done"),
+			prune(current, byId, (item) =>
+				Boolean(
+					item && (busyRef.current.has(item.id) || item.status === "done"),
+				),
+			),
 		);
 	}, []);
 
 	const toggle = useCallback(
 		async (item: OrbitItem, options?: { exit?: boolean }) => {
-			if (busyRef.current.has(item.id)) return;
+			if (busyRef.current.has(item.id) || isPendingItemId(item.id)) return;
 			busyRef.current.add(item.id);
 			const version = versions.current.get(item.id) ?? 0;
 			const undone = () =>
@@ -100,41 +119,42 @@ export function useTaskToggle() {
 				setCompleting((current) => new Set(current).add(item.id));
 			}
 
+			let cancelled = false;
 			try {
-				await mutateOrbit({ data: { action: "toggle-task", id: item.id } });
-				if (undone()) return;
-				if (shouldExit) {
-					if (toDone) await wait(COMPLETE_HOLD_MS);
-					else await wait(160);
-					if (undone()) return;
-					if (toDone) {
-						setLeavingOpen((current) => new Set(current).add(item.id));
-					} else {
-						setLeavingDone((current) => new Set(current).add(item.id));
-					}
-					await wait(EXIT_MS);
-					if (undone()) return;
-					if (toDone) {
-						setHiddenOpen((current) => new Set(current).add(item.id));
-					} else {
-						setHiddenDone((current) => new Set(current).add(item.id));
-					}
-				} else if (toDone) {
-					await wait(280);
-				}
-				await router.invalidate();
+				await Promise.all([
+					mutateOrbit({ data: { action: "toggle-task", id: item.id } }),
+					(async () => {
+						if (!shouldExit) return;
+						await wait(COMPLETE_HOLD_MS);
+						if (cancelled || undone()) return;
+						if (toDone)
+							setLeavingOpen((current) => new Set(current).add(item.id));
+						else setLeavingDone((current) => new Set(current).add(item.id));
+						await wait(EXIT_MS);
+						if (cancelled || undone()) return;
+						if (toDone)
+							setHiddenOpen((current) => new Set(current).add(item.id));
+						else setHiddenDone((current) => new Set(current).add(item.id));
+					})(),
+				]);
 			} catch {
+				cancelled = true;
 				setCompleting((current) => without(current, item.id));
 				setLeavingOpen((current) => without(current, item.id));
 				setLeavingDone((current) => without(current, item.id));
 				setHiddenOpen((current) => without(current, item.id));
 				setHiddenDone((current) => without(current, item.id));
 			} finally {
+				setCompleting((current) => without(current, item.id));
+				setLeavingOpen((current) => without(current, item.id));
+				setLeavingDone((current) => without(current, item.id));
+				setHiddenOpen((current) => without(current, item.id));
+				setHiddenDone((current) => without(current, item.id));
 				busyRef.current.delete(item.id);
 				setBusy((current) => without(current, item.id));
 			}
 		},
-		[router],
+		[],
 	);
 
 	return {

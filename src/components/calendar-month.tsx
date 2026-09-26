@@ -1,4 +1,4 @@
-import { useNavigate, useRouter, useSearch } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
 	CalendarDays,
 	Check,
@@ -473,7 +473,6 @@ function CalendarEvent({
 }
 
 export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
-	const router = useRouter();
 	const isMobile = useIsMobile();
 	const location = useSearch({ from: "/calendar" });
 	const navigate = useNavigate({ from: "/calendar" });
@@ -758,7 +757,6 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 			})
 			.then(async () => {
 				if (saveVersionsRef.current.get(id) !== version) return;
-				await router.invalidate();
 			})
 			.catch(() => {
 				if (saveVersionsRef.current.get(id) !== version) return;

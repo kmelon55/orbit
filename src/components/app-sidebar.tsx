@@ -103,7 +103,7 @@ export function AppSidebar({ snapshot }: { snapshot: OrbitSnapshot }) {
 							tooltip="Orbit"
 							className="transition-colors duration-150"
 						>
-							<Link to="/inbox">
+							<Link to="/inbox" preload="render">
 								<div className="flex aspect-square size-8 items-center justify-center overflow-hidden rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
 									<img
 										src="/orbit.png"
@@ -141,7 +141,7 @@ export function AppSidebar({ snapshot }: { snapshot: OrbitSnapshot }) {
 									tooltip="Inbox"
 									className="font-medium"
 								>
-									<Link to="/inbox">
+									<Link to="/inbox" preload="render">
 										<Inbox />
 										<span>Inbox</span>
 									</Link>
@@ -175,7 +175,7 @@ export function AppSidebar({ snapshot }: { snapshot: OrbitSnapshot }) {
 								isActive={pathname === "/"}
 								tooltip="Today"
 							>
-								<Link to="/">
+								<Link to="/" preload="render">
 									<CalendarCheck />
 									<span>Today</span>
 								</Link>
@@ -187,7 +187,7 @@ export function AppSidebar({ snapshot }: { snapshot: OrbitSnapshot }) {
 								isActive={pathname === "/tasks"}
 								tooltip="Tasks"
 							>
-								<Link to="/tasks">
+								<Link to="/tasks" preload="render">
 									<ListTodo />
 									<span>Tasks</span>
 								</Link>
@@ -199,7 +199,7 @@ export function AppSidebar({ snapshot }: { snapshot: OrbitSnapshot }) {
 								isActive={startsWithPath(pathname, "/calendar")}
 								tooltip="Calendar"
 							>
-								<Link to="/calendar">
+								<Link to="/calendar" preload="render">
 									<CalendarDays />
 									<span>Calendar</span>
 								</Link>
@@ -220,7 +220,7 @@ export function AppSidebar({ snapshot }: { snapshot: OrbitSnapshot }) {
 										isActive={startsWithPath(pathname, space.href)}
 										tooltip={space.label}
 									>
-										<Link to={space.href}>
+										<Link to={space.href} preload="render">
 											<Icon />
 											<span>{space.label}</span>
 										</Link>
@@ -234,7 +234,7 @@ export function AppSidebar({ snapshot }: { snapshot: OrbitSnapshot }) {
 								isActive={startsWithPath(pathname, "/archive")}
 								tooltip="Archive"
 							>
-								<Link to="/archive">
+								<Link to="/archive" preload="render">
 									<Archive />
 									<span>{ARCHIVE_SPACE.label}</span>
 								</Link>

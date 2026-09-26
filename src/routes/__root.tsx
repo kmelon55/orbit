@@ -12,10 +12,16 @@ import { loadOrbit } from "#/lib/orbit/functions";
 import { noteSearch } from "#/lib/orbit/navigation-search";
 import { ActionUndoProvider } from "@/components/action-undo-provider";
 import { AppShell } from "@/components/app-shell";
+import {
+	OrbitSnapshotProvider,
+	useOrbitSnapshot,
+} from "@/components/orbit-snapshot-provider";
 import { ScheduleColorProvider } from "@/components/schedule-colors";
 import { ServiceWorkerRegister } from "@/components/service-worker-register";
 import { ThemeProvider } from "@/components/theme-provider";
 import appCss from "../styles.css?url";
+
+export { useOrbitSnapshot };
 
 const themeScript = `(()=>{try{const t=localStorage.getItem("orbit-ui-theme")||"system";const d=t==="dark"||(t==="system"&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.toggle("dark",d);document.documentElement.style.colorScheme=d?"dark":"light"}catch{}})()`;
 
@@ -74,18 +80,21 @@ function RootLayout() {
 	if (pathname === "/login") return <Outlet />;
 	if (!snapshot) return null;
 	return (
-		<ActionUndoProvider key={snapshot.vaultPath}>
-			<AppShell snapshot={snapshot}>
-				<Outlet />
-			</AppShell>
-		</ActionUndoProvider>
+		<OrbitSnapshotProvider key={snapshot.vaultPath} snapshot={snapshot}>
+			<ActionUndoProvider>
+				<WorkspaceLayout />
+			</ActionUndoProvider>
+		</OrbitSnapshotProvider>
 	);
 }
 
-export function useOrbitSnapshot() {
-	const snapshot = Route.useLoaderData();
-	if (!snapshot) throw new Error("Orbit workspace is unavailable.");
-	return snapshot;
+function WorkspaceLayout() {
+	const snapshot = useOrbitSnapshot();
+	return (
+		<AppShell snapshot={snapshot}>
+			<Outlet />
+		</AppShell>
+	);
 }
 
 function RootDocument({ children }: { children: ReactNode }) {

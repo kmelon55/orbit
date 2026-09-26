@@ -1,4 +1,3 @@
-import { useRouter } from "@tanstack/react-router";
 import {
 	ArrowRight,
 	CalendarClock,
@@ -86,7 +85,6 @@ function targetDays(item: OrbitItem, today: string): RescheduleTarget[] {
 }
 
 export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
-	const router = useRouter();
 	const [now, setNow] = useState(() => new Date());
 	const today = formatDayKey(now);
 	useEffect(() => {
@@ -205,12 +203,10 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 
 	async function archiveItem(item: OrbitItem) {
 		await mutateOrbit({ data: { action: "archive-item", id: item.id } });
-		await router.invalidate();
 	}
 
 	async function deleteItem(item: OrbitItem) {
 		await mutateOrbit({ data: { action: "delete-item", id: item.id } });
-		await router.invalidate();
 	}
 
 	async function moveItem(item: OrbitItem, space: OrbitSpace, folder?: string) {
@@ -221,7 +217,6 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 				input: { space, folder },
 			},
 		});
-		await router.invalidate();
 	}
 
 	const tomorrow = new Date(now);
@@ -295,7 +290,6 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 				},
 			});
 			persisted = true;
-			await router.invalidate();
 		} catch {
 			if (!persisted) {
 				setOptimisticDueById((current) => {

@@ -10,6 +10,7 @@ import {
 	Trash2,
 } from "lucide-react";
 import { type ReactElement, useState } from "react";
+import { isPendingItemId } from "#/lib/orbit/optimistic-mutations";
 import type { OrbitItem, OrbitSnapshot } from "#/lib/orbit/schema";
 import {
 	AlertDialog,
@@ -77,6 +78,7 @@ export function ItemContextMenu({
 	const showMove = Boolean(item && snapshot && onMove);
 	const showConvert = Boolean(item && onConvert && item.type !== "link");
 	const canArchive = Boolean(item && onArchive && item.space !== "archive");
+	if (isPendingItemId(item?.id)) return children;
 
 	return (
 		<>

@@ -56,6 +56,10 @@ import { NoteEditor } from "@/components/note-editor";
 import { NoteLinkPicker } from "@/components/note-link-picker";
 import { NoteMetadataEditor } from "@/components/note-metadata-editor";
 import { NoteOrganizeTray } from "@/components/note-organize-tray";
+import {
+	type PendingCapture,
+	useOrbitWrites,
+} from "@/components/orbit-snapshot-provider";
 import { TaskCheck, taskTitleClass } from "@/components/task-check";
 import { Button } from "@/components/ui/button";
 import {
@@ -186,6 +190,7 @@ function normalizeLegacyCanvasLinks(body: string, canvases: OrbitCanvas[]) {
 export function ItemWorkspace({
 	snapshot,
 	items: sourceItems,
+	pendingCaptures = [],
 	heading,
 	description,
 	create,
@@ -203,6 +208,7 @@ export function ItemWorkspace({
 }: {
 	snapshot: OrbitSnapshot;
 	items: OrbitItem[];
+	pendingCaptures?: PendingCapture[];
 	heading: string;
 	description?: string;
 	create?: { space: OrbitSpace; folder?: string; type?: OrbitItem["type"] };
@@ -242,17 +248,18 @@ export function ItemWorkspace({
 	);
 	const isMobile = useIsMobile();
 	const taskToggle = useTaskToggle();
+	const { acknowledge, retry, refresh } = useOrbitWrites();
 	useEffect(() => {
 		taskToggle.sync(snapshot.items);
 	}, [snapshot.items, taskToggle.sync]);
 	useEffect(() => {
 		const refreshCanvases = () => {
-			void router.invalidate();
+			void refresh().catch(() => {});
 		};
 		window.addEventListener("orbit:canvas-renamed", refreshCanvases);
 		return () =>
 			window.removeEventListener("orbit:canvas-renamed", refreshCanvases);
-	}, [router]);
+	}, [refresh]);
 	const [localItems, setLocalItems] = useState<OrbitItem[]>([]);
 	const [hiddenItemIds, setHiddenItemIds] = useState<ReadonlySet<string>>(
 		new Set(),
@@ -448,50 +455,55 @@ export function ItemWorkspace({
 		);
 	}, [query, visibleItems]);
 
-	const persistSnapshot = useCallback((id: string, next: NoteDraft) => {
-		if (!next.title.trim() || isOptimisticItemId(id)) return Promise.resolve();
-		const previous = saveQueuesRef.current.get(id) ?? Promise.resolve();
-		const queued = previous
-			.catch(() => {})
-			.then(async () => {
-				const saved = lastSavedByIdRef.current[id];
-				if (saved && draftsEqual(next, saved)) return;
+	const persistSnapshot = useCallback(
+		(id: string, next: NoteDraft) => {
+			if (!next.title.trim() || isOptimisticItemId(id))
+				return Promise.resolve();
+			const previous = saveQueuesRef.current.get(id) ?? Promise.resolve();
+			const queued = previous
+				.catch(() => {})
+				.then(async () => {
+					const saved = lastSavedByIdRef.current[id];
+					if (saved && draftsEqual(next, saved)) return;
 
-				try {
-					await mutateOrbit({
-						data: {
-							action: "update-note",
-							id,
-							input: {
-								title: next.title,
-								body: next.body,
-								tags: parseTags(next.tags),
+					try {
+						const result = await mutateOrbit({
+							data: {
+								action: "update-note",
+								id,
+								input: {
+									title: next.title,
+									body: next.body,
+									tags: parseTags(next.tags),
+								},
 							},
-						},
-					});
-					lastSavedByIdRef.current[id] = next;
-					setSavedById((currentSaved) => ({
-						...currentSaved,
-						[id]: next,
-					}));
-					setSaveErrors((current) => {
-						if (!current[id]) return current;
-						const nextErrors = { ...current };
-						delete nextErrors[id];
-						return nextErrors;
-					});
-				} catch {
-					setSaveErrors((current) => ({ ...current, [id]: true }));
+						});
+						acknowledge(orbitItemSchema.parse(result));
+						lastSavedByIdRef.current[id] = next;
+						setSavedById((currentSaved) => ({
+							...currentSaved,
+							[id]: next,
+						}));
+						setSaveErrors((current) => {
+							if (!current[id]) return current;
+							const nextErrors = { ...current };
+							delete nextErrors[id];
+							return nextErrors;
+						});
+					} catch {
+						setSaveErrors((current) => ({ ...current, [id]: true }));
+					}
+				});
+			saveQueuesRef.current.set(id, queued);
+			void queued.then(() => {
+				if (saveQueuesRef.current.get(id) === queued) {
+					saveQueuesRef.current.delete(id);
 				}
 			});
-		saveQueuesRef.current.set(id, queued);
-		void queued.then(() => {
-			if (saveQueuesRef.current.get(id) === queued) {
-				saveQueuesRef.current.delete(id);
-			}
-		});
-		return queued;
-	}, []);
+			return queued;
+		},
+		[acknowledge],
+	);
 
 	persistRef.current = () => {
 		const id = selectedKey;
@@ -501,21 +513,23 @@ export function ItemWorkspace({
 		enableBeforeUnload: false,
 		shouldBlockFn: async ({ current, next }) => {
 			if (current.pathname === next.pathname) return false;
+			const hasUnsavedDrafts = () =>
+				Object.entries(localDraftsRef.current).some(
+					([id, draft]) =>
+						!isOptimisticItemId(id) &&
+						!draftsEqual(draft, lastSavedByIdRef.current[id] ?? noteDraft()),
+				);
+			if (!saveQueuesRef.current.size && !hasUnsavedDrafts()) return false;
 			await persistRef.current();
 			await Promise.all(saveQueuesRef.current.values());
-			const unsaved = Object.entries(localDraftsRef.current).some(
-				([id, draft]) =>
-					!isOptimisticItemId(id) &&
-					!draftsEqual(draft, lastSavedByIdRef.current[id] ?? noteDraft()),
-			);
+			const unsaved = hasUnsavedDrafts();
 			if (unsaved) {
 				setActionError(
 					"노트를 저장하지 못했습니다. 저장을 다시 시도한 뒤 이동해 주세요.",
 				);
 				return true;
 			}
-			// Refresh the cached root snapshot before another route can reopen this note.
-			await router.invalidate();
+			// Successful saves are already in the shared snapshot; navigation needs no refetch.
 			return false;
 		},
 	});
@@ -732,7 +746,6 @@ export function ItemWorkspace({
 		});
 		if (!result || !("canvas" in result)) return;
 		await attachCanvas(result.canvas);
-		await router.invalidate();
 	}
 
 	function clearSelection() {
@@ -820,9 +833,10 @@ export function ItemWorkspace({
 								`“${latestDraft.title || created.title}” 노트를 삭제하지 못했습니다.`,
 							);
 						}
-						void router.invalidate();
+
 						return;
 					}
+					acknowledge(created);
 					localDraftsRef.current[created.id] = latestDraft;
 					lastSavedByIdRef.current[created.id] = noteDraft(created);
 					setLocalItems((current) => [
@@ -843,7 +857,6 @@ export function ItemWorkspace({
 						setNoteLocation(created.id);
 					}
 					void persistSnapshot(created.id, latestDraft);
-					void router.invalidate();
 				}
 			} catch {
 				const wasCancelled = cancelledCreateIdsRef.current.delete(optimisticId);
@@ -905,7 +918,6 @@ export function ItemWorkspace({
 				delete next[item.id];
 				return next;
 			});
-			void router.invalidate();
 		} catch {
 			setHiddenItemIds((current) => {
 				const next = new Set(current);
@@ -982,7 +994,6 @@ export function ItemWorkspace({
 				saveQueuesRef.current.delete(item.id);
 		}
 		// Keep the local result until the snapshot actually acknowledges the move.
-		await router.invalidate();
 	}
 
 	async function moveItemById(id: string, space: OrbitSpace, folder?: string) {
@@ -1044,7 +1055,6 @@ export function ItemWorkspace({
 					applyNote(saved, saved.id);
 				}
 			});
-			await router.invalidate();
 		} finally {
 			convertingIds.current.delete(item.id);
 			setConvertingId((current) => (current === item.id ? null : current));
@@ -1189,6 +1199,33 @@ export function ItemWorkspace({
 				</div>
 				<ScrollArea className="min-h-0 min-w-0 flex-1">
 					<ul className="w-full min-w-0 space-y-0.5 p-2">
+						{pendingCaptures.map((entry) => (
+							<li
+								key={entry.id}
+								aria-busy={!entry.failed}
+								className="rounded-xl bg-muted/40 px-3 py-2"
+							>
+								<p className="truncate text-sm font-medium">
+									{entry.input.title}
+								</p>
+								<p className="truncate text-xs text-muted-foreground">
+									{entry.input.body}
+								</p>
+								{entry.failed ? (
+									<Button
+										size="sm"
+										variant="ghost"
+										onClick={() => retry(entry.id)}
+									>
+										저장 실패 · 다시 시도
+									</Button>
+								) : (
+									<span className="text-[10px] text-muted-foreground">
+										저장 중…
+									</span>
+								)}
+							</li>
+						))}
 						{filtered.map((item) => {
 							const checked =
 								item.type === "task" && taskToggle.isChecked(item);
@@ -1256,7 +1293,7 @@ export function ItemWorkspace({
 								</ItemContextMenu>
 							);
 						})}
-						{filtered.length === 0 && (
+						{filtered.length === 0 && pendingCaptures.length === 0 && (
 							<li className="px-3 py-10 text-center text-sm text-muted-foreground">
 								항목이 없습니다. 우클릭해서 노트를 추가하세요.
 							</li>
@@ -1321,7 +1358,6 @@ export function ItemWorkspace({
 							snapshot={snapshot}
 							onDone={async () => {
 								setFiling(null);
-								await router.invalidate();
 							}}
 						/>
 					) : null}

@@ -1,4 +1,3 @@
-import { useRouter } from "@tanstack/react-router";
 import {
 	AlignLeft,
 	CalendarDays,
@@ -6,11 +5,17 @@ import {
 	ListTodo,
 	Trash2,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { itemColor } from "#/lib/orbit/item-colors";
+import { isPendingItemId } from "#/lib/orbit/optimistic-mutations";
 import { formatDayKey } from "#/lib/orbit/para";
-import { type OrbitItem, orbitItemSchema } from "#/lib/orbit/schema";
+import {
+	type OrbitItem,
+	type OrbitMutation,
+	orbitItemSchema,
+} from "#/lib/orbit/schema";
 import { DatePicker, TimePicker } from "@/components/schedule-controls";
 import {
 	AlertDialog,
@@ -71,7 +76,7 @@ export function ScheduleEditor({
 	initialTime?: string;
 	onSaved?: (item: OrbitItem) => void;
 }) {
-	const router = useRouter();
+	const editRevision = useRef(0);
 	const today = formatDayKey();
 	const [title, setTitle] = useState("");
 	const [body, setBody] = useState("");
@@ -82,13 +87,13 @@ export function ScheduleEditor({
 	const [endTime, setEndTime] = useState(addHour(initialTime));
 	const [allDay, setAllDay] = useState(false);
 	const [taskTime, setTaskTime] = useState("");
-	const [saving, setSaving] = useState(false);
 	const [deleting, setDeleting] = useState(false);
 	const [deleteOpen, setDeleteOpen] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
 		if (!open) return;
+		editRevision.current++;
 		const baseDate = initialDate ?? today;
 		const resolvedStart = dayOf(item?.start ?? item?.due, baseDate);
 		const resolvedTime = timeOf(item?.start ?? item?.due, initialTime);
@@ -115,7 +120,11 @@ export function ScheduleEditor({
 
 	async function save() {
 		const trimmed = title.trim();
-		if (!trimmed || saving) return;
+		if (!trimmed) return;
+		if (trimmed.length > 160 || body.length > (item ? 100_000 : 20_000)) {
+			setError("제목이나 본문이 너무 깁니다.");
+			return;
+		}
 		if (
 			kind === "event" &&
 			(endDate < startDate ||
@@ -124,114 +133,118 @@ export function ScheduleEditor({
 			setError("종료는 시작보다 뒤여야 합니다.");
 			return;
 		}
-		setSaving(true);
-		setError(null);
-		try {
-			const start =
-				kind === "event"
-					? allDay
-						? startDate
-						: `${startDate}T${startTime}:00`
-					: undefined;
-			const end =
-				kind === "event"
-					? allDay
-						? endDate
-						: `${endDate}T${endTime}:00`
-					: undefined;
-			const due =
-				kind === "task"
-					? taskTime
-						? `${startDate}T${taskTime}:00`
-						: startDate
-					: undefined;
-
-			if (
-				item &&
-				item.title === trimmed &&
-				item.body === body.trim() &&
-				item.start === start &&
-				item.end === end &&
-				item.due === due &&
-				item.color === color
-			) {
-				onOpenChange(false);
-				return;
-			}
-
-			let saved: OrbitItem;
-			if (item) {
-				saved = orbitItemSchema.parse(
-					await mutateOrbit({
-						data: {
-							action: "file-item",
-							id: item.id,
-							input: {
-								title: trimmed,
-								body,
-								type: kind,
-								color: color ?? null,
-								space:
-									kind === "event"
-										? "event"
-										: item.space === "event"
-											? "inbox"
-											: item.space,
-								folder: kind === "task" ? item.folder : undefined,
-								status: kind === "task" ? item.status : undefined,
-								start: kind === "event" ? start : null,
-								end: kind === "event" ? end : null,
-								due: kind === "task" ? due : null,
-							},
-						},
-					}),
-				);
-			} else {
-				saved = orbitItemSchema.parse(
-					await mutateOrbit({
-						data: {
-							action: "create-item",
-							input: {
-								title: trimmed,
-								body,
-								type: kind,
-								color,
-								space: kind === "event" ? "event" : "inbox",
-								start,
-								end,
-								due,
-							},
-						},
-					}),
-				);
-			}
-			await router.invalidate();
-			onSaved?.(saved);
+		const start =
+			kind === "event"
+				? allDay
+					? startDate
+					: `${startDate}T${startTime}:00`
+				: undefined;
+		const end =
+			kind === "event"
+				? allDay
+					? endDate
+					: `${endDate}T${endTime}:00`
+				: undefined;
+		const due =
+			kind === "task"
+				? taskTime
+					? `${startDate}T${taskTime}:00`
+					: startDate
+				: undefined;
+		if (
+			item &&
+			item.title === trimmed &&
+			item.body === body.trim() &&
+			item.start === start &&
+			item.end === end &&
+			item.due === due &&
+			item.color === color
+		) {
 			onOpenChange(false);
-		} catch {
-			setError("저장하지 못했습니다. 날짜와 파일 권한을 확인해 주세요.");
-		} finally {
-			setSaving(false);
+			return;
 		}
+		const mutation: OrbitMutation = item
+			? {
+					action: "file-item",
+					id: item.id,
+					input: {
+						title: trimmed,
+						body,
+						type: kind,
+						color: color ?? null,
+						space:
+							kind === "event"
+								? "event"
+								: item.space === "event"
+									? "inbox"
+									: item.space,
+						folder: kind === "task" ? item.folder : undefined,
+						status: kind === "task" ? item.status : undefined,
+						start: start ?? null,
+						end: end ?? null,
+						due: due ?? null,
+					},
+				}
+			: {
+					action: "create-item",
+					input: {
+						title: trimmed,
+						body,
+						type: kind,
+						color,
+						space: kind === "event" ? "event" : "inbox",
+						start,
+						end,
+						due,
+					},
+				};
+		const revision = editRevision.current;
+		let running = false;
+		const persist = async () => {
+			if (running) return;
+			running = true;
+			try {
+				const saved = orbitItemSchema.parse(
+					await mutateOrbit({ data: mutation }),
+				);
+				if (revision === editRevision.current) onSaved?.(saved);
+			} catch {
+				toast.error("저장하지 못했습니다.", {
+					description: trimmed,
+					duration: 15000,
+					action: {
+						label: "다시 시도",
+						onClick: () => {
+							void persist();
+						},
+					},
+				});
+			} finally {
+				running = false;
+			}
+		};
+		setError(null);
+		onOpenChange(false);
+		void persist();
 	}
 
 	async function deleteItem() {
 		if (!item || deleting) return;
 		setDeleting(true);
 		setError(null);
+		setDeleteOpen(false);
+		onOpenChange(false);
 		try {
 			await mutateOrbit({ data: { action: "delete-item", id: item.id } });
-			await router.invalidate();
-			setDeleteOpen(false);
-			onOpenChange(false);
 		} catch {
 			setDeleteOpen(false);
-			setError("삭제하지 못했습니다. 파일 권한을 확인해 주세요.");
+			toast.error("삭제하지 못했습니다. 항목을 원래대로 돌렸습니다.");
 		} finally {
 			setDeleting(false);
 		}
 	}
 
+	if (isPendingItemId(item?.id)) return null;
 	return (
 		<>
 			<Dialog open={open} onOpenChange={onOpenChange}>
@@ -406,8 +419,8 @@ export function ScheduleEditor({
 								>
 									취소
 								</Button>
-								<Button type="submit" disabled={!title.trim() || saving}>
-									{saving ? "저장 중" : item ? "저장" : "추가"}
+								<Button type="submit" disabled={!title.trim()}>
+									{item ? "저장" : "추가"}
 								</Button>
 							</div>
 						</div>

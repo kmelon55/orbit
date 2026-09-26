@@ -1,15 +1,15 @@
-import { useRouter } from "@tanstack/react-router";
 import { type ReactNode, useCallback, useEffect, useRef } from "react";
 import { Toaster, toast } from "sonner";
 import { undoOrbit } from "#/lib/orbit/functions";
 import type { MutationReceipt } from "#/lib/orbit/undo-events";
 import { UndoHistory } from "#/lib/orbit/undo-history";
+import { useOrbitWrites } from "./orbit-snapshot-provider";
 import { useTheme } from "./theme-provider";
 
 type ActionEntry = MutationReceipt & { undo: () => Promise<void> };
 
 export function ActionUndoProvider({ children }: { children: ReactNode }) {
-	const router = useRouter();
+	const { refresh } = useOrbitWrites();
 	const { resolvedTheme } = useTheme();
 	const history = useRef(new UndoHistory<ActionEntry>());
 	const undo = useCallback(
@@ -24,7 +24,7 @@ export function ActionUndoProvider({ children }: { children: ReactNode }) {
 					description: entry.title,
 					duration: 3000,
 				});
-				await router.invalidate().catch(() => {
+				await refresh().catch(() => {
 					toast.error("되돌렸지만 화면을 갱신하지 못했습니다.");
 				});
 			} catch {
@@ -42,7 +42,7 @@ export function ActionUndoProvider({ children }: { children: ReactNode }) {
 				});
 			}
 		},
-		[router],
+		[refresh],
 	);
 	useEffect(() => {
 		function record(event: Event) {

@@ -1,6 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { orbitAuthMiddleware } from "./auth";
+import {
+	isPendingItemId,
+	type MutationLifecycle,
+} from "./optimistic-mutations";
 import { orbitMutationSchema } from "./schema";
 
 export const loadOrbit = createServerFn({ method: "GET" })
@@ -65,17 +69,61 @@ const mutateOrbitRequest = createServerFn({ method: "POST" })
 		});
 	});
 
+const itemRequests = new Map<string, Promise<unknown>>();
+
 export async function mutateOrbit(
 	options: Parameters<typeof mutateOrbitRequest>[0],
 ) {
+	const mutation = orbitMutationSchema.parse(options?.data);
+	if ("id" in mutation && isPendingItemId(mutation.id))
+		throw new Error("아직 저장 중입니다. 잠시 후 다시 시도해 주세요.");
+	const requestId = crypto.randomUUID();
+	const notify = (phase: MutationLifecycle["phase"], result?: unknown) => {
+		if (typeof window !== "undefined")
+			window.dispatchEvent(
+				new CustomEvent("orbit:write", {
+					detail: {
+						requestId,
+						mutation,
+						phase,
+						result,
+					} satisfies MutationLifecycle,
+				}),
+			);
+	};
+	notify("start");
 	try {
-		const response = await mutateOrbitRequest(options);
+		const id =
+			typeof window === "undefined"
+				? undefined
+				: "id" in mutation
+					? mutation.id
+					: mutation.action === "create-folder" ||
+							mutation.action === "update-folder" ||
+							mutation.action === "delete-folder"
+						? `folders:${mutation.input.space}`
+						: undefined;
+		const request = id
+			? (itemRequests.get(id) ?? Promise.resolve())
+					.catch(() => {})
+					.then(() => mutateOrbitRequest(options))
+			: mutateOrbitRequest(options);
+		if (id) {
+			itemRequests.set(id, request);
+			const cleanup = () => {
+				if (itemRequests.get(id) === request) itemRequests.delete(id);
+			};
+			void request.then(cleanup, cleanup);
+		}
+		const response = await request;
 		if (response.undo && typeof window !== "undefined")
 			window.dispatchEvent(
 				new CustomEvent("orbit:mutation", { detail: response.undo }),
 			);
+		notify("success", response.result);
 		return response.result;
 	} catch (error) {
+		notify("failure");
 		const action = orbitMutationSchema.safeParse(options?.data).data?.action;
 		if (
 			typeof window !== "undefined" &&

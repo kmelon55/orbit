@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import {
 	ArrowRight,
 	CalendarDays,
@@ -43,7 +43,6 @@ function formatTime(value?: string) {
 
 function TodayPage() {
 	const snapshot = useOrbitSnapshot();
-	const router = useRouter();
 	const [editor, setEditor] = useState<{
 		open: boolean;
 		kind: "task" | "event";
@@ -65,12 +64,10 @@ function TodayPage() {
 	});
 	async function archiveItem(item: OrbitItem) {
 		await mutateOrbit({ data: { action: "archive-item", id: item.id } });
-		await router.invalidate();
 	}
 
 	async function deleteItem(item: OrbitItem) {
 		await mutateOrbit({ data: { action: "delete-item", id: item.id } });
-		await router.invalidate();
 	}
 
 	async function moveItem(item: OrbitItem, space: OrbitSpace, folder?: string) {
@@ -81,7 +78,6 @@ function TodayPage() {
 				input: { space, folder },
 			},
 		});
-		await router.invalidate();
 	}
 
 	return (
@@ -110,7 +106,7 @@ function TodayPage() {
 				</header>
 
 				<div className="mb-5 sm:mb-8">
-					<QuickCapture onSaved={() => void router.invalidate()} />
+					<QuickCapture />
 				</div>
 
 				<div className="grid gap-4 lg:grid-cols-2">

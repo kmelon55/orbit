@@ -1,4 +1,3 @@
-import { useRouter } from "@tanstack/react-router";
 import {
 	CalendarDays,
 	ChevronRight,
@@ -41,6 +40,7 @@ import {
 	ItemWorkspace,
 	type ItemWorkspaceNavigatorContext,
 } from "@/components/item-workspace";
+import { useOrbitWrites } from "@/components/orbit-snapshot-provider";
 import { Button } from "@/components/ui/button";
 import {
 	ContextMenu,
@@ -79,7 +79,7 @@ function UnifiedFolderWorkspace({
 	space: FolderSpaceId;
 	initialFolder?: string;
 }) {
-	const router = useRouter();
+	const { refresh } = useOrbitWrites();
 	const meta = spaceConfig(space);
 	if (!meta) throw new Error(`Unknown folder space: ${space}`);
 	const { label: spaceLabel, korean: spaceName } = meta;
@@ -172,6 +172,7 @@ function UnifiedFolderWorkspace({
 		if (!trimmed || saving) return;
 		setSaving(true);
 		setError(undefined);
+		setFolderName("");
 		try {
 			await mutateOrbit({
 				data: {
@@ -179,10 +180,9 @@ function UnifiedFolderWorkspace({
 					input: { space, name: trimmed, parent: newFolderParent },
 				},
 			});
-			setFolderName("");
 			setNewFolderParent(undefined);
-			await router.invalidate();
 		} catch {
+			setFolderName((current) => current || trimmed);
 			setError("폴더를 만들지 못했습니다.");
 		} finally {
 			setSaving(false);
@@ -213,7 +213,6 @@ function UnifiedFolderWorkspace({
 							input: { space, path: folder.slug, color },
 						},
 					});
-					void router.invalidate();
 				} catch {
 					setOptimisticColors((current) => {
 						if (current[folder.slug] !== color) return current;
@@ -234,6 +233,7 @@ function UnifiedFolderWorkspace({
 		event.preventDefault();
 		const nextName = editingName.trim();
 		if (!editingFolder || !nextName || saving) return;
+		setEditingFolder(undefined);
 		setSaving(true);
 		setError(undefined);
 		try {
@@ -244,7 +244,6 @@ function UnifiedFolderWorkspace({
 				},
 			});
 			setEditingFolder(undefined);
-			await router.invalidate();
 		} catch {
 			setError("같은 이름의 폴더가 있거나 이름을 바꿀 수 없습니다.");
 		} finally {
@@ -254,6 +253,7 @@ function UnifiedFolderWorkspace({
 
 	async function deleteFolder() {
 		if (!deletingFolder || saving) return;
+		setDeletingFolder(undefined);
 		setSaving(true);
 		setError(undefined);
 		try {
@@ -264,7 +264,6 @@ function UnifiedFolderWorkspace({
 				},
 			});
 			setDeletingFolder(undefined);
-			await router.invalidate();
 		} catch {
 			setError("비어 있는 폴더만 삭제할 수 있습니다.");
 		} finally {
@@ -498,7 +497,7 @@ function UnifiedFolderWorkspace({
 								next.delete(input.target.slice(7));
 							return next;
 						});
-						await router.invalidate();
+						await refresh();
 					}}
 					items={controls.items}
 					folders={folders}

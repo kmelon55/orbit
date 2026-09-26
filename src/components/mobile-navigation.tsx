@@ -1,4 +1,4 @@
-import { Link, useRouter, useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import {
 	CalendarDays,
 	CalendarRange,
@@ -60,7 +60,6 @@ const QUICK_KINDS: {
 ];
 
 export function MobileNavigation() {
-	const router = useRouter();
 	const pathname = useRouterState({
 		select: (state) => state.location.pathname,
 	});
@@ -150,6 +149,7 @@ export function MobileNavigation() {
 		return (
 			<Link
 				to={to}
+				preload="render"
 				aria-current={active ? "page" : undefined}
 				className={cn(
 					"flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl text-[10px] font-medium text-muted-foreground transition-colors",
@@ -300,9 +300,8 @@ export function MobileNavigation() {
 									: "무슨 일정인가요?"
 						}
 						className="border-0 bg-transparent p-0 shadow-none"
-						onSaved={() => {
+						onSubmitted={() => {
 							setComposerOpen(false);
-							void router.invalidate();
 						}}
 					/>
 				</SheetContent>

@@ -7,9 +7,9 @@ import {
 	MicOff,
 } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { mutateOrbit } from "#/lib/orbit/functions";
 import { formatDayKey, ITEM_TYPE_LABEL } from "#/lib/orbit/para";
 import type { OrbitItemType } from "#/lib/orbit/schema";
+import { useOrbitWrites } from "@/components/orbit-snapshot-provider";
 import { QuickCaptureEditor } from "@/components/quick-capture-editor";
 import { DatePicker, TimePicker } from "@/components/schedule-controls";
 import { Button } from "@/components/ui/button";
@@ -62,18 +62,19 @@ function getSpeechRecognition() {
 }
 
 export function QuickCapture({
-	onSaved,
+	onSubmitted,
 	placeholder = "생각나는 것을 일단 적어두세요",
 	initialKind = "note",
 	autoFocus = false,
 	className,
 }: {
-	onSaved?: () => void;
+	onSubmitted?: () => void;
 	placeholder?: string;
 	initialKind?: Extract<OrbitItemType, "note" | "task" | "event">;
 	autoFocus?: boolean;
 	className?: string;
 }) {
+	const { capture: saveCapture, pending, retry } = useOrbitWrites();
 	const [capture, setCapture] = useState("");
 	const titleBreak = capture.indexOf("\n");
 	const captureTitle = titleBreak < 0 ? capture : capture.slice(0, titleBreak);
@@ -141,7 +142,7 @@ export function QuickCapture({
 		}
 	}
 
-	async function handleCapture(event: FormEvent<HTMLFormElement>) {
+	function handleCapture(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
 		const title = captureTitle.trim();
 		const body = captureBody.trim();
@@ -157,55 +158,27 @@ export function QuickCapture({
 			setMessage("종료는 시작보다 뒤여야 합니다.");
 			return;
 		}
-		const successMessage =
-			kind === "event"
-				? "캘린더에 추가했습니다."
-				: kind === "task"
-					? "할 일에 등록했습니다."
-					: "Inbox에 넣었습니다.";
+		const schedule =
+			kind === "task"
+				? date
+					? { due: date }
+					: {}
+				: kind === "event"
+					? {
+							start: `${date}T${startTime}:00`,
+							end: `${endDate}T${endTime}:00`,
+						}
+					: {};
+		saveCapture({
+			title,
+			body,
+			type: kind,
+			space: kind === "event" ? "event" : "inbox",
+			...schedule,
+		});
 		setCapture("");
-		setMessage(successMessage);
-		try {
-			const schedule =
-				kind === "task"
-					? date
-						? { due: date }
-						: {}
-					: kind === "event"
-						? {
-								start: `${date}T${startTime}:00`,
-								end: `${endDate}T${endTime}:00`,
-							}
-						: {};
-			await mutateOrbit({
-				data:
-					kind === "event"
-						? {
-								action: "create-item",
-								input: {
-									title,
-									type: kind,
-									body,
-									space: "event",
-									...schedule,
-								},
-							}
-						: {
-								action: "capture",
-								input: {
-									title,
-									type: kind,
-									body,
-									...schedule,
-								},
-							},
-			});
-			onSaved?.();
-		} catch {
-			setMessage(
-				`“${title}”을 저장하지 못했습니다. 데이터 폴더 권한을 확인해 주세요.`,
-			);
-		}
+		setMessage(null);
+		onSubmitted?.();
 	}
 
 	return (
@@ -223,6 +196,27 @@ export function QuickCapture({
 			}}
 			className={cn("orbit-card p-3", className)}
 		>
+			{pending
+				.filter((entry) => entry.failed)
+				.map((entry) => (
+					<div
+						key={entry.id}
+						role="alert"
+						className="mb-2 flex items-center gap-2 text-xs text-destructive"
+					>
+						<span className="min-w-0 flex-1 truncate">
+							“{entry.input.title}”을 저장하지 못했습니다.
+						</span>
+						<Button
+							type="button"
+							size="sm"
+							variant="ghost"
+							onClick={() => retry(entry.id)}
+						>
+							다시 시도
+						</Button>
+					</div>
+				))}
 			<div className="space-y-2">
 				<QuickCaptureEditor
 					value={capture}
