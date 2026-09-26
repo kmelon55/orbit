@@ -15,6 +15,7 @@ import {
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type {
+	BlockedSender,
 	MailAccount,
 	MailDetail,
 	MailMessage,
@@ -60,6 +61,7 @@ export class MailStore {
 		this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
    CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, email TEXT NOT NULL COLLATE NOCASE UNIQUE, data TEXT NOT NULL, secret TEXT NOT NULL);
+   CREATE TABLE IF NOT EXISTS blocked_senders (account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, address_hash TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(account_id,address_hash));
    CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, folder TEXT NOT NULL, date INTEGER NOT NULL, data TEXT NOT NULL);
    CREATE INDEX IF NOT EXISTS messages_folder ON messages(account_id,folder,date DESC);
    CREATE TABLE IF NOT EXISTS bodies (id TEXT PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE, cached_at INTEGER NOT NULL, data TEXT NOT NULL);
@@ -144,6 +146,31 @@ export class MailStore {
 			this.db.exec("ROLLBACK");
 			throw error;
 		}
+	}
+	blockedSenders(accountId?: string): BlockedSender[] {
+		const rows = (
+			accountId
+				? this.db
+						.prepare("SELECT data FROM blocked_senders WHERE account_id=?")
+						.all(accountId)
+				: this.db.prepare("SELECT data FROM blocked_senders").all()
+		) as { data: string }[];
+		return rows.map((row) => this.unseal<BlockedSender>(row.data));
+	}
+	setBlocked(accountId: string, address: string, blocked: boolean) {
+		this.account(accountId);
+		address = address.trim().toLowerCase();
+		const hash = createHash("sha256").update(address).digest("hex");
+		if (blocked)
+			this.db
+				.prepare("INSERT OR REPLACE INTO blocked_senders VALUES (?,?,?)")
+				.run(accountId, hash, this.seal({ accountId, address }));
+		else
+			this.db
+				.prepare(
+					"DELETE FROM blocked_senders WHERE account_id=? AND address_hash=?",
+				)
+				.run(accountId, hash);
 	}
 	messages(accountId?: string, folder = "inbox", query = ""): MailMessage[] {
 		const rows = (

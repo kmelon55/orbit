@@ -2,14 +2,33 @@ import { z } from "zod";
 
 export const providerSchema = z.enum(["gmail", "icloud", "naver"]);
 export type MailProvider = z.infer<typeof providerSchema>;
-export const folderSchema = z.enum(["inbox", "sent", "trash", "archive"]);
+export const folderSchema = z.enum([
+	"inbox",
+	"sent",
+	"archive",
+	"spam",
+	"trash",
+]);
 export type MailFolder = z.infer<typeof folderSchema>;
 export const folderLabels: Record<MailFolder, string> = {
 	inbox: "받은 메일",
 	sent: "보낸 메일",
-	trash: "휴지통",
 	archive: "보관함",
+	spam: "스팸함",
+	trash: "휴지통",
 };
+export const mailActionSchema = z.enum([
+	"read",
+	"unread",
+	"trash",
+	"archive",
+	"spam",
+	"inbox",
+	"block",
+]);
+export type MailAction = z.infer<typeof mailActionSchema>;
+export type ProviderMailAction = Exclude<MailAction, "block">;
+export type BlockedSender = { accountId: string; address: string };
 export type MailAddress = { name: string; address: string };
 export type MailAccount = {
 	id: string;
@@ -62,6 +81,7 @@ export type MailDetail = MailMessage & {
 	attachments: MailAttachment[];
 };
 export type MailStatus = {
+	blockedSenders?: BlockedSender[];
 	accounts: MailAccount[];
 	gmailConfigured: boolean;
 	pushConfigured: boolean;

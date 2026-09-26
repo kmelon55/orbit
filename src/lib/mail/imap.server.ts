@@ -16,6 +16,7 @@ import {
 	type MailMessage,
 	type MailSecret,
 	PAGE_SIZE,
+	type ProviderMailAction,
 } from "./types";
 
 export function imapAddressSearch(
@@ -134,9 +135,12 @@ export function closeImapConnections(accountId?: string) {
 }
 export async function findMailbox(client: ImapFlow, folder: MailFolder) {
 	if (folder === "inbox") return "INBOX";
-	const special = { sent: "\\Sent", trash: "\\Trash", archive: "\\Archive" }[
-		folder
-	];
+	const special = {
+		sent: "\\Sent",
+		trash: "\\Trash",
+		archive: "\\Archive",
+		spam: "\\Junk",
+	}[folder];
 	const boxes = await client.list();
 	let box = boxes.find((b) => b.specialUse === special);
 	if (!box) {
@@ -144,12 +148,13 @@ export async function findMailbox(client: ImapFlow, folder: MailFolder) {
 			sent: /^(sent( messages| mail)?|보낸메일함|보낸 메일함)$/i,
 			trash: /^(trash|deleted( messages| items)?|휴지통)$/i,
 			archive: /^(archive|archives|보관함)$/i,
+			spam: /^(junk( e-?mail)?|spam|스팸(메일함| 메일함|함)?)$/i,
 		};
 		box = boxes.find((b) => patterns[folder].test(b.name));
 	}
 	if (!box)
 		throw new Error(
-			`${folder === "sent" ? "보낸 메일함" : folder === "trash" ? "휴지통" : "보관함"}을 제공자에서 찾을 수 없습니다.`,
+			`${folder === "sent" ? "보낸 메일함" : folder === "trash" ? "휴지통" : folder === "spam" ? "스팸함" : "보관함"}을 제공자에서 찾을 수 없습니다.`,
 		);
 	return box.path;
 }
@@ -352,11 +357,11 @@ export async function imapRaw(account: MailAccount, m: MailMessage) {
 export async function mutateImap(
 	account: MailAccount,
 	m: MailMessage,
-	action: "read" | "unread" | "trash" | "archive",
+	action: ProviderMailAction,
 ) {
 	return usingImap(account, async (client) => {
 		const destination =
-			action === "trash" || action === "archive"
+			action !== "read" && action !== "unread"
 				? await findMailbox(client, action)
 				: null;
 		const lock = await lockMessage(client, m);

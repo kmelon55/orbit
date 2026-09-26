@@ -6,6 +6,7 @@ import {
 	Mail,
 	MailOpen,
 	MessagesSquare,
+	MoreHorizontal,
 	Paperclip,
 	Pencil,
 	RefreshCw,
@@ -16,7 +17,14 @@ import {
 	Trash2,
 	X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+	type ReactNode,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { toast } from "sonner";
 import { createMailClient } from "#/lib/mail/client";
 import { conversations } from "#/lib/mail/conversations";
@@ -28,6 +36,7 @@ import {
 } from "#/lib/mail/identities";
 import {
 	folderLabels,
+	type MailAction,
 	type MailDetail,
 	type MailFolder,
 	type MailMessage,
@@ -38,6 +47,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { MailAccountFilter } from "./mail-account-filter";
+import { MailActionsMenu } from "./mail-actions-menu";
 import { MailComposer } from "./mail-composer";
 import { MailMessageContent } from "./mail-message-content";
 import { MailSettings } from "./mail-settings";
@@ -277,16 +287,16 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 			router.history.back();
 		else selectMessage("");
 	}
-	async function action(
-		kind: "read" | "unread" | "trash" | "archive",
-		target: MailMessage | null = detail,
-	) {
+	async function action(kind: MailAction, target: MailMessage | null = detail) {
 		if (!target || pendingActions.current.has(target.id)) return;
 		const originalDetail = detail?.id === target.id ? detail : null;
 		threadCache.current.clear();
 		const summary = messages.find((message) => message.id === target.id);
 		const scope = mailScope;
-		const removing = kind === "trash" || kind === "archive";
+		const removing =
+			kind !== "read" &&
+			kind !== "unread" &&
+			(kind === "block" ? target.folder !== "spam" : kind !== target.folder);
 		const unread = kind === "unread";
 		pendingActions.current.add(target.id);
 		setMutatingIds(new Set(pendingActions.current));
@@ -309,6 +319,12 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 		}
 		try {
 			await api("action", { id: target.id, action: kind });
+			if (kind === "block" || kind === "inbox")
+				void refreshStatus().catch(() => {});
+			if (kind === "block")
+				toast.success(
+					"발신자를 차단했습니다. 앞으로 동기화되는 메일은 스팸함으로 이동합니다.",
+				);
 		} catch (error) {
 			if (mailScopeRef.current === scope) {
 				setMessages((previous) =>
@@ -333,7 +349,79 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 			finish();
 			pendingActions.current.delete(target.id);
 			setMutatingIds(new Set(pendingActions.current));
+			if (kind === "block") void refreshRef.current(true);
 		}
+	}
+	const composeGeneration = useRef(0);
+	async function composeMessage(
+		message: MailMessage,
+		mode: "reply" | "all" | "forward",
+	) {
+		const generation = ++composeGeneration.current;
+		const notice = toast.loading("메일을 불러오는 중…");
+		try {
+			const original =
+				detail?.id === message.id
+					? detail
+					: detailCache.current.get(`${message.id}:${remoteImages}`) ||
+						(await api<MailDetail>(
+							`message?id=${encodeURIComponent(message.id)}&images=${remoteImages ? "1" : "0"}`,
+						));
+			if (generation !== composeGeneration.current) return;
+			setComposeOriginal(original);
+			setCompose(mode);
+		} catch (error) {
+			toast.error(
+				error instanceof Error ? error.message : "메일을 불러오지 못했습니다.",
+			);
+		} finally {
+			toast.dismiss(notice);
+		}
+	}
+	async function unblock(message: MailMessage) {
+		try {
+			await api("unblock", {
+				accountId: message.accountId,
+				address: message.from[0]?.address,
+			});
+			await refreshStatus();
+			toast.success("발신자 차단을 해제했습니다.");
+		} catch (error) {
+			toast.error(
+				error instanceof Error ? error.message : "차단을 해제하지 못했습니다.",
+			);
+		}
+	}
+	function messageMenu(
+		message: MailMessage,
+		children: ReactNode,
+		dropdown = false,
+	) {
+		const address = message.from[0]?.address.trim().toLowerCase();
+		const account = status?.accounts.find((a) => a.id === message.accountId);
+		return (
+			<MailActionsMenu
+				key={message.id}
+				message={message}
+				dropdown={dropdown}
+				blocked={Boolean(
+					status?.blockedSenders?.some(
+						(rule) =>
+							rule.accountId === message.accountId && rule.address === address,
+					),
+				)}
+				canBlock={Boolean(
+					address && account && !accountAddresses(account).includes(address),
+				)}
+				busy={mutatingIds.has(message.id)}
+				onOpen={() => selectMessage(message.id)}
+				onCompose={(mode) => void composeMessage(message, mode)}
+				onAction={(kind) => void action(kind, message)}
+				onUnblock={() => void unblock(message)}
+			>
+				{children}
+			</MailActionsMenu>
+		);
 	}
 	function changed() {
 		void refreshStatus()
@@ -507,6 +595,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 					aria-label="메일 쓰기"
 					disabled={!status?.accounts.length}
 					onClick={() => {
+						composeGeneration.current++;
 						setComposeOriginal(null);
 						setCompose("new");
 					}}
@@ -618,7 +707,8 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 							const m = group[0];
 							const isSelected = group.some((entry) => entry.id === selected);
 							const unread = group.some((entry) => entry.unread);
-							return (
+							return messageMenu(
+								m,
 								<button
 									key={m.id}
 									type="button"
@@ -685,7 +775,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 										</span>
 										{m.hasAttachments && <Paperclip className="size-3" />}
 									</div>
-								</button>
+								</button>,
 							);
 						})}
 						{Object.values(cursors).some(Boolean) && (
@@ -721,6 +811,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 									size="sm"
 									disabled={!detail || mutating}
 									onClick={() => {
+										composeGeneration.current++;
 										setComposeOriginal(null);
 										setCompose("reply");
 									}}
@@ -734,6 +825,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 									disabled={!detail || mutating}
 									aria-label="전체 답장"
 									onClick={() => {
+										composeGeneration.current++;
 										setComposeOriginal(null);
 										setCompose("all");
 									}}
@@ -747,6 +839,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 									disabled={!detail || mutating}
 									aria-label="전달"
 									onClick={() => {
+										composeGeneration.current++;
 										setComposeOriginal(null);
 										setCompose("forward");
 									}}
@@ -755,6 +848,18 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 									<span className="hidden sm:inline">전달</span>
 								</Button>
 								<div className="flex-1" />
+								{detail &&
+									messageMenu(
+										detail,
+										<Button
+											variant="ghost"
+											size="icon"
+											aria-label="메일 더 보기"
+										>
+											<MoreHorizontal className="size-4" />
+										</Button>,
+										true,
+									)}
 								<Button
 									variant="ghost"
 									size="icon"
@@ -914,6 +1019,11 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 			/>
 			{compose && status?.accounts.length && (
 				<MailComposer
+					key={
+						compose === "new"
+							? "new"
+							: `${compose}:${composeOriginal?.id || detail?.id}`
+					}
 					accounts={status.accounts}
 					api={api}
 					demo={demo}
@@ -927,7 +1037,10 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 							: composeOriginal || detail || undefined
 					}
 					mode={compose}
-					onClose={() => setCompose(null)}
+					onClose={() => {
+						composeGeneration.current++;
+						setCompose(null);
+					}}
 					onSent={() => {
 						setCompose(null);
 						setDetailRetry((v) => v + 1);

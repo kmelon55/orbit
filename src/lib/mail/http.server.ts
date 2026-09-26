@@ -34,6 +34,7 @@ import {
 	folderSchema,
 	type MailAccount,
 	type MailStatus,
+	mailActionSchema,
 	sendSchema,
 } from "./types";
 
@@ -127,6 +128,7 @@ export async function handleMailRequest(request: Request): Promise<Response> {
 				return json({
 					...({
 						accounts: s.accounts(),
+						blockedSenders: s.blockedSenders(),
 						gmailConfigured: gmailConfigured(),
 						pushConfigured: pushConfigured(),
 						publicKey: pushConfigured() ? pushKeys().publicKey : null,
@@ -345,11 +347,20 @@ export async function handleMailRequest(request: Request): Promise<Response> {
 				);
 				return json({ ok: true });
 			}
+			if (path === "unblock") {
+				const v = z
+					.object({ accountId: z.string().uuid(), address: z.string().email() })
+					.parse(input);
+				await accountQueue(v.accountId, async () =>
+					s.setBlocked(v.accountId, v.address, false),
+				);
+				return json({ ok: true });
+			}
 			if (path === "action") {
 				const v = z
 					.object({
 						id: z.string(),
-						action: z.enum(["read", "unread", "trash", "archive"]),
+						action: mailActionSchema,
 					})
 					.parse(input);
 				return json(await mutateMessage(v.id, v.action));

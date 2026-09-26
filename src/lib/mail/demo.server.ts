@@ -7,10 +7,12 @@ import { parseMail, toDetail } from "./content.server";
 import { relatedMessages } from "./conversations";
 import { aliasesSchema, matchesAddress, senderAddress } from "./identities";
 import {
+	type BlockedSender,
 	canPreview,
 	type MailAccount,
 	type MailDetail,
 	type MailMessage,
+	mailActionSchema,
 	sendSchema,
 } from "./types";
 
@@ -43,6 +45,7 @@ type DemoMail = {
 	parsed: Awaited<ReturnType<typeof parseMail>>;
 };
 type DemoState = {
+	blockedSenders?: BlockedSender[];
 	accounts: MailAccount[];
 	mails: Map<string, DemoMail>;
 	drafts: Map<string, { revision: number; value: unknown }>;
@@ -228,11 +231,13 @@ export async function demoMailRequest(
 	globalDemo.orbitMailDemo ??= seed();
 	const state = await globalDemo.orbitMailDemo;
 	state.accounts ??= structuredClone(accounts);
+	state.blockedSenders ??= [];
 	const url = new URL(request.url);
 	if (request.method === "GET") {
 		if (path === "status")
 			return json({
 				accounts: state.accounts.map((a) => ({ ...a, lastSync: Date.now() })),
+				blockedSenders: state.blockedSenders,
 				publicUrl: "",
 				gmailClientId: "",
 				gmailConfigured: false,
@@ -337,18 +342,59 @@ export async function demoMailRequest(
 			await globalDemo.orbitMailDemo;
 			return json({ ok: true });
 		}
+		if (path === "unblock") {
+			const v = z
+				.object({ accountId: z.string(), address: z.string().email() })
+				.parse(input);
+			state.blockedSenders = state.blockedSenders.filter(
+				(rule) =>
+					rule.accountId !== v.accountId ||
+					rule.address !== v.address.toLowerCase(),
+			);
+			return json({ ok: true });
+		}
 		if (path === "action") {
 			const v = z
 				.object({
 					id: z.string(),
-					action: z.enum(["read", "unread", "archive", "trash"]),
+					action: mailActionSchema,
 				})
 				.parse(input);
 			const mail = state.mails.get(v.id);
 			if (!mail) return json({ error: "데모 메일을 찾을 수 없습니다." }, 404);
 			if (v.action === "read" || v.action === "unread")
 				mail.message.unread = v.action === "unread";
-			else mail.message.folder = v.action;
+			else if (v.action === "block") {
+				const address = mail.message.from[0]?.address.toLowerCase();
+				if (!address) return json({ error: "발신자가 없습니다." }, 400);
+				state.blockedSenders = state.blockedSenders.filter(
+					(rule) =>
+						rule.accountId !== mail.message.accountId ||
+						rule.address !== address,
+				);
+				state.blockedSenders.push({
+					accountId: mail.message.accountId,
+					address,
+				});
+				for (const entry of state.mails.values())
+					if (
+						entry.message.accountId === mail.message.accountId &&
+						entry.message.from.some(
+							(sender) => sender.address.toLowerCase() === address,
+						) &&
+						entry.message.folder === "inbox"
+					)
+						entry.message.folder = "spam";
+				mail.message.folder = "spam";
+			} else {
+				mail.message.folder = v.action;
+				if (v.action === "inbox")
+					state.blockedSenders = state.blockedSenders.filter(
+						(rule) =>
+							rule.accountId !== mail.message.accountId ||
+							rule.address !== mail.message.from[0]?.address.toLowerCase(),
+					);
+			}
 			return json({ ok: true });
 		}
 		if (path === "draft") {

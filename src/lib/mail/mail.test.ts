@@ -1136,3 +1136,220 @@ test("demo aliases support settings and simulated sending without touching real 
 	assert.equal(sent.messages[0].from[0].address, "news@mina.example");
 	assert.deepEqual(mailStore().account(account.id).aliases, undefined);
 });
+
+test("spam actions modify Gmail labels and restore inbox without retaining a sender block", async () => {
+	const { mutateMessage } = await import("./service.server");
+	const s = mailStore();
+	const m = message();
+	s.saveMessages([m, { ...m, id: "cached-sent-view", folder: "sent" }]);
+	const bodies: unknown[] = [];
+	mock.method(globalThis, "fetch", async (url: unknown, init?: RequestInit) => {
+		assert.match(String(url), /messages\/123\/modify$/);
+		bodies.push(JSON.parse(String(init?.body)));
+		return Response.json({});
+	});
+	await mutateMessage(m.id, "block");
+	assert.deepEqual(bodies[0], {
+		addLabelIds: ["SPAM"],
+		removeLabelIds: ["INBOX", "TRASH"],
+	});
+	assert.deepEqual(s.blockedSenders(), [
+		{ accountId: account.id, address: "sender@example.com" },
+	]);
+	assert.equal(s.messages(account.id, "inbox").length, 0);
+	assert.equal(s.messages(account.id, "sent").length, 0);
+	s.saveMessages([{ ...m, folder: "spam" }]);
+	await mutateMessage(m.id, "inbox");
+	assert.deepEqual(bodies[1], {
+		addLabelIds: ["INBOX"],
+		removeLabelIds: ["SPAM", "TRASH"],
+	});
+	assert.deepEqual(s.blockedSenders(), []);
+});
+
+test("failed provider block preserves the original message and does not save a rule", async () => {
+	const { mutateMessage } = await import("./service.server");
+	const m = message();
+	mailStore().saveMessages([m]);
+	mock.method(globalThis, "fetch", async () =>
+		Response.json({ error: "unavailable" }, { status: 400 }),
+	);
+	await assert.rejects(() => mutateMessage(m.id, "block"));
+	assert.deepEqual(mailStore().blockedSenders(), []);
+	assert.equal(mailStore().message(m.id).folder, "inbox");
+	mailStore().saveMessages([
+		{ ...m, from: [{ name: "Me", address: account.email }] },
+	]);
+	await assert.rejects(() => mutateMessage(m.id, "block"), /내 주소/);
+});
+
+test("sender rules are normalized, encrypted, scoped to each account, and removed with an account", () => {
+	const s = mailStore();
+	const other = { ...account, id: randomUUID(), email: "second@example.com" };
+	s.saveAccount(other, { refreshToken: "test" });
+	s.setBlocked(account.id, " Sender@Example.com ", true);
+	s.setBlocked(other.id, "sender@example.com", true);
+	assert.equal(s.blockedSenders(account.id).length, 1);
+	const rows = s.db.prepare("SELECT data FROM blocked_senders").all();
+	assert.ok(
+		rows.every((row) => !String(row.data).includes("sender@example.com")),
+	);
+	s.setBlocked(account.id, "SENDER@example.com", false);
+	assert.equal(s.blockedSenders(account.id).length, 0);
+	assert.equal(s.blockedSenders(other.id).length, 1);
+	s.removeAccount(other.id);
+	assert.deepEqual(s.blockedSenders(), []);
+});
+
+test("inbox sync moves blocked senders before caching and never queues a new-mail notification", async () => {
+	const s = mailStore();
+	const m = message();
+	s.saveMessages([m]);
+	s.setBlocked(account.id, "sender@example.com", true);
+	s.setSetting(`baseline:${account.id}`, Date.now() - 10000);
+	let moves = 0;
+	mock.method(globalThis, "fetch", async (url: unknown, init?: RequestInit) => {
+		const path = String(url);
+		if (path.includes("messages?"))
+			return Response.json({ messages: [{ id: "123" }] });
+		if (path.includes("format=metadata"))
+			return Response.json({
+				id: "123",
+				internalDate: String(Date.now()),
+				labelIds: ["INBOX", "UNREAD"],
+				payload: {
+					headers: [{ name: "From", value: "Sender <SENDER@example.com>" }],
+				},
+			});
+		if (path.endsWith("/modify")) {
+			moves++;
+			assert.deepEqual(JSON.parse(String(init?.body)).addLabelIds, ["SPAM"]);
+			return Response.json({});
+		}
+		throw new Error(`Unexpected URL: ${path}`);
+	});
+	s.addSubscription(
+		{
+			endpoint: "https://fcm.googleapis.com/fcm/send/blocked",
+			keys: { p256dh: "a".repeat(87), auth: "a".repeat(22) },
+		},
+		"blocked",
+	);
+	const notify = mock.method(webpush, "sendNotification", async () => ({
+		statusCode: 201,
+		headers: {},
+		body: "",
+	}));
+	await syncAccount(account.id);
+	assert.equal(moves, 1);
+	assert.equal(s.messages(account.id, "inbox").length, 0);
+	assert.equal(notify.mock.callCount(), 0);
+	assert.equal(s.account(account.id).error, null);
+});
+
+test("spam listing includes Gmail spam and trash and spam links retain the folder", async () => {
+	const { listGmail } = await import("./gmail.server");
+	const { mailSearch } = await import("../orbit/navigation-search");
+	mock.method(globalThis, "fetch", async (url: unknown) => {
+		const params = new URL(String(url)).searchParams;
+		assert.equal(params.get("q")?.trim(), "in:spam");
+		assert.equal(params.get("includeSpamTrash"), "true");
+		return Response.json({ messages: [] });
+	});
+	await listGmail(account, "spam");
+	assert.equal(mailSearch({ folder: "spam" }).folder, "spam");
+});
+
+test("IMAP spam actions use the provider junk mailbox and restore with a UID move", async () => {
+	const { mutateImap, findMailbox } = await import("./imap.server");
+	account = { ...account, provider: "icloud" };
+	mailStore().saveAccount(account, { password: "test" });
+	mock.method(ImapFlow.prototype, "connect", async function (this: ImapFlow) {
+		Object.defineProperty(this, "usable", { value: true, configurable: true });
+	});
+	mock.method(ImapFlow.prototype, "list", async () => [
+		{ path: "Localized/Junk", name: "Custom", specialUse: "\\Junk" },
+	]);
+	mock.method(
+		ImapFlow.prototype,
+		"getMailboxLock",
+		async function (this: ImapFlow) {
+			this.mailbox = { uidValidity: 7n } as Exclude<ImapFlow["mailbox"], false>;
+			return { release() {} };
+		},
+	);
+	const moves: string[] = [];
+	mock.method(
+		ImapFlow.prototype,
+		"messageMove",
+		async (uid: string, destination: string, opts: unknown) => {
+			assert.equal(uid, "42");
+			assert.deepEqual(opts, { uid: true });
+			moves.push(destination);
+			return true;
+		},
+	);
+	const m = {
+		...message(),
+		remoteId: "7:42",
+		mailbox: "INBOX",
+		uidValidity: "7",
+	};
+	await mutateImap(account, m, "spam");
+	await mutateImap(
+		account,
+		{ ...m, folder: "spam", mailbox: "Localized/Junk" },
+		"inbox",
+	);
+	assert.deepEqual(moves, ["Localized/Junk", "INBOX"]);
+	const client = new ImapFlow({
+		host: "localhost",
+		port: 993,
+		auth: { user: "test", pass: "test" },
+		logger: false,
+	});
+	mock.method(client, "list", async () => [
+		{ name: "스팸메일함", path: "Spam" },
+	]);
+	assert.equal(await findMailbox(client, "spam"), "Spam");
+	mock.method(client, "list", async () => []);
+	await assert.rejects(() => findMailbox(client, "spam"), /스팸함/);
+});
+
+test("demo supports spam, block, unblock and restore through the same HTTP contract", async () => {
+	const list = await (
+		await handleMailRequest(request("demo/messages?folder=inbox"))
+	).json();
+	const m = list.messages[0];
+	assert.ok(m);
+	assert.equal(
+		(
+			await handleMailRequest(
+				request("demo/action", { id: m.id, action: "block" }),
+			)
+		).status,
+		200,
+	);
+	const status = await (await handleMailRequest(request("demo/status"))).json();
+	assert.ok(
+		status.blockedSenders.some(
+			(rule: { accountId: string }) => rule.accountId === m.accountId,
+		),
+	);
+	const spam = await (
+		await handleMailRequest(request("demo/messages?folder=spam"))
+	).json();
+	assert.ok(spam.messages.some((entry: MailMessage) => entry.id === m.id));
+	assert.equal(
+		(
+			await handleMailRequest(
+				request("demo/action", { id: m.id, action: "inbox" }),
+			)
+		).status,
+		200,
+	);
+	const restored = await (
+		await handleMailRequest(request("demo/messages?folder=inbox"))
+	).json();
+	assert.ok(restored.messages.some((entry: MailMessage) => entry.id === m.id));
+});

@@ -57,6 +57,7 @@ export function mailSearch(search: Record<string, unknown>): MailSearch {
 			search.folder === "inbox" ||
 			search.folder === "sent" ||
 			search.folder === "trash" ||
+			search.folder === "spam" ||
 			search.folder === "archive"
 				? search.folder
 				: undefined,

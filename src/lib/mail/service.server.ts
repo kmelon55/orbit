@@ -9,7 +9,7 @@ import {
 	listGmail,
 	mutateGmail,
 } from "./gmail.server";
-import { senderAddress } from "./identities";
+import { accountAddresses, senderAddress } from "./identities";
 import {
 	findMailbox,
 	imapClient,
@@ -24,6 +24,7 @@ import {
 	connectSchema,
 	MAX_SEND_BYTES,
 	type MailAccount,
+	type MailAction,
 	type MailDetail,
 	type MailFolder,
 	type SendMail,
@@ -121,6 +122,28 @@ async function fetchRemote(
 		account.provider === "gmail"
 			? await listGmail(account, folder, cursor, query)
 			: await listImap(account, folder, cursor, query, addresses);
+	// Apply Orbit sender rules before caching or notifying about inbox messages.
+	if (folder === "inbox") {
+		const blocked = new Set(
+			mailStore()
+				.blockedSenders(account.id)
+				.map((rule) => rule.address),
+		);
+		const kept = [];
+		for (const message of result.messages) {
+			if (
+				message.from.some((sender) =>
+					blocked.has(sender.address.trim().toLowerCase()),
+				)
+			) {
+				if (account.provider === "gmail")
+					await mutateGmail(account, message, "spam");
+				else await mutateImap(account, message, "spam");
+				mailStore().deleteMessage(message.id);
+			} else kept.push(message);
+		}
+		result.messages = kept;
+	}
 	if ("uidValidity" in result) {
 		for (const cached of mailStore().messages(account.id, folder)) {
 			if (cached.uidValidity !== result.uidValidity)
@@ -271,26 +294,33 @@ async function fetchConversation(id: string, remote = false) {
 	}
 	const messages = relatedMessages(
 		store.message(id),
-		["inbox", "sent", "archive", "trash"].flatMap((folder) =>
+		["inbox", "sent", "archive", "spam", "trash"].flatMap((folder) =>
 			store.messages(account.id, folder),
 		),
 	).sort((a, b) => a.date - b.date);
 	return { messages, incomplete, error: errors[0] };
 }
-export async function mutateMessage(
-	id: string,
-	action: "read" | "unread" | "trash" | "archive",
-) {
+export async function mutateMessage(id: string, action: MailAction) {
 	const m = mailStore().message(id);
 	return accountQueue(m.accountId, async () => {
 		const a = mailStore().account(m.accountId);
+		const sender = m.from[0]?.address.trim().toLowerCase();
+		if (action === "block" && (!sender || accountAddresses(a).includes(sender)))
+			throw new Error("내 주소 또는 발신자가 없는 메일은 차단할 수 없습니다.");
+		const providerAction = action === "block" ? "spam" : action;
 		if (action === "trash" && m.folder === "trash")
 			throw new Error("이미 휴지통에 있는 메일입니다.");
-		if (a.provider === "gmail") await mutateGmail(a, m, action);
-		else await mutateImap(a, m, action);
+		if (providerAction !== m.folder) {
+			if (a.provider === "gmail") await mutateGmail(a, m, providerAction);
+			else await mutateImap(a, m, providerAction);
+		}
+		if (action === "block" && sender)
+			mailStore().setBlocked(a.id, sender, true);
+		if (action === "inbox" && sender)
+			mailStore().setBlocked(a.id, sender, false);
 		if (action === "read" || action === "unread") {
 			// Gmail labels share read state across folders.
-			for (const folder of ["inbox", "sent", "trash", "archive"]) {
+			for (const folder of ["inbox", "sent", "trash", "archive", "spam"]) {
 				for (const cached of mailStore().messages(a.id, folder))
 					if (
 						cached.remoteId === m.remoteId &&
@@ -300,7 +330,15 @@ export async function mutateMessage(
 							{ ...cached, unread: action === "unread" },
 						]);
 			}
-		} else mailStore().deleteMessage(id);
+		} else if (providerAction !== m.folder) {
+			// Gmail folder views share one remote message; invalidate every cached view.
+			if (a.provider === "gmail") {
+				for (const folder of ["inbox", "sent", "archive", "spam", "trash"])
+					for (const cached of mailStore().messages(a.id, folder))
+						if (cached.remoteId === m.remoteId)
+							mailStore().deleteMessage(cached.id);
+			} else mailStore().deleteMessage(id);
+		}
 		conversationRequests.clear();
 		return { ok: true };
 	});

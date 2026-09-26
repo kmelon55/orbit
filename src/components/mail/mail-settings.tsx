@@ -301,6 +301,43 @@ export function MailSettings({
 								/>
 								이 계정의 새 메일 알림
 							</label>
+							{(status.blockedSenders || []).some(
+								(rule) => rule.accountId === a.id,
+							) && (
+								<div className="mt-3 space-y-1 border-t pt-3">
+									<p className="text-xs text-muted-foreground">
+										차단한 발신자 · Orbit 동기화 시 스팸함으로 이동
+									</p>
+									{(status.blockedSenders || [])
+										.filter((rule) => rule.accountId === a.id)
+										.map((rule) => (
+											<div
+												key={rule.address}
+												className="flex items-center gap-2"
+											>
+												<span
+													className="min-w-0 flex-1 truncate"
+													title={rule.address}
+												>
+													{rule.address}
+												</span>
+												<Button
+													size="sm"
+													variant="ghost"
+													disabled={busy}
+													onClick={() =>
+														void run(async () => {
+															await mailApi("unblock", rule);
+															await refresh();
+														})
+													}
+												>
+													차단 해제
+												</Button>
+											</div>
+										))}
+								</div>
+							)}
 							{a.provider === "icloud" && (
 								<MailIdentitiesSettings
 									key={`${a.id}:${JSON.stringify(a.aliases)}:${a.defaultFrom}`}

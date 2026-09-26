@@ -9,6 +9,7 @@ import {
 	type MailFolder,
 	type MailMessage,
 	PAGE_SIZE,
+	type ProviderMailAction,
 } from "./types";
 
 export function gmailConfigured() {
@@ -90,6 +91,7 @@ type GmailMeta = {
 };
 const queries: Record<MailFolder, string> = {
 	inbox: "in:inbox",
+	spam: "in:spam",
 	sent: "in:sent",
 	trash: "in:trash",
 	archive: "-in:inbox -in:sent -in:drafts -in:trash -in:spam",
@@ -103,7 +105,8 @@ export async function listGmail(
 	const params = new URLSearchParams({
 		maxResults: String(PAGE_SIZE),
 		q: `${queries[folder]} ${query || ""}`,
-		includeSpamTrash: folder === "trash" ? "true" : "false",
+		includeSpamTrash:
+			folder === "trash" || folder === "spam" ? "true" : "false",
 	});
 	if (cursor) params.set("pageToken", cursor);
 	const list = await gmailRequest<{
@@ -176,11 +179,13 @@ export async function gmailConversation(
 				const labels = m.labelIds || [];
 				const folder: MailFolder = labels.includes("TRASH")
 					? "trash"
-					: labels.includes("INBOX")
-						? "inbox"
-						: labels.includes("SENT")
-							? "sent"
-							: "archive";
+					: labels.includes("SPAM")
+						? "spam"
+						: labels.includes("INBOX")
+							? "inbox"
+							: labels.includes("SENT")
+								? "sent"
+								: "archive";
 				return gmailSummary(account, folder, m);
 			}),
 	);
@@ -203,7 +208,7 @@ export async function gmailRaw(account: MailAccount, message: MailMessage) {
 export async function mutateGmail(
 	account: MailAccount,
 	m: MailMessage,
-	action: "read" | "unread" | "trash" | "archive",
+	action: ProviderMailAction,
 ) {
 	if (action === "trash")
 		return gmailRequest(account, `messages/${m.remoteId}/trash`, {
@@ -212,9 +217,24 @@ export async function mutateGmail(
 	return gmailRequest(account, `messages/${m.remoteId}/modify`, {
 		method: "POST",
 		body: JSON.stringify({
-			addLabelIds: action === "unread" ? ["UNREAD"] : [],
+			addLabelIds:
+				action === "unread"
+					? ["UNREAD"]
+					: action === "spam"
+						? ["SPAM"]
+						: action === "inbox"
+							? ["INBOX"]
+							: [],
 			removeLabelIds:
-				action === "read" ? ["UNREAD"] : action === "archive" ? ["INBOX"] : [],
+				action === "read"
+					? ["UNREAD"]
+					: action === "archive"
+						? ["INBOX", "SPAM", "TRASH"]
+						: action === "spam"
+							? ["INBOX", "TRASH"]
+							: action === "inbox"
+								? ["SPAM", "TRASH"]
+								: [],
 		}),
 	});
 }
