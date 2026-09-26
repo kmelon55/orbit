@@ -63,7 +63,14 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 		null,
 	);
 	const [reading, setReading] = useState(false);
-	const [mutating, setMutating] = useState(false);
+	const [mutatingIds, setMutatingIds] = useState<Set<string>>(new Set());
+	const pendingActions = useRef(new Set<string>());
+	const selectedRef = useRef(selected);
+	selectedRef.current = selected;
+	const mailScope = JSON.stringify([accountIds, folder, search]);
+	const mailScopeRef = useRef(mailScope);
+	mailScopeRef.current = mailScope;
+	const mutating = mutatingIds.has(selected);
 	const [detailError, setDetailError] = useState("");
 	const [remoteImages, setRemoteImages] = useState(true);
 	const detailGeneration = useRef(0);
@@ -98,6 +105,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 		updated,
 		refresh,
 		refreshStatus,
+		beginMutation,
 		refreshRef,
 	} = useMailList(accountIds, folder, search, api);
 	const markThreadRead = useCallback(
@@ -114,6 +122,12 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 	const [threadIncomplete, setThreadIncomplete] = useState(false);
 	const [detailRetry, setDetailRetry] = useState(0);
 	const detailCache = useRef(new Map<string, MailDetail>());
+	const threadCache = useRef(
+		new Map<
+			string,
+			{ messages: MailMessage[]; incomplete: boolean; error?: string }
+		>(),
+	);
 	const rows = useMemo(() => conversations(messages), [messages]);
 	const views = useMemo(
 		() => mailViews(status?.accounts || []),
@@ -137,9 +151,14 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 		const controller = new AbortController();
 		setThreadLoading(true);
 		setThreadError("");
-		setThreadIncomplete(false);
-		setThread((previous) =>
-			previous.some((m) => m.id === selected) ? previous : [],
+		const cachedThread = detailRetry
+			? undefined
+			: threadCache.current.get(selected);
+		setThreadIncomplete(cachedThread?.incomplete ?? false);
+		setThread(
+			(previous) =>
+				cachedThread?.messages ??
+				(previous.some((m) => m.id === selected) ? previous : []),
 		);
 		const path = `conversation?id=${encodeURIComponent(selected)}&revision=${detailRetry}`;
 		type Conversation = {
@@ -147,7 +166,11 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 			incomplete: boolean;
 			error?: string;
 		};
-		void api<Conversation>(path, undefined, controller.signal)
+		void (
+			cachedThread
+				? Promise.resolve(cachedThread)
+				: api<Conversation>(path, undefined, controller.signal)
+		)
 			.then(async (cached) => {
 				if (controller.signal.aborted) return;
 				setThread(cached.messages);
@@ -157,6 +180,11 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 					controller.signal,
 				);
 				if (controller.signal.aborted) return;
+				threadCache.current.set(selected, next);
+				if (threadCache.current.size > 30)
+					threadCache.current.delete(
+						threadCache.current.keys().next().value as string,
+					);
 				setThread(next.messages);
 				setThreadIncomplete(next.incomplete);
 				setThreadError(next.error || "");
@@ -249,28 +277,62 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 			router.history.back();
 		else selectMessage("");
 	}
-	async function action(kind: "read" | "unread" | "trash" | "archive") {
-		if (!detail) return;
-		setMutating(true);
-		detailCache.current.delete(`${detail.id}:false`);
-		detailCache.current.delete(`${detail.id}:true`);
+	async function action(
+		kind: "read" | "unread" | "trash" | "archive",
+		target: MailMessage | null = detail,
+	) {
+		if (!target || pendingActions.current.has(target.id)) return;
+		const originalDetail = detail?.id === target.id ? detail : null;
+		threadCache.current.clear();
+		const summary = messages.find((message) => message.id === target.id);
+		const scope = mailScope;
+		const removing = kind === "trash" || kind === "archive";
+		const unread = kind === "unread";
+		pendingActions.current.add(target.id);
+		setMutatingIds(new Set(pendingActions.current));
+		const finish = beginMutation();
+		if (selected === target.id) detailGeneration.current++;
+		for (const images of [false, true])
+			detailCache.current.delete(`${target.id}:${images}`);
+		if (removing) {
+			if (selected === target.id) selectMessage("");
+			setMessages((previous) =>
+				previous.filter((message) => message.id !== target.id),
+			);
+		} else if (kind === "read" || kind === "unread") {
+			if (originalDetail) setDetail({ ...originalDetail, unread });
+			setMessages((previous) =>
+				previous.map((message) =>
+					message.id === target.id ? { ...message, unread } : message,
+				),
+			);
+		}
 		try {
-			await api("action", { id: detail.id, action: kind });
-			if (kind === "trash" || kind === "archive") {
-				selectMessage("");
-				setMessages((prev) => prev.filter((m) => m.id !== detail.id));
-			} else {
-				setDetail({ ...detail, unread: kind === "unread" });
-				setMessages((prev) =>
-					prev.map((m) =>
-						m.id === detail.id ? { ...m, unread: kind === "unread" } : m,
-					),
+			await api("action", { id: target.id, action: kind });
+		} catch (error) {
+			if (mailScopeRef.current === scope) {
+				setMessages((previous) =>
+					removing && summary
+						? [
+								...previous.filter((message) => message.id !== target.id),
+								summary,
+							].sort((a, b) => b.date - a.date)
+						: previous.map((message) =>
+								message.id === target.id
+									? { ...message, unread: target.unread }
+									: message,
+							),
 				);
 			}
-		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "처리하지 못했습니다.");
+			if (selectedRef.current === target.id && originalDetail)
+				setDetail(originalDetail);
+			toast.error(
+				error instanceof Error ? error.message : "처리하지 못했습니다.",
+			);
 		} finally {
-			setMutating(false);
+			finish();
+			pendingActions.current.delete(target.id);
+			setMutatingIds(new Set(pendingActions.current));
 		}
 	}
 	function changed() {

@@ -3,6 +3,20 @@ import { mailApi } from "#/lib/mail/client";
 import { mailScopes } from "#/lib/mail/identities";
 import type { MailFolder, MailMessage, MailStatus } from "#/lib/mail/types";
 
+type SessionCache = {
+	status: MailStatus | null;
+	pages: Map<string, MailMessage[]>;
+	statusRequest?: Promise<MailStatus>;
+};
+const sessions = new WeakMap<typeof mailApi, SessionCache>();
+function sessionFor(api: typeof mailApi) {
+	let session = sessions.get(api);
+	if (!session) {
+		session = { status: null, pages: new Map() };
+		sessions.set(api, session);
+	}
+	return session;
+}
 type Page = { messages: MailMessage[]; cursor: string | null };
 export function useMailList(
 	accountIds: string[] | null,
@@ -10,8 +24,9 @@ export function useMailList(
 	search: string,
 	api: typeof mailApi = mailApi,
 ) {
-	const [status, setStatus] = useState<MailStatus | null>(null);
-	const [messages, setMessages] = useState<MailMessage[]>([]);
+	const session = sessionFor(api);
+	const [status, setStatus] = useState<MailStatus | null>(session.status);
+	const [messages, setMessagesState] = useState<MailMessage[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [syncing, setSyncing] = useState<string[]>([]);
 	const [errors, setErrors] = useState<Record<string, string>>({});
@@ -19,7 +34,8 @@ export function useMailList(
 	const [cursors, setCursors] = useState<Record<string, string | null>>({});
 	const [updated, setUpdated] = useState<Record<string, number>>({});
 	const generation = useRef(0);
-	const cache = useRef(new Map<string, MailMessage[]>());
+	const cache = useRef(session.pages);
+	const mutations = useRef(0);
 	const controller = useRef<AbortController | null>(null);
 	const active = useRef(false);
 	const scope = JSON.stringify([
@@ -32,19 +48,55 @@ export function useMailList(
 			account.aliases || [],
 		]),
 	]);
+	const scopeRef = useRef(scope);
+	scopeRef.current = scope;
+	const setMessages = useCallback(
+		(update: React.SetStateAction<MailMessage[]>) => {
+			setMessagesState((previous) => {
+				const next = typeof update === "function" ? update(previous) : update;
+				cache.current.set(scopeRef.current, next);
+				return next;
+			});
+		},
+		[],
+	);
+	const beginMutation = useCallback(() => {
+		mutations.current++;
+		const originalScope = scopeRef.current;
+		for (const key of cache.current.keys())
+			if (key !== originalScope) cache.current.delete(key);
+		generation.current++;
+		controller.current?.abort();
+		controller.current = new AbortController();
+		active.current = false;
+		setLoading(false);
+		setSyncing([]);
+		return () => {
+			mutations.current = Math.max(0, mutations.current - 1);
+			if (!mutations.current && scopeRef.current !== originalScope)
+				void refreshRef.current(true);
+		};
+	}, []);
 	const statusRef = useRef(status);
 	statusRef.current = status;
 	const cursorsRef = useRef(cursors);
 	cursorsRef.current = cursors;
 	const refreshStatus = useCallback(async () => {
-		const next = await api<MailStatus>("status");
-		setStatus(next);
-		statusRef.current = next;
-		return next;
-	}, [api]);
+		const request = session.statusRequest ?? api<MailStatus>("status");
+		session.statusRequest = request;
+		try {
+			const next = await request;
+			session.status = next;
+			setStatus(next);
+			statusRef.current = next;
+			return next;
+		} finally {
+			if (session.statusRequest === request) session.statusRequest = undefined;
+		}
+	}, [api, session]);
 	const refresh = useCallback(
 		async (remote = true, more = false) => {
-			if (active.current) return;
+			if (active.current || mutations.current) return;
 			const current = generation.current;
 			const abort = controller.current;
 			const valid = () =>
@@ -156,7 +208,7 @@ export function useMailList(
 				}
 			}
 		},
-		[accountIds, folder, search, scope, refreshStatus, api],
+		[accountIds, folder, search, scope, refreshStatus, api, setMessages],
 	);
 	const refreshRef = useRef(refresh);
 	refreshRef.current = refresh;
@@ -168,13 +220,15 @@ export function useMailList(
 		controller.current?.abort();
 		controller.current = new AbortController();
 		active.current = false;
-		setMessages(cache.current.get(scope) || []);
+		const cached = cache.current.get(scope);
+		setMessagesState(cached || []);
 		setCursors({});
 		setSyncing([]);
 		setErrors({});
 		setLoading(true);
 		const current = generation.current;
-		void refreshRef.current(false).then(() => {
+		void refreshRef.current(Boolean(cached)).then(() => {
+			if (cached) return;
 			if (current === generation.current) void refreshRef.current(true);
 		});
 		return () => {
@@ -206,6 +260,7 @@ export function useMailList(
 		updated,
 		refresh,
 		refreshStatus,
+		beginMutation,
 		refreshRef,
 	};
 }

@@ -15,8 +15,8 @@ export async function mailApi<T>(
 	return value as T;
 }
 
+const demoClient: typeof mailApi = (path, body, signal) =>
+	mailApi(`demo/${path}`, body, signal);
 export function createMailClient(demo = false): typeof mailApi {
-	return demo
-		? (path, body, signal) => mailApi(`demo/${path}`, body, signal)
-		: mailApi;
+	return demo ? demoClient : mailApi;
 }
