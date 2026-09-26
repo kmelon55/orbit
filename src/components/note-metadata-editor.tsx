@@ -1,6 +1,7 @@
 import { Tags, X } from "lucide-react";
 import { type KeyboardEvent, useState } from "react";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 function parseTags(value: string) {
 	return Array.from(
@@ -60,12 +61,21 @@ export function NoteMetadataEditor({
 
 	return (
 		<div className="border-b border-border/55 pb-4">
-			<Input
+			<Textarea
 				value={localTitle}
-				onChange={(event) => updateTitle(event.target.value)}
+				onChange={(event) =>
+					updateTitle(event.target.value.replace(/[\r\n]+/g, " "))
+				}
+				onKeyDown={(event) => {
+					if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+						event.preventDefault();
+					}
+				}}
+				aria-label="노트 제목"
 				placeholder="제목 없음"
+				rows={1}
 				maxLength={160}
-				className="h-auto rounded-none border-0 bg-transparent px-0 py-0 text-4xl font-semibold tracking-[-0.035em] text-foreground shadow-none focus-visible:ring-0 md:text-[2.75rem] dark:bg-transparent"
+				className="min-h-0 resize-none overflow-hidden rounded-none border-0 bg-transparent px-0 py-0 text-4xl leading-tight font-semibold tracking-[-0.035em] whitespace-pre-wrap text-foreground shadow-none wrap-anywhere focus-visible:ring-0 md:text-[2.75rem] dark:bg-transparent"
 			/>
 			<div className="mt-3 flex min-h-8 items-center gap-2">
 				<Tags className="size-3.5 shrink-0 text-muted-foreground" />
