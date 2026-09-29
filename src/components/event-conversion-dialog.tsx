@@ -1,8 +1,10 @@
 import { ArrowRight, CalendarDays, LoaderCircle } from "lucide-react";
 import { useRef, useState } from "react";
 import { formatDayKey } from "#/lib/orbit/para";
+import { rangeFromMinutes, scheduleMinute } from "#/lib/orbit/schedule-range";
 import type { OrbitItem } from "#/lib/orbit/schema";
 import { DatePicker, TimePicker } from "@/components/schedule-controls";
+import { ScheduleRangeCalendar } from "@/components/schedule-range-calendar";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -72,7 +74,7 @@ export function EventConversionDialog({
 				if (!open && !savingRef.current) onClose();
 			}}
 		>
-			<DialogContent className="gap-5 sm:max-w-md">
+			<DialogContent className="gap-5 sm:max-w-xl">
 				<DialogHeader>
 					<div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
 						<source.icon className="size-3.5" />
@@ -107,7 +109,7 @@ export function EventConversionDialog({
 							</label>
 						</div>
 						<div className="space-y-2 rounded-xl bg-muted/40 p-3">
-							<div className="grid grid-cols-[1.75rem_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[1.75rem_minmax(0,1fr)_auto]">
+							<div className="grid grid-cols-[1.75rem_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[1.75rem_minmax(0,1fr)_9.5rem]">
 								<span className="w-7 shrink-0 text-xs text-muted-foreground">
 									시작
 								</span>
@@ -118,18 +120,28 @@ export function EventConversionDialog({
 										if (endDate < value) setEndDate(value);
 									}}
 									label="시작 날짜"
-									className="min-w-0 flex-1 bg-background"
+									className={`w-full min-w-0 bg-background ${allDay ? "sm:col-span-2" : ""}`}
 								/>
 								{!allDay && (
 									<TimePicker
 										value={startTime}
-										onChange={setStartTime}
+										onChange={(time) => {
+											setStartTime(time);
+											if (endDate === startDate && endTime <= time) {
+												const next = rangeFromMinutes(
+													scheduleMinute(startDate, time),
+													scheduleMinute(startDate, time) + 60,
+												);
+												setEndDate(next.endDate);
+												setEndTime(next.endTime);
+											}
+										}}
 										label="시작 시간"
-										className="col-start-2 bg-background sm:col-start-auto"
+										className="col-start-2 w-full bg-background sm:col-start-auto"
 									/>
 								)}
 							</div>
-							<div className="grid grid-cols-[1.75rem_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[1.75rem_minmax(0,1fr)_auto]">
+							<div className="grid grid-cols-[1.75rem_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[1.75rem_minmax(0,1fr)_9.5rem]">
 								<span className="w-7 shrink-0 text-xs text-muted-foreground">
 									종료
 								</span>
@@ -138,18 +150,28 @@ export function EventConversionDialog({
 									onChange={setEndDate}
 									min={startDate}
 									label="종료 날짜"
-									className="min-w-0 flex-1 bg-background"
+									className={`w-full min-w-0 bg-background ${allDay ? "sm:col-span-2" : ""}`}
 								/>
 								{!allDay && (
 									<TimePicker
 										value={endTime}
 										onChange={setEndTime}
 										label="종료 시간"
-										className="col-start-2 bg-background sm:col-start-auto"
+										className="col-start-2 w-full bg-background sm:col-start-auto"
 									/>
 								)}
 							</div>
 						</div>
+						<ScheduleRangeCalendar
+							value={{ startDate, endDate, startTime, endTime }}
+							disabled={saving}
+							onChange={(range) => {
+								setStartDate(range.startDate);
+								setEndDate(range.endDate);
+								setStartTime(range.startTime);
+								setEndTime(range.endTime);
+							}}
+						/>
 					</fieldset>
 					{(invalid || error) && (
 						<p role="alert" className="text-xs text-destructive">

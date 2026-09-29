@@ -17,6 +17,7 @@ import {
 	orbitItemSchema,
 } from "#/lib/orbit/schema";
 import { DatePicker, TimePicker } from "@/components/schedule-controls";
+import { ScheduleRangeCalendar } from "@/components/schedule-range-calendar";
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -248,7 +249,7 @@ export function ScheduleEditor({
 	return (
 		<>
 			<Dialog open={open} onOpenChange={onOpenChange}>
-				<DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">
+				<DialogContent className="gap-0 overflow-y-auto p-0 sm:max-w-xl">
 					<form
 						onSubmit={(event) => {
 							event.preventDefault();
@@ -296,18 +297,19 @@ export function ScheduleEditor({
 											<button
 												type="button"
 												role="switch"
+												aria-label="종일"
 												aria-checked={allDay}
 												onClick={() => setAllDay((current) => !current)}
 												className={`relative h-5 w-9 rounded-full transition-colors ${allDay ? "bg-blue-500" : "bg-muted-foreground/25"}`}
 											>
 												<span
-													className={`absolute top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform ${allDay ? "translate-x-4" : "translate-x-0.5"}`}
+													className={`absolute top-0.5 left-0.5 size-4 rounded-full bg-white shadow-sm transition-transform ${allDay ? "translate-x-4" : "translate-x-0"}`}
 												/>
 											</button>
 										</div>
 									</div>
 									<div className="ml-7 grid gap-2 rounded-xl bg-muted/40 p-2.5">
-										<div className="grid items-center gap-2 sm:grid-cols-[2.5rem_minmax(0,1fr)_minmax(0,0.82fr)]">
+										<div className="grid items-center gap-2 sm:grid-cols-[2rem_minmax(0,1fr)_9.5rem]">
 											<span className="text-xs font-medium text-muted-foreground">
 												시작
 											</span>
@@ -318,7 +320,7 @@ export function ScheduleEditor({
 													if (endDate < value) setEndDate(value);
 												}}
 												label="시작 날짜"
-												className="w-full bg-background"
+												className={`w-full min-w-0 bg-background ${allDay ? "sm:col-span-2" : ""}`}
 											/>
 											{!allDay ? (
 												<TimePicker
@@ -337,7 +339,7 @@ export function ScheduleEditor({
 												/>
 											) : null}
 										</div>
-										<div className="grid items-center gap-2 sm:grid-cols-[2.5rem_minmax(0,1fr)_minmax(0,0.82fr)]">
+										<div className="grid items-center gap-2 sm:grid-cols-[2rem_minmax(0,1fr)_9.5rem]">
 											<span className="text-xs font-medium text-muted-foreground">
 												종료
 											</span>
@@ -346,7 +348,7 @@ export function ScheduleEditor({
 												min={startDate}
 												onChange={setEndDate}
 												label="종료 날짜"
-												className="w-full bg-background"
+												className={`w-full min-w-0 bg-background ${allDay ? "sm:col-span-2" : ""}`}
 											/>
 											{!allDay ? (
 												<TimePicker
@@ -358,6 +360,15 @@ export function ScheduleEditor({
 											) : null}
 										</div>
 									</div>
+									<ScheduleRangeCalendar
+										value={{ startDate, endDate, startTime, endTime }}
+										onChange={(range) => {
+											setStartDate(range.startDate);
+											setEndDate(range.endDate);
+											setStartTime(range.startTime);
+											setEndTime(range.endTime);
+										}}
+									/>
 								</div>
 							) : (
 								<div className="grid grid-cols-[1rem_minmax(0,1fr)] items-start gap-3">
