@@ -291,14 +291,14 @@ function UnifiedFolderWorkspace({
 						>
 							<ChevronRight
 								className={cn(
-									"size-3.5 shrink-0 text-muted-foreground transition-transform",
+									"size-3.5 shrink-0 text-muted-foreground transition-transform duration-[360ms] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none",
 									expanded && hasChildren && "rotate-90",
 									!hasChildren && "opacity-20",
 								)}
 							/>
 							<FolderClosed
 								className={cn(
-									"size-5 shrink-0 transition-transform group-hover/folder:scale-105",
+									"size-5 shrink-0 transition-transform group-hover/folder:scale-105 motion-reduce:transition-none",
 									color.icon,
 								)}
 							/>

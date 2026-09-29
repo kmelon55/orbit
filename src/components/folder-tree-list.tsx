@@ -6,6 +6,8 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { useFolderTreeMotion } from "#/hooks/use-folder-tree-motion";
+import { useTreeDragIntent } from "#/hooks/use-tree-drag-intent";
 import {
 	type FolderRow,
 	flattenFolderTree,
@@ -49,6 +51,8 @@ export function FolderTreeList({
 	renderNote: (item: OrbitItem, depth: number) => ReactNode;
 }) {
 	const [dragKey, setDragKey] = useState<string>();
+	const dragIntent = useTreeDragIntent();
+	const suppressClick = useRef(false);
 	const dragRef = useRef<string | undefined>(undefined);
 	const [dropTarget, setDropTarget] = useState<MoveTreeInput>();
 	const [preview, setPreview] = useState<ReturnType<typeof planTreeMove>>();
@@ -80,7 +84,7 @@ export function FolderTreeList({
 		const ratio = (event.clientY - bounds.top) / bounds.height;
 		const position = !target
 			? "inside"
-			: kind === "folder" && ratio > 0.25 && ratio < 0.75
+			: kind === "folder" && ratio > 0.3 && ratio < 0.7
 				? "inside"
 				: ratio < 0.5
 					? "before"
@@ -126,6 +130,7 @@ export function FolderTreeList({
 		event.stopPropagation();
 		const input = targetFor(event, target, kind);
 		setDragKey(undefined);
+		dragIntent.reset();
 		dragRef.current = undefined;
 		setDropTarget(undefined);
 		if (!input) return;
@@ -153,6 +158,7 @@ export function FolderTreeList({
 		[index, displayCollapsed, query],
 	);
 	const viewport = useRef<HTMLDivElement>(null);
+	const captureFolderMotion = useFolderTreeMotion(viewport, rows);
 	const [view, setView] = useState({ top: 0, height: 600 });
 	useLayoutEffect(() => {
 		const element = viewport.current;
@@ -175,8 +181,22 @@ export function FolderTreeList({
 		view.height,
 		ROW_HEIGHT,
 	);
+	const insertion = useMemo(() => {
+		if (!dropTarget?.target || dropTarget.position === "inside") return;
+		const targetIndex = rows.findIndex((row) => row.key === dropTarget.target);
+		if (targetIndex < 0) return;
+		const target = rows[targetIndex];
+		let boundary = targetIndex;
+		if (dropTarget.position === "after") {
+			boundary += 1;
+			// After an expanded folder means after its whole visible branch.
+			while (boundary < rows.length && rows[boundary].depth > target.depth)
+				boundary += 1;
+		}
+		return { top: Math.max(0, boundary * ROW_HEIGHT - 1), depth: target.depth };
+	}, [dropTarget, rows]);
 	return (
-		<>
+		<div className="relative flex min-h-0 flex-1 flex-col">
 			{moveError ? (
 				<output className="px-3 text-xs text-destructive">{moveError}</output>
 			) : null}
@@ -184,7 +204,7 @@ export function FolderTreeList({
 				<button
 					type="button"
 					className={cn(
-						"mx-2 mb-1 rounded border border-dashed px-2 py-2 text-xs",
+						"absolute right-4 bottom-3 z-30 rounded-lg border border-dashed bg-background px-3 py-2 text-xs shadow-sm",
 						dropTarget && !dropTarget.target && "border-primary bg-primary/10",
 					)}
 					onDragOver={(event) => dragOver(event)}
@@ -197,6 +217,15 @@ export function FolderTreeList({
 				role="tree"
 				aria-label="폴더와 노트"
 				aria-busy={Boolean(preview)}
+				onClickCapture={(event) => {
+					if (suppressClick.current && event.detail !== 0) {
+						suppressClick.current = false;
+						event.preventDefault();
+						event.stopPropagation();
+						return;
+					}
+					captureFolderMotion(event);
+				}}
 				onDragOver={(event) => {
 					if (!(event.target as HTMLElement).closest("[data-tree-index]"))
 						dragOver(event);
@@ -258,11 +287,23 @@ export function FolderTreeList({
 								key={row.key}
 								data-tree-index={start + offset}
 								data-tree-key={row.key}
+								data-drag-ready={dragIntent.readyKey === row.key || undefined}
 								draggable={
 									!preview && !row.key.startsWith("item:orbit-optimistic:")
 								}
+								onPointerDown={(event) => {
+									suppressClick.current = false;
+									if (!preview && !row.key.startsWith("item:orbit-optimistic:"))
+										dragIntent.pointerDown(event, row.key);
+								}}
 								onDragStart={(event) => {
 									event.stopPropagation();
+									if (!dragIntent.canStart(row.key)) {
+										event.preventDefault();
+										dragIntent.reset();
+										return;
+									}
+									suppressClick.current = true;
 									dragRef.current = row.key;
 									setDragKey(row.key);
 									setMoveError(undefined);
@@ -274,6 +315,7 @@ export function FolderTreeList({
 									event.dataTransfer.setData("text/plain", row.key);
 								}}
 								onDragEnd={() => {
+									dragIntent.reset();
 									dragRef.current = undefined;
 									setDragKey(undefined);
 									setDropTarget(undefined);
@@ -282,13 +324,12 @@ export function FolderTreeList({
 								onDrop={(event) => void drop(event, row.key, row.kind)}
 								className={cn(
 									"rounded-lg",
+									dragIntent.readyKey === row.key &&
+										"bg-muted/70 [&_*]:cursor-grab",
 									dragKey === row.key && "opacity-40",
 									dropTarget?.target === row.key &&
-										(dropTarget.position === "inside"
-											? "bg-primary/10 ring-1 ring-inset ring-primary"
-											: dropTarget.position === "before"
-												? "border-t-2 border-primary"
-												: "border-b-2 border-primary"),
+										dropTarget.position === "inside" &&
+										"bg-blue-500/10 ring-1 ring-inset ring-blue-500",
 								)}
 								role="treeitem"
 								tabIndex={-1}
@@ -311,6 +352,16 @@ export function FolderTreeList({
 									: renderNote(row.item, row.depth)}
 							</div>
 						))}
+						{insertion ? (
+							<div
+								aria-hidden="true"
+								data-tree-insertion-line
+								className="pointer-events-none absolute right-2 z-20 h-0.5 rounded-full bg-blue-500"
+								style={{ top: insertion.top, left: 8 + insertion.depth * 16 }}
+							>
+								<span className="absolute -top-0.5 -left-0.5 size-1.5 rounded-full bg-blue-500" />
+							</div>
+						) : null}
 					</div>
 				) : (
 					<div className="px-3 py-10 text-center text-sm leading-6 text-muted-foreground">
@@ -320,6 +371,6 @@ export function FolderTreeList({
 					</div>
 				)}
 			</div>
-		</>
+		</div>
 	);
 }
