@@ -3,6 +3,7 @@ import { ListTodo, Mail } from "lucide-react";
 import type { ReactNode } from "react";
 import type { OrbitSnapshot } from "#/lib/orbit/schema";
 import { AppSidebar } from "@/components/app-sidebar";
+import { GlobalSearch } from "@/components/global-search";
 import { MobileNavigation } from "@/components/mobile-navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -66,6 +67,7 @@ export function AppShell({
 							aria-label="빠른 이동"
 							className="ml-auto flex shrink-0 items-center gap-1"
 						>
+							<GlobalSearch snapshot={snapshot} />
 							<Button
 								asChild
 								variant={pathname === "/mail" ? "secondary" : "ghost"}

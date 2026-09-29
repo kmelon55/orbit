@@ -8,6 +8,7 @@ import {
 	Settings,
 	Share,
 	Smartphone,
+	Sparkles,
 	SquarePlus,
 	Sun,
 	UserRound,
@@ -16,6 +17,7 @@ import {
 import { Dialog as DialogPrimitive, Switch as SwitchPrimitive } from "radix-ui";
 import { useState } from "react";
 import { AccountSettings } from "@/components/account-settings";
+import { AiSettings } from "@/components/ai-settings";
 import { useTheme } from "@/components/theme-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,11 +35,12 @@ import {
 import { usePwaInstall } from "@/hooks/use-pwa-install";
 import { cn } from "@/lib/utils";
 
-type SettingsSection = "appearance" | "editor" | "install" | "account";
+type SettingsSection = "appearance" | "editor" | "install" | "account" | "ai";
 
 const navigation = [
 	{ id: "appearance", label: "화면", icon: Palette },
 	{ id: "editor", label: "에디터", icon: Keyboard },
+	{ id: "ai", label: "AI", icon: Sparkles },
 	{ id: "install", label: "앱 설치", icon: Smartphone },
 	{ id: "account", label: "계정", icon: UserRound },
 ] as const;
@@ -352,6 +355,8 @@ export function SettingsDialog() {
 									</section>
 								</div>
 							</>
+						) : section === "ai" ? (
+							<AiSettings />
 						) : section === "account" ? (
 							<AccountSettings />
 						) : (

@@ -35,6 +35,18 @@ export function mailDirectory() {
 export class MailStore {
 	readonly db: DatabaseSync;
 	private key: Buffer;
+	private searchIndex?: {
+		dataVersion: number;
+		expiresAt: number;
+		entries: {
+			message: MailMessage;
+			subject: string;
+			people: string;
+			body: string;
+			bodyText: string;
+			text: string;
+		}[];
+	};
 	constructor(directory: string) {
 		mkdirSync(directory, { recursive: true, mode: 0o700 });
 		const keyPath = join(directory, "secret.key");
@@ -142,6 +154,7 @@ export class MailStore {
 			}
 			this.db.prepare("DELETE FROM settings WHERE key=?").run(`baseline:${id}`);
 			this.db.exec("COMMIT");
+			this.searchIndex = undefined;
 		} catch (error) {
 			this.db.exec("ROLLBACK");
 			throw error;
@@ -204,6 +217,91 @@ export class MailStore {
 						.includes(search),
 			);
 	}
+	searchMessages(query: string, limit = 20): MailMessage[] {
+		const terms = query
+			.normalize("NFKC")
+			.toLocaleLowerCase()
+			.trim()
+			.split(/\s+/)
+			.filter(Boolean);
+		if (!terms.length) return [];
+		const dataVersion = (
+			this.db.prepare("PRAGMA data_version").get() as { data_version: number }
+		).data_version;
+		if (
+			!this.searchIndex ||
+			this.searchIndex.dataVersion !== dataVersion ||
+			this.searchIndex.expiresAt <= Date.now()
+		) {
+			const rows = this.db
+				.prepare(
+					"SELECT messages.data AS message_data, bodies.data AS body_data, bodies.cached_at FROM messages LEFT JOIN bodies ON bodies.id=messages.id AND bodies.cached_at>? ORDER BY messages.date DESC",
+				)
+				.all(Date.now() - 7 * 86_400_000) as {
+				message_data: string;
+				body_data: string | null;
+				cached_at: number | null;
+			}[];
+			this.searchIndex = {
+				dataVersion,
+				expiresAt: rows.reduce(
+					(earliest, row) =>
+						Math.min(
+							earliest,
+							row.cached_at === null
+								? Infinity
+								: row.cached_at + 7 * 86_400_000,
+						),
+					Infinity,
+				),
+				entries: rows.map(({ message_data, body_data }) => {
+					const message = this.unseal<MailMessage>(message_data);
+					const cached = body_data
+						? this.unseal<{ version?: number; hidden?: { text?: string } }>(
+								body_data,
+							)
+						: null;
+					const bodyText =
+						cached?.version === 2 ? (cached.hidden?.text ?? "") : "";
+					const body = bodyText.normalize("NFKC").toLocaleLowerCase();
+					const subject = message.subject.normalize("NFKC").toLocaleLowerCase();
+					const people = [...message.from, ...message.to, ...message.cc]
+						.map((person) => `${person.name} ${person.address}`)
+						.join(" ")
+						.normalize("NFKC")
+						.toLocaleLowerCase();
+					const text = `${subject} ${people} ${message.snippet.normalize("NFKC").toLocaleLowerCase()} ${body}`;
+					return { message, subject, people, body, bodyText, text };
+				}),
+			};
+		}
+		return this.searchIndex.entries
+			.filter(({ text }) => terms.every((term) => text.includes(term)))
+			.map((entry) => ({
+				message: entry.message,
+				body: entry.body,
+				bodyText: entry.bodyText,
+				score: terms.reduce(
+					(score, term) =>
+						score +
+						(entry.subject.includes(term) ? 5 : 0) +
+						(entry.people.includes(term) ? 2 : 0),
+					0,
+				),
+			}))
+			.sort((a, b) => b.score - a.score || b.message.date - a.message.date)
+			.slice(0, limit)
+			.map(({ message, body, bodyText }) => {
+				const bodyTerm = terms.find((term) => body.includes(term));
+				if (!bodyTerm) return message;
+				const offset = body.indexOf(bodyTerm);
+				const snippet = bodyText
+					.slice(Math.max(0, offset - 55), offset + 125)
+					.replace(/\s+/g, " ")
+					.trim();
+				return { ...message, snippet: snippet || message.snippet };
+			});
+	}
 	message(id: string) {
 		const r = this.db.prepare("SELECT data FROM messages WHERE id=?").get(id) as
 			| { data: string }
@@ -234,6 +332,7 @@ export class MailStore {
 				);
 			}
 			this.db.exec("COMMIT");
+			this.searchIndex = undefined;
 		} catch (e) {
 			this.db.exec("ROLLBACK");
 			throw e;
@@ -264,9 +363,11 @@ export class MailStore {
 				"DELETE FROM bodies WHERE cached_at<? OR id IN (SELECT id FROM bodies ORDER BY cached_at DESC LIMIT -1 OFFSET 100)",
 			)
 			.run(Date.now() - 7 * 86_400_000);
+		this.searchIndex = undefined;
 	}
 	deleteMessage(id: string) {
 		this.db.prepare("DELETE FROM messages WHERE id=?").run(id);
+		this.searchIndex = undefined;
 	}
 	reconcile(
 		accountId: string,
@@ -298,6 +399,9 @@ export class MailStore {
 		this.db
 			.prepare("INSERT OR REPLACE INTO settings VALUES (?,?)")
 			.run(key, this.seal(value));
+	}
+	deleteSetting(key: string) {
+		this.db.prepare("DELETE FROM settings WHERE key=?").run(key);
 	}
 	beginSend(id: string, accountId: string, hash: string): SendResult | null {
 		const row = this.db
@@ -371,6 +475,10 @@ export function mailStore() {
 	if (!s) {
 		s = new MailStore(dir);
 		stores.set(dir, s);
+	} else if (Object.getPrototypeOf(s) !== MailStore.prototype) {
+		// Vite reloads this module but keeps the process-wide store alive.
+		Object.setPrototypeOf(s, MailStore.prototype);
+		Reflect.deleteProperty(s, "searchIndex");
 	}
 	return s;
 }

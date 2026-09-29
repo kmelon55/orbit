@@ -10,7 +10,7 @@ Orbit is a lightweight, self-hosted personal knowledge and planning tool.
 
 It is built for people who like the idea of a personal knowledge system but do not want to maintain a complex collection of databases, properties, plugins, and separate apps. Orbit keeps the loop intentionally small: write something down, turn it into a task or event when needed, and file it with PARA when it becomes useful.
 
-Notes, tasks, and calendar events live in embedded SQLite, with portable Markdown import and export. The core works without an AI provider, and the next major layer is optional AI that helps you find and organize your own information without silently rewriting it.
+Notes, tasks, and calendar events live in embedded SQLite, with portable Markdown import and export. The core works without an AI provider. Optional AI can answer questions about your information without changing it.
 
 ## What works today
 
@@ -22,12 +22,16 @@ Notes, tasks, and calendar events live in embedded SQLite, with portable Markdow
 | Calendar | Day, week, and month views for tasks and events, including timed and multi-day events. Create, move, and resize scheduled items. |
 | Today | See today's tasks and events together, alongside active project folders and quick capture. |
 | PARA | File items into Projects, Areas, Resources, or Archive. Create and manage nested folders without inventing a database schema first. |
+| Search | Use the global search button or Cmd/Ctrl+K to find notes, tasks, events, and cached mail across folders. Mail search covers subject, addresses, preview, and the full text of recently opened messages. For uncached bodies, use the mail server search within each mailbox folder. |
+| AI | Search and refresh the Vercel AI Gateway model catalog, then ask questions about matching notes, tasks, events, and mail. Answers show source items. |
 | Whiteboards | Create, rename, edit, and autosave Excalidraw-compatible whiteboard files. Notes can link to whiteboards. |
 | Mobile | Responsive navigation, a dedicated capture route, install guidance, and a PWA manifest. Private pages and note data are not cached for offline use. |
 | Self-hosting | One Docker container, one persistent vault directory, and built-in single-user password authentication. SQLite is embedded; no separate database service is required. |
 | MCP | A working local stdio server exposes nine tools against the same vault used by the web app. |
 
-Not implemented yet: built-in AI, AI-assisted organization, a review screen for AI changes, calendar sync, automatic backups, multi-user collaboration, or a remote HTTP MCP endpoint.
+Not implemented yet: AI-assisted organization, a review screen for AI changes, calendar sync, automatic backups, multi-user collaboration, or a remote HTTP MCP endpoint.
+
+For AI, save a Vercel AI Gateway API key under **Settings → AI**. Orbit validates it when saving and keeps it encrypted on the server. `AI_GATEWAY_API_KEY` remains an optional environment fallback. Type a question directly into **Cmd/Ctrl+K** and choose **Ask AI** above the search results, or press **Cmd/Ctrl+Enter**, to start a conversation. Select a model once; Orbit remembers it for later questions. AI can reference notes, tasks, events, and locally cached mail. Type `@` in the conversation to select specific sources; Orbit loads a selected mail message's full body when available and labels preview-only sources. It sends up to eight relevant excerpts to the selected model. Conversations and source links are encrypted on the server and available under **History** in the palette. AI does not edit items. Without a key, search remains available.
 
 ## The workflow
 
