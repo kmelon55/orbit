@@ -29,7 +29,17 @@ Orbit의 단일 사용자 로그인 아래 Gmail·iCloud·네이버 계정을 �
 4. Orbit **메일 설정 → 서버 연결 설정**에 Orbit HTTPS 주소·클라이언트 ID·클라이언트 보안 비밀번호를 입력하고 저장합니다. 이 값은 서버에 암호화됩니다. 환경변수로 설정한 값이 있으면 환경변수가 우선합니다.
 5. **Google로 Gmail 연결**을 누르고 본인 계정으로 승인합니다. 요청 범위는 읽기·발송·읽음·라벨·휴지통 처리를 위한 `gmail.modify`입니다.
 
-OAuth Testing 상태의 Gmail refresh token은 7일 후 만료될 수 있습니다. 장기 개인 사용은 Google의 앱 게시 상태와 개인 사용 예외 조건을 확인해야 합니다. 공개 서비스로 전환하면 사용자 격리·OAuth 검증 등의 범위가 별도로 필요합니다. [Google OAuth 토큰 만료 조건](https://developers.google.com/identity/protocols/oauth2), [제한 범위 검증과 개인 사용 예외](https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification)
+### 매주 재연결하지 않도록 설정하기
+
+Gmail 권한을 요청하는 External 앱이 **Testing** 상태이면 refresh token도 승인 후 7일에 만료됩니다. Orbit은 refresh token으로 access token을 자동 갱신하지만 Google이 만료시킨 refresh token을 연장할 수는 없습니다. [Google OAuth 토큰 만료 조건](https://developers.google.com/identity/protocols/oauth2)
+
+1. 운영 서버에 포함된 `/about.html`과 `/privacy.html`이 **로그인 없이** 열리는지 확인합니다. 개인정보처리방침은 실제 운영 방식과 연락처에 맞춰 유지하세요.
+2. Google Auth Platform → **Branding**에 앱 이름, 지원·개발자 연락처, 공개 소개 페이지와 개인정보처리방침 URL, 사용 중인 도메인을 등록하고 저장합니다. 홈페이지와 개인정보처리방침이 비어 있으면 Publish app 버튼이 비활성화될 수 있습니다.
+3. **Audience → Publish app**으로 게시 상태를 **In production**으로 바꿉니다. `orbit.lab-42.xyz`의 현재 OAuth 프로젝트는 `orbit-mail-509411`이며, 콘솔의 Client ID가 Orbit 메일 설정의 Client ID와 일치하는지 확인합니다.
+4. **전환 후 연결된 각 Gmail 계정을 한 번씩 다시 승인**해 새 refresh token을 받습니다. Testing 상태에서 발급된 토큰을 그대로 계속 사용하는 것으로 끝내지 마세요. 기존 계정은 연결을 해제하지 않고 **Google로 Gmail 연결**로 같은 주소를 승인하면 갱신되므로 초안·캐시를 보존할 수 있습니다.
+5. 각 Gmail 계정의 최신 동기화 시각과 실제 받은 메일 조회를 확인합니다.
+
+Production 전환은 7일 테스트 제한을 제거하는 설정이며, Google의 앱 검증 완료와는 별개입니다. 개인 사용은 검증 예외에 해당할 수 있으나 미검증 경고가 표시될 수 있습니다. 공개 서비스로 전환할 때는 사용자 격리와 OAuth 검증이 별도로 필요합니다. 권한 철회·비밀번호 변경 등 다른 사유로는 Production 토큰도 만료될 수 있습니다. [앱 게시 상태](https://support.google.com/cloud/answer/15549945), [제한 범위 검증과 개인 사용 예외](https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification)
 
 ## iCloud·네이버
 

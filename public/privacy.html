@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Orbit Mail · 개인정보처리방침</title>
+<style>
+:root { color-scheme: light dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+body { max-width: 760px; margin: 0 auto; padding: 40px 24px; line-height: 1.8; }
+h1 { line-height: 1.3; } h2 { margin-top: 32px; font-size: 1.15rem; }
+a { color: #527bd6; } footer { margin-top: 40px; font-size: .9rem; }
+</style>
+</head>
+<body>
+<main>
+<h1>Orbit Mail 개인정보처리방침</h1>
+<p>시행일: 2026년 9월 30일</p>
+<p>Orbit Mail은 사용자가 연결한 메일 계정을 개인 작업공간에서 조회하고 관리하는 기능입니다. 이 페이지는 <a href="https://orbit.lab-42.xyz">orbit.lab-42.xyz</a>의 개인용 Orbit 배포에서 Google 계정 데이터를 처리하는 방법을 설명합니다. 운영 및 개인정보 문의: <a href="mailto:kimkyoungmo2869@gmail.com">kimkyoungmo2869@gmail.com</a>.</p>
+<h2>접근하는 정보와 사용 목적</h2>
+<p>Google 계정 연결 시 Gmail의 <code>gmail.modify</code> 권한을 요청합니다. 이 권한으로 계정의 메일 주소, 메일 제목과 발신·수신 주소, 날짜, 라벨, 본문 및 첨부파일을 조회하고, 사용자가 요청한 메일 발송·답장·전달·읽음 표시·보관·라벨 변경·휴지통 이동을 처리합니다. 서버는 연결된 메일함의 변경을 주기적으로 확인합니다.</p>
+<h2>저장과 보관</h2>
+<p>OAuth 인증 토큰, 메일 목록, 초안, 발송 기록과 알림 설정은 운영자가 관리하는 Orbit 서버의 영구 저장소에 보관합니다. 인증 토큰과 본문 캐시는 암호화해 저장합니다. 본문 캐시는 최대 100개, 최대 7일 동안 보관합니다. 수신 첨부파일과 원본 메일은 필요할 때 제공자에서 가져오며 별도 파일 캐시로 저장하지 않습니다. 목록·초안·발송 기록 등은 본문 캐시와 보관 방식이 다르며, 계정 연결 해제 시 해당 계정의 저장 데이터를 제거합니다.</p>
+<h2>외부 서비스와 AI 기능</h2>
+<p>메일 연결·조회·발송에는 Google 서비스를 이용합니다. 기기 알림을 켜면 Web Push 제공자를 통해 알림을 전달하며, 사용자 설정에 따라 제목과 보낸 사람이 알림에 포함될 수 있습니다. 메일의 외부 이미지를 표시하면 이미지 제공 서버에 네트워크 요청이 전송됩니다.</p>
+<p>사용자가 AI 기능을 설정하고 질문을 보내는 경우, 질문과 대화 내용 및 질문에 관련된 메일·노트 자료가 Vercel AI Gateway와 사용자가 선택한 모델 제공자에게 답변 생성 목적으로 전송될 수 있습니다. 질문에 따라 관련 메일 자료가 자동 검색될 수 있으며, 사용자가 지정한 메일의 본문을 참조할 수 있습니다. AI 대화와 참조 기록은 Orbit 서버에 저장합니다. 기본 메일 동기화 자체는 AI 요청을 발생시키지 않습니다.</p>
+<h2>Google 데이터의 제한된 사용</h2>
+<p>Orbit Mail은 Google 데이터를 사용자에게 보이는 메일 관리와 사용자가 요청한 자료 검색·답변 기능에 사용합니다. Google 사용자 데이터를 판매하거나 광고 목적으로 사용하지 않으며, 범용 AI·기계학습 모델의 학습 목적으로 사용하지 않습니다. Google API에서 받은 정보의 사용과 다른 앱으로의 전송은 Limited Use 요건을 포함한 <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>를 따릅니다.</p>
+<h2>접근 취소와 삭제</h2>
+<p>Orbit의 메일 설정에서 계정 연결을 해제하면 해당 계정의 인증정보·메일 캐시·초안·발송 기록·알림 큐를 삭제합니다. Google 메일함에 있는 원본 메일은 연결 해제로 삭제되지 않습니다. <a href="https://myaccount.google.com/connections">Google 계정의 연결 관리</a>에서도 Orbit의 접근 권한을 취소할 수 있습니다. 이미 생성한 AI 대화나 운영자가 별도로 만든 백업에는 참조 자료가 남을 수 있으므로, 이에 대한 삭제는 운영자에게 요청하세요.</p>
+<h2>운영 범위와 변경</h2>
+<p>이 배포는 개인용 작업공간이며 공개 가입 서비스를 제공하지 않습니다. 서버와 백업은 운영자가 관리합니다. 데이터 처리 방식이 변경되면 이 페이지의 내용과 시행일을 갱신합니다.</p>
+</main>
+<footer><a href="/about.html">Orbit Mail 소개</a> · <a href="/">Orbit 열기</a></footer>
+</body>
+</html>
