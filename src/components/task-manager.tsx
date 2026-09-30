@@ -6,12 +6,14 @@ import {
 	GripVertical,
 	Plus,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { itemColor } from "#/lib/orbit/item-colors";
+import { isPendingItemId } from "#/lib/orbit/optimistic-mutations";
 import { folderOf, formatDayKey } from "#/lib/orbit/para";
 import type { OrbitItem, OrbitSnapshot, OrbitSpace } from "#/lib/orbit/schema";
-import { isCurrentOrUpcomingEvent } from "#/lib/orbit/task-events";
+import { isCurrentEvent } from "#/lib/orbit/task-events";
 import { onItemUndone } from "#/lib/orbit/undo-events";
 import {
 	ConfirmItemDialog,
@@ -19,6 +21,7 @@ import {
 	ItemContextMenu,
 } from "@/components/item-context-menu";
 import { ScheduleColors } from "@/components/schedule-colors";
+import { DatePicker } from "@/components/schedule-controls";
 import { ScheduleEditor } from "@/components/schedule-editor";
 import {
 	TaskCheck,
@@ -161,7 +164,7 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 		[snapshot.items, optimisticDueById],
 	);
 	const events = snapshot.items
-		.filter((item) => isCurrentOrUpcomingEvent(item, now))
+		.filter((item) => isCurrentEvent(item, now))
 		.sort((a, b) => (a.start ?? "9999").localeCompare(b.start ?? "9999"));
 	const openTasks = tasks.filter((item) => taskToggle.keepInOpenList(item));
 	const doneTasks = tasks.filter((item) => taskToggle.keepInDoneList(item));
@@ -377,7 +380,7 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 							<section className="orbit-card overflow-hidden">
 								<div className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
 									<h3 className="text-xs font-semibold text-muted-foreground">
-										진행 중 · 예정된 일정
+										진행 중인 일정
 									</h3>
 									<span className="text-xs text-muted-foreground">
 										{events.length}
@@ -417,7 +420,7 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 								))}
 								{events.length === 0 ? (
 									<p className="px-4 py-4 text-sm text-muted-foreground">
-										예정된 일정이 없습니다.
+										진행 중인 일정이 없습니다.
 									</p>
 								) : null}
 							</section>
@@ -596,6 +599,29 @@ function TaskRows({
 		folder?: string,
 	) => void | Promise<void>;
 }) {
+	const savingDates = useRef(new Set<string>());
+	const [savingIds, setSavingIds] = useState<ReadonlySet<string>>(new Set());
+	async function changeDate(item: OrbitItem, day: string) {
+		if (savingDates.current.has(item.id) || isPendingItemId(item.id)) return;
+		const due = day ? rescheduledDue(item, day) : null;
+		if ((item.due ?? null) === due) return;
+		savingDates.current.add(item.id);
+		setSavingIds(new Set(savingDates.current));
+		try {
+			await mutateOrbit({
+				data: {
+					action: "file-item",
+					id: item.id,
+					input: { space: item.space, folder: folderOf(item), due },
+				},
+			});
+		} catch {
+			toast.error("날짜를 바꾸지 못했습니다.");
+		} finally {
+			savingDates.current.delete(item.id);
+			setSavingIds(new Set(savingDates.current));
+		}
+	}
 	const empty = items.every((item) => taskToggle.isExiting(item.id));
 
 	return (
@@ -668,15 +694,24 @@ function TaskRows({
 									snapshot={snapshot}
 									onMove={(space, folder) => onMove(item, space, folder)}
 								/>
-								<span
+								<DatePicker
+									value={day ?? ""}
+									onChange={(value) => void changeDate(item, value)}
+									label={`${item.title} 날짜 변경`}
+									allowClear
+									disabled={
+										savingIds.has(item.id) ||
+										taskToggle.isBusy(item.id) ||
+										settling ||
+										isPendingItemId(item.id)
+									}
+									triggerContent={formatDue(item, today)}
+									variant="ghost"
 									className={cn(
-										"flex max-w-24 shrink-0 items-center gap-1 text-right text-[11px] text-muted-foreground sm:max-w-none sm:gap-1.5 sm:text-xs",
+										"h-8 w-auto max-w-28 shrink-0 gap-1 px-1.5 text-[11px] text-muted-foreground sm:max-w-none sm:gap-1.5 sm:text-xs",
 										day && day < today && !checked && "text-destructive",
 									)}
-								>
-									<CalendarClock className="size-3.5" />{" "}
-									{formatDue(item, today)}
-								</span>
+								/>
 							</fieldset>
 						</ItemContextMenu>
 					</TaskExit>

@@ -1,6 +1,6 @@
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3 } from "lucide-react";
 import { Popover as PopoverPrimitive } from "radix-ui";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { formatDayKey } from "#/lib/orbit/para";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -370,6 +370,10 @@ export function DatePicker({
 	min,
 	allowClear = false,
 	className,
+	inline = false,
+	disabled = false,
+	triggerContent,
+	variant = "outline",
 }: {
 	value: string;
 	onChange: (value: string) => void;
@@ -378,13 +382,17 @@ export function DatePicker({
 	min?: string;
 	allowClear?: boolean;
 	className?: string;
+	inline?: boolean;
+	disabled?: boolean;
+	triggerContent?: ReactNode;
+	variant?: "outline" | "ghost";
 }) {
 	const [open, setOpen] = useState(false);
 	const [cursor, setCursor] = useState(() => parseDay(value));
 
 	useEffect(() => {
-		if (open) setCursor(parseDay(value));
-	}, [open, value]);
+		if (open || inline) setCursor(parseDay(value));
+	}, [open, inline, value]);
 
 	const days = useMemo(() => {
 		const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
@@ -392,12 +400,126 @@ export function DatePicker({
 		return Array.from({ length: 42 }, (_, index) => addDays(start, index));
 	}, [cursor]);
 
+	const calendar = (
+		<>
+			<div className="mb-3 flex items-center justify-between">
+				<Button
+					type="button"
+					variant="ghost"
+					size="icon-sm"
+					onClick={() => setCursor((current) => addMonths(current, -1))}
+					disabled={disabled}
+					aria-label="이전 달"
+				>
+					<ChevronLeft />
+				</Button>
+				<p className="text-sm font-semibold">
+					{cursor.getFullYear()}년 {cursor.getMonth() + 1}월
+				</p>
+				<Button
+					type="button"
+					variant="ghost"
+					size="icon-sm"
+					onClick={() => setCursor((current) => addMonths(current, 1))}
+					disabled={disabled}
+					aria-label="다음 달"
+				>
+					<ChevronRight />
+				</Button>
+			</div>
+			<div className="mb-1 grid grid-cols-7 text-center text-[11px] font-medium text-muted-foreground">
+				{["일", "월", "화", "수", "목", "금", "토"].map((day) => (
+					<span key={day} className="py-1">
+						{day}
+					</span>
+				))}
+			</div>
+			<div className="grid grid-cols-7 gap-0.5">
+				{days.map((day) => {
+					const key = formatDayKey(day);
+					const selected = key === value;
+					const today = key === formatDayKey();
+					const outside = day.getMonth() !== cursor.getMonth();
+					const dayDisabled = disabled || Boolean(min && key < min);
+					return (
+						<button
+							key={key}
+							type="button"
+							disabled={dayDisabled}
+							aria-label={key}
+							aria-pressed={selected}
+							onClick={() => {
+								onChange(key);
+								setOpen(false);
+							}}
+							className={cn(
+								"relative grid size-9 place-items-center rounded-lg text-sm transition-colors",
+								selected
+									? "bg-foreground font-semibold text-background"
+									: "hover:bg-muted",
+								outside && !selected && "text-muted-foreground/45",
+								today && !selected && "font-semibold text-foreground",
+								dayDisabled &&
+									"cursor-not-allowed opacity-25 hover:bg-transparent",
+							)}
+						>
+							{day.getDate()}
+							{today ? (
+								<span className="absolute bottom-1 size-1 rounded-full bg-current" />
+							) : null}
+						</button>
+					);
+				})}
+			</div>
+			<div className="mt-3 flex items-center justify-between border-t pt-2">
+				{allowClear ? (
+					<Button
+						type="button"
+						variant="ghost"
+						size="sm"
+						disabled={disabled}
+						onClick={() => {
+							onChange("");
+							setOpen(false);
+						}}
+					>
+						날짜 없음
+					</Button>
+				) : (
+					<span />
+				)}
+				<Button
+					type="button"
+					variant="ghost"
+					size="sm"
+					disabled={disabled || Boolean(min && formatDayKey() < min)}
+					onClick={() => {
+						onChange(formatDayKey());
+						setOpen(false);
+					}}
+				>
+					오늘
+				</Button>
+			</div>
+		</>
+	);
+	if (inline)
+		return (
+			<section
+				aria-label={label}
+				className={cn("rounded-xl border bg-background p-3", className)}
+			>
+				{calendar}
+			</section>
+		);
+
 	return (
 		<PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
 			<PopoverPrimitive.Trigger asChild>
 				<Button
 					type="button"
-					variant="outline"
+					variant={variant}
+					disabled={disabled}
 					aria-label={label}
 					className={cn(
 						"w-56 min-w-0 justify-start gap-2 font-normal tabular-nums",
@@ -406,7 +528,9 @@ export function DatePicker({
 					)}
 				>
 					<CalendarDays className="size-4" />
-					<span className="truncate">{dateLabel(value, placeholder)}</span>
+					<span className="truncate">
+						{triggerContent ?? dateLabel(value, placeholder)}
+					</span>
 				</Button>
 			</PopoverPrimitive.Trigger>
 			<PopoverPrimitive.Portal>
@@ -415,100 +539,7 @@ export function DatePicker({
 					sideOffset={6}
 					className="z-[60] w-72 rounded-xl border bg-popover p-3 text-popover-foreground shadow-xl outline-none"
 				>
-					<div className="mb-3 flex items-center justify-between">
-						<Button
-							type="button"
-							variant="ghost"
-							size="icon-sm"
-							onClick={() => setCursor((current) => addMonths(current, -1))}
-							aria-label="이전 달"
-						>
-							<ChevronLeft />
-						</Button>
-						<p className="text-sm font-semibold">
-							{cursor.getFullYear()}년 {cursor.getMonth() + 1}월
-						</p>
-						<Button
-							type="button"
-							variant="ghost"
-							size="icon-sm"
-							onClick={() => setCursor((current) => addMonths(current, 1))}
-							aria-label="다음 달"
-						>
-							<ChevronRight />
-						</Button>
-					</div>
-					<div className="mb-1 grid grid-cols-7 text-center text-[11px] font-medium text-muted-foreground">
-						{["일", "월", "화", "수", "목", "금", "토"].map((day) => (
-							<span key={day} className="py-1">
-								{day}
-							</span>
-						))}
-					</div>
-					<div className="grid grid-cols-7 gap-0.5">
-						{days.map((day) => {
-							const key = formatDayKey(day);
-							const selected = key === value;
-							const today = key === formatDayKey();
-							const outside = day.getMonth() !== cursor.getMonth();
-							const disabled = Boolean(min && key < min);
-							return (
-								<button
-									key={key}
-									type="button"
-									disabled={disabled}
-									onClick={() => {
-										onChange(key);
-										setOpen(false);
-									}}
-									className={cn(
-										"relative grid size-9 place-items-center rounded-lg text-sm transition-colors",
-										selected
-											? "bg-foreground font-semibold text-background"
-											: "hover:bg-muted",
-										outside && !selected && "text-muted-foreground/45",
-										today && !selected && "font-semibold text-foreground",
-										disabled &&
-											"cursor-not-allowed opacity-25 hover:bg-transparent",
-									)}
-								>
-									{day.getDate()}
-									{today ? (
-										<span className="absolute bottom-1 size-1 rounded-full bg-current" />
-									) : null}
-								</button>
-							);
-						})}
-					</div>
-					<div className="mt-3 flex items-center justify-between border-t pt-2">
-						{allowClear ? (
-							<Button
-								type="button"
-								variant="ghost"
-								size="sm"
-								onClick={() => {
-									onChange("");
-									setOpen(false);
-								}}
-							>
-								날짜 없음
-							</Button>
-						) : (
-							<span />
-						)}
-						<Button
-							type="button"
-							variant="ghost"
-							size="sm"
-							disabled={Boolean(min && formatDayKey() < min)}
-							onClick={() => {
-								onChange(formatDayKey());
-								setOpen(false);
-							}}
-						>
-							오늘
-						</Button>
-					</div>
+					{calendar}
 				</PopoverPrimitive.Content>
 			</PopoverPrimitive.Portal>
 		</PopoverPrimitive.Root>

@@ -389,6 +389,13 @@ export function ScheduleEditor({
 											className="w-full"
 										/>
 									</div>
+									<DatePicker
+										inline
+										value={startDate}
+										onChange={setStartDate}
+										label="할 일 날짜 달력"
+										className="col-span-2"
+									/>
 								</div>
 							)}
 

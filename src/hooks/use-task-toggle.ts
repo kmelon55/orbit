@@ -4,15 +4,15 @@ import { isPendingItemId } from "#/lib/orbit/optimistic-mutations";
 import type { OrbitItem } from "#/lib/orbit/schema";
 import { onItemUndone } from "#/lib/orbit/undo-events";
 
-const COMPLETE_HOLD_MS = 120;
-const EXIT_MS = 140;
+const COMPLETE_HOLD_MS = 700;
+const EXIT_MS = 300;
 
 function prefersReducedMotion() {
 	return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-function wait(ms: number) {
-	if (ms <= 0 || prefersReducedMotion()) return Promise.resolve();
+function wait(ms: number, motion = false) {
+	if (ms <= 0 || (motion && prefersReducedMotion())) return Promise.resolve();
 	return new Promise<void>((resolve) => {
 		window.setTimeout(resolve, ms);
 	});
@@ -130,7 +130,7 @@ export function useTaskToggle() {
 						if (toDone)
 							setLeavingOpen((current) => new Set(current).add(item.id));
 						else setLeavingDone((current) => new Set(current).add(item.id));
-						await wait(EXIT_MS);
+						await wait(EXIT_MS, true);
 						if (cancelled || undone()) return;
 						if (toDone)
 							setHiddenOpen((current) => new Set(current).add(item.id));
