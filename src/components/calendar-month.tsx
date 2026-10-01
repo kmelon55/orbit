@@ -6,21 +6,36 @@ import {
 	ChevronRight,
 	Circle,
 	Clock3,
-	GripVertical,
 	ListTodo,
 	Plus,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+	createContext,
+	useCallback,
+	useContext,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { buildMonthLayout } from "#/lib/orbit/calendar-layout";
+import {
+	calendarResizeTime,
+	type CalendarDragTarget as DragTarget,
+	resizeCalendarItem as resizeScheduledItem,
+} from "#/lib/orbit/calendar-resize";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { itemColor } from "#/lib/orbit/item-colors";
 import type { CalendarSearch } from "#/lib/orbit/navigation-search";
+import { isPendingItemId } from "#/lib/orbit/optimistic-mutations";
 import { formatDayKey, itemDayKey } from "#/lib/orbit/para";
 import type { OrbitItem, OrbitSnapshot } from "#/lib/orbit/schema";
 import { ScheduleColors } from "@/components/schedule-colors";
 import { ScheduleEditor } from "@/components/schedule-editor";
+import { TaskCheck, taskTitleClass } from "@/components/task-check";
 import { Button } from "@/components/ui/button";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useTaskToggle } from "@/hooks/use-task-toggle";
 import { cn } from "@/lib/utils";
 
 const WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"];
@@ -36,16 +51,66 @@ type EditorState = {
 	date?: string;
 	time?: string;
 };
-type DragTarget = {
-	date: string;
-	mode: "time" | "all-day" | "keep-time";
-	time?: string;
-};
 type DragOperation = "move" | "resize";
 type CalendarVisibility = {
 	event: boolean;
 	task: boolean;
 };
+
+const CalendarTasks = createContext<ReturnType<typeof useTaskToggle> | null>(
+	null,
+);
+
+function CalendarTaskCheck({
+	item,
+	className,
+}: {
+	item: OrbitItem;
+	className?: string;
+}) {
+	const tasks = useContext(CalendarTasks);
+	if (item.type !== "task" || !tasks) return null;
+	const checked = tasks.isChecked(item);
+	return (
+		<TaskCheck
+			color={item.color}
+			checked={checked}
+			animate={tasks.isAnimating(item.id)}
+			disabled={tasks.isBusy(item.id) || isPendingItemId(item.id)}
+			className={cn(
+				"absolute left-1 top-1/2 z-20 -translate-y-1/2 after:inset-0",
+				className,
+			)}
+			aria-label={checked ? `${item.title} 다시 열기` : `${item.title} 완료`}
+			onClick={(event) => {
+				event.stopPropagation();
+				void tasks.toggle(item);
+			}}
+			onPointerDown={(event) => event.stopPropagation()}
+		/>
+	);
+}
+
+function CalendarItemTitle({
+	item,
+	className,
+}: {
+	item: OrbitItem;
+	className?: string;
+}) {
+	const tasks = useContext(CalendarTasks);
+	return (
+		<span
+			className={taskTitleClass(
+				item.type === "task" &&
+					(tasks?.isChecked(item) ?? item.status === "done"),
+				className,
+			)}
+		>
+			{item.title}
+		</span>
+	);
+}
 
 function startOfMonth(date: Date) {
 	return new Date(date.getFullYear(), date.getMonth(), 1);
@@ -174,48 +239,11 @@ function moveScheduledItem(item: OrbitItem, target: DragTarget): OrbitItem {
 	return { ...item, start: dateTime(start), end: dateTime(end) };
 }
 
-function resizeScheduledItem(item: OrbitItem, target: DragTarget): OrbitItem {
-	if (item.type !== "event" || !item.start) return item;
-	const startKey = item.start.slice(0, 10);
-	const endKey = target.date < startKey ? startKey : target.date;
-	const startTime = timeOf(item.start);
-
-	if (!startTime || target.mode !== "time" || !target.time) {
-		const currentEndTime = timeOf(item.end);
-		if (currentEndTime) {
-			const start = new Date(item.start);
-			const candidate = new Date(`${endKey}T${currentEndTime}:00`);
-			return {
-				...item,
-				end: dateTime(
-					candidate.getTime() > start.getTime()
-						? candidate
-						: new Date(start.getTime() + 30 * 60_000),
-				),
-			};
-		}
-		return {
-			...item,
-			end: endKey,
-		};
-	}
-
-	const start = new Date(item.start);
-	let end = new Date(`${endKey}T${target.time}:00`);
-	if (end.getTime() <= start.getTime()) {
-		end = new Date(start.getTime() + 30 * 60_000);
-	}
-	return { ...item, end: dateTime(end) };
-}
-
 function dragPayload(dataTransfer: DataTransfer) {
-	const resizeId = dataTransfer.getData("text/orbit-resize-id");
-	return resizeId
-		? { id: resizeId, operation: "resize" as const }
-		: {
-				id: dataTransfer.getData("text/orbit-item-id"),
-				operation: "move" as const,
-			};
+	return {
+		id: dataTransfer.getData("text/orbit-item-id"),
+		operation: "move" as const,
+	};
 }
 
 function monthLabel(date: Date) {
@@ -372,7 +400,7 @@ function CalendarEvent({
 	resizeEndKey?: string;
 	onClick: () => void;
 	onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void;
-	onResizeStart?: (event: React.DragEvent<HTMLButtonElement>) => void;
+	onResizeStart?: (event: React.PointerEvent<HTMLButtonElement>) => void;
 	onDragEnd: () => void;
 	dragging?: boolean;
 	dragOperation?: DragOperation;
@@ -391,14 +419,13 @@ function CalendarEvent({
 	const canResize = Boolean(
 		onResizeStart &&
 			item.type === "event" &&
-			(!compact || !endKey || (resizeEndKey ?? dayKey) === endKey),
+			(!endKey || !dayKey || (resizeEndKey ?? dayKey) === endKey),
 	);
 	return (
 		<div
 			className={cn(
 				"group/event relative h-full min-h-0 cursor-grab active:cursor-grabbing",
 				dragging && dragOperation === "move" && "opacity-35",
-				dragging && dragOperation === "resize" && "opacity-65",
 			)}
 		>
 			<button
@@ -423,14 +450,12 @@ function CalendarEvent({
 							: "py-1.5 text-xs shadow-sm",
 				)}
 			>
-				<GripVertical
-					className={cn(
-						"mr-0.5 hidden sm:block size-3 shrink-0 opacity-0 transition-opacity group-hover/event:opacity-50",
-						!dense && "mt-0.5",
-					)}
-				/>
 				<span
-					className={cn("min-w-0 flex-1", dense && "flex items-center gap-1.5")}
+					className={cn(
+						"min-w-0 flex-1",
+						item.type === "task" && "pl-6",
+						dense && "flex items-center gap-1.5",
+					)}
 				>
 					<span className={cn("block truncate font-medium", dense && "flex-1")}>
 						{compact && !continuesFromBefore ? (
@@ -438,7 +463,7 @@ function CalendarEvent({
 								{displayTime ?? timeOf(item.start ?? item.due)}
 							</span>
 						) : null}
-						{item.title}
+						<CalendarItemTitle item={item} />
 					</span>
 					{compact ? null : dense ? (
 						<span className="shrink-0 tabular-nums opacity-75">
@@ -451,20 +476,19 @@ function CalendarEvent({
 					)}
 				</span>
 			</button>
+			<CalendarTaskCheck item={item} />
 			{canResize ? (
 				<button
 					type="button"
-					draggable
-					onDragStart={onResizeStart}
-					onDragEnd={onDragEnd}
+					onPointerDown={onResizeStart}
 					onClick={(event) => event.stopPropagation()}
 					title={compact ? "종료 날짜 조정" : "종료 시간 조정"}
 					aria-label={compact ? "종료 날짜 조정" : "종료 시간 조정"}
 					className={cn(
-						"absolute z-20 opacity-0 transition-opacity group-hover/event:opacity-100",
+						"absolute z-20 touch-none",
 						compact
-							? "inset-y-1 right-0 w-1.5 cursor-ew-resize rounded-full bg-current/55"
-							: "right-1 bottom-0.5 h-1.5 w-7 cursor-ns-resize rounded-full bg-current/55",
+							? "inset-y-0 right-0 w-2 cursor-ew-resize"
+							: "inset-x-0 bottom-0 h-2 cursor-ns-resize",
 					)}
 				/>
 			) : null}
@@ -473,6 +497,18 @@ function CalendarEvent({
 }
 
 export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
+	const taskToggle = useTaskToggle();
+	useEffect(() => {
+		taskToggle.sync(snapshot.items);
+	}, [snapshot.items, taskToggle.sync]);
+	return (
+		<CalendarTasks.Provider value={taskToggle}>
+			<CalendarContent snapshot={snapshot} />
+		</CalendarTasks.Provider>
+	);
+}
+
+function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 	const isMobile = useIsMobile();
 	const location = useSearch({ from: "/calendar" });
 	const navigate = useNavigate({ from: "/calendar" });
@@ -497,6 +533,8 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 		open: false,
 		kind: "event",
 	});
+	const calendarRef = useRef<HTMLDivElement>(null);
+	const resizePointerRef = useRef<number | null>(null);
 	const [localItems, setLocalItems] = useState(snapshot.items);
 	const [draggingId, setDraggingId] = useState<string | null>(null);
 	const [dragOperation, setDragOperation] = useState<DragOperation>("move");
@@ -579,12 +617,18 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 	const today = formatDayKey();
 	const dated = useMemo(
 		() =>
-			localItems.filter(
-				(item) =>
-					(item.type === "event" && visibility.event && item.start) ||
-					(item.type === "task" && visibility.task && item.due),
-			),
-		[localItems, visibility],
+			localItems
+				.map((item) =>
+					draggingId === item.id && dragOperation === "resize" && dragTarget
+						? resizeScheduledItem(item, dragTarget)
+						: item,
+				)
+				.filter(
+					(item) =>
+						(item.type === "event" && visibility.event && item.start) ||
+						(item.type === "task" && visibility.task && item.due),
+				),
+		[localItems, visibility, draggingId, dragOperation, dragTarget],
 	);
 	const byDay = useMemo(() => {
 		const map = new Map<string, OrbitItem[]>();
@@ -664,36 +708,35 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 
 	function startResize(
 		item: OrbitItem,
-		event: React.DragEvent<HTMLButtonElement>,
+		event: React.PointerEvent<HTMLButtonElement>,
 	) {
+		if (event.button !== 0 || isPendingItemId(item.id)) return;
+		event.preventDefault();
 		event.stopPropagation();
-		event.dataTransfer.effectAllowed = "move";
-		event.dataTransfer.setData("text/orbit-resize-id", item.id);
+		resizePointerRef.current = event.pointerId;
 		draggingIdRef.current = item.id;
 		dragOperationRef.current = "resize";
+		dragTargetRef.current = null;
 		setDraggingId(item.id);
 		setDragOperation("resize");
 		setDragTarget(null);
 		setDragError(null);
+		if (event.nativeEvent.isTrusted)
+			calendarRef.current?.setPointerCapture(event.pointerId);
 	}
 
 	function endDrag() {
-		if (draggingIdRef.current && dragTargetRef.current) {
-			dropOn(
-				dragTargetRef.current,
-				draggingIdRef.current,
-				dragOperationRef.current,
-			);
-			return;
+		const pointer = resizePointerRef.current;
+		if (pointer !== null && calendarRef.current?.hasPointerCapture(pointer)) {
+			calendarRef.current.releasePointerCapture(pointer);
 		}
+		resizePointerRef.current = null;
+		draggingIdRef.current = null;
+		dragOperationRef.current = "move";
+		dragTargetRef.current = null;
 		setDraggingId(null);
 		setDragOperation("move");
 		setDragTarget(null);
-		dragOperationRef.current = "move";
-		const endedId = draggingIdRef.current;
-		setTimeout(() => {
-			if (draggingIdRef.current === endedId) draggingIdRef.current = null;
-		}, 0);
 	}
 
 	function previewDrag(target: DragTarget | null) {
@@ -747,7 +790,6 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 						input: {
 							space: next.space,
 							folder: next.folder,
-							status: next.status,
 							due: next.due,
 							start: next.start,
 							end: next.end,
@@ -772,8 +814,73 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 		saveQueuesRef.current.set(id, save);
 	}
 
+	const resizeActionsRef = useRef({ previewDrag, dropOn, endDrag });
+	resizeActionsRef.current = { previewDrag, dropOn, endDrag };
+	useEffect(() => {
+		if (!draggingId || dragOperation !== "resize") return;
+		function targetAt(event: PointerEvent): DragTarget | null {
+			for (const cell of calendarRef.current?.querySelectorAll<HTMLElement>(
+				"[data-calendar-date]",
+			) ?? []) {
+				const rect = cell.getBoundingClientRect();
+				if (
+					event.clientX < rect.left ||
+					event.clientX >= rect.right ||
+					event.clientY < rect.top ||
+					event.clientY >= rect.bottom
+				)
+					continue;
+				const date = cell.dataset.calendarDate;
+				if (!date) continue;
+				if (cell.dataset.calendarMode === "time") {
+					return {
+						date,
+						mode: "time",
+						time: calendarResizeTime(event.clientY, rect.top, HOUR_HEIGHT),
+					};
+				}
+				return { date, mode: "keep-time" };
+			}
+			return null;
+		}
+		function move(event: PointerEvent) {
+			if (event.pointerId !== resizePointerRef.current) return;
+			const target = targetAt(event);
+			if (target) resizeActionsRef.current.previewDrag(target);
+		}
+		function finish(event: PointerEvent) {
+			if (event.pointerId !== resizePointerRef.current) return;
+			const target = targetAt(event);
+			if (target && dragTargetRef.current && draggingIdRef.current)
+				resizeActionsRef.current.dropOn(
+					target,
+					draggingIdRef.current,
+					"resize",
+				);
+			resizeActionsRef.current.endDrag();
+		}
+		function cancel() {
+			resizeActionsRef.current.endDrag();
+		}
+		function key(event: KeyboardEvent) {
+			if (event.key === "Escape") cancel();
+		}
+		window.addEventListener("pointermove", move);
+		window.addEventListener("pointerup", finish);
+		window.addEventListener("pointercancel", cancel);
+		window.addEventListener("blur", cancel);
+		window.addEventListener("keydown", key);
+		return () => {
+			window.removeEventListener("pointermove", move);
+			window.removeEventListener("pointerup", finish);
+			window.removeEventListener("pointercancel", cancel);
+			window.removeEventListener("blur", cancel);
+			window.removeEventListener("keydown", key);
+		};
+	}, [draggingId, dragOperation]);
+
 	return (
-		<div className="h-full min-h-0 bg-muted/20 p-0 md:p-3">
+		<div ref={calendarRef} className="h-full min-h-0 bg-muted/20 p-0 md:p-3">
 			<div className="orbit-card flex h-full min-h-0 flex-col overflow-hidden rounded-none border-x-0 bg-background shadow-none md:rounded-[var(--radius-xl)] md:border-x md:shadow-sm">
 				<header className="flex min-h-14 shrink-0 items-center gap-1.5 border-b border-border/60 px-2 sm:min-h-16 sm:gap-2 sm:px-4">
 					<Button
@@ -990,42 +1097,49 @@ function MobileAgenda({
 	return (
 		<div className="space-y-1.5">
 			{items.map((item) => (
-				<button
-					key={item.id}
-					type="button"
-					onClick={() => onOpen(item)}
-					className="flex min-h-14 w-full items-stretch overflow-hidden rounded-xl border border-border/70 bg-background text-left shadow-sm transition-colors active:bg-muted/60"
-				>
-					<span className={cn("w-1 shrink-0", itemAccent(item))} />
-					<span className="flex w-[4.7rem] shrink-0 flex-col justify-center border-r border-border/50 px-2.5 text-[11px] font-medium tabular-nums text-muted-foreground">
-						{timeOf(item.start ?? item.due) ? (
-							<>
-								<span className="text-sm text-foreground">
-									{timeOf(item.start ?? item.due)}
-								</span>
-								{item.type === "event" && timeOf(item.end) ? (
-									<span>{timeOf(item.end)}까지</span>
-								) : null}
-							</>
-						) : (
-							<span>종일</span>
-						)}
-					</span>
-					<span className="min-w-0 flex-1 self-center px-3 py-2.5">
-						<span className="block truncate text-sm font-medium">
-							{item.title}
-						</span>
-						<span className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
-							{item.type === "event" ? (
-								<CalendarDays className="size-3" />
-							) : (
-								<ListTodo className="size-3" />
+				<div key={item.id} className="relative">
+					<button
+						type="button"
+						onClick={() => onOpen(item)}
+						className="flex min-h-14 w-full items-stretch overflow-hidden rounded-xl border border-border/70 bg-background text-left shadow-sm transition-colors active:bg-muted/60"
+					>
+						<span className={cn("w-1 shrink-0", itemAccent(item))} />
+						<span
+							className={cn(
+								"flex w-[4.7rem] shrink-0 flex-col justify-center border-r border-border/50 px-2.5 text-[11px] font-medium tabular-nums text-muted-foreground",
+								item.type === "task" && "w-[6.5rem] pl-9",
 							)}
-							{item.type === "event" ? "일정" : "할 일"}
-							{spansMultipleDays(item) ? " · 여러 날" : ""}
+						>
+							{timeOf(item.start ?? item.due) ? (
+								<>
+									<span className="text-sm text-foreground">
+										{timeOf(item.start ?? item.due)}
+									</span>
+									{item.type === "event" && timeOf(item.end) ? (
+										<span>{timeOf(item.end)}까지</span>
+									) : null}
+								</>
+							) : (
+								<span>종일</span>
+							)}
 						</span>
-					</span>
-				</button>
+						<span className="min-w-0 flex-1 self-center px-3 py-2.5">
+							<span className="block truncate text-sm font-medium">
+								<CalendarItemTitle item={item} />
+							</span>
+							<span className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+								{item.type === "event" ? (
+									<CalendarDays className="size-3" />
+								) : (
+									<ListTodo className="size-3" />
+								)}
+								{item.type === "event" ? "일정" : "할 일"}
+								{spansMultipleDays(item) ? " · 여러 날" : ""}
+							</span>
+						</span>
+					</button>
+					<CalendarTaskCheck item={item} className="left-2" />
+				</div>
 			))}
 		</div>
 	);
@@ -1426,27 +1540,34 @@ function CalendarRail({
 				{selectedItems.length > 0 ? (
 					<div className="space-y-1.5">
 						{selectedItems.map((item) => (
-							<button
-								key={item.id}
-								type="button"
-								onClick={() => onOpen(item)}
-								className="flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left hover:bg-muted/70"
-							>
-								<span
+							<div key={item.id} className="relative">
+								<button
+									type="button"
+									onClick={() => onOpen(item)}
 									className={cn(
-										"mt-1.5 size-2 shrink-0 rounded-full",
-										itemAccent(item),
+										"flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left hover:bg-muted/70",
+										item.type === "task" && "pl-9",
 									)}
-								/>
-								<span className="min-w-0 flex-1">
-									<span className="block truncate text-xs font-medium">
-										{item.title}
+								>
+									{item.type !== "task" ? (
+										<span
+											className={cn(
+												"mt-1.5 size-2 shrink-0 rounded-full",
+												itemAccent(item),
+											)}
+										/>
+									) : null}
+									<span className="min-w-0 flex-1">
+										<span className="block truncate text-xs font-medium">
+											<CalendarItemTitle item={item} />
+										</span>
+										<span className="mt-0.5 flex items-center gap-1 text-[10px] tabular-nums text-muted-foreground">
+											<Clock3 className="size-2.5" /> {itemTimeLabel(item)}
+										</span>
 									</span>
-									<span className="mt-0.5 flex items-center gap-1 text-[10px] tabular-nums text-muted-foreground">
-										<Clock3 className="size-2.5" /> {itemTimeLabel(item)}
-									</span>
-								</span>
-							</button>
+								</button>
+								<CalendarTaskCheck item={item} className="left-2" />
+							</div>
 						))}
 					</div>
 				) : (
@@ -1498,7 +1619,7 @@ function WeekView({
 	) => void;
 	onResizeStart: (
 		item: OrbitItem,
-		event: React.DragEvent<HTMLButtonElement>,
+		event: React.PointerEvent<HTMLButtonElement>,
 	) => void;
 	onDragEnd: () => void;
 	onDragPreview: (target: DragTarget | null) => void;
@@ -1608,6 +1729,8 @@ function WeekView({
 										dragTarget.mode === "all-day" &&
 										"bg-accent ring-1 ring-inset ring-foreground/20",
 								)}
+								data-calendar-date={key}
+								data-calendar-mode="keep-time"
 								onDragOver={(event) => {
 									event.preventDefault();
 									event.dataTransfer.dropEffect = "move";
@@ -1678,10 +1801,11 @@ function WeekView({
 							timeOf(item.start ?? item.due),
 						);
 						const previewItem =
-							draggingItem && dragTarget?.mode === "time" && dragTarget.time
-								? dragOperation === "resize"
-									? resizeScheduledItem(draggingItem, dragTarget)
-									: moveScheduledItem(draggingItem, dragTarget)
+							dragOperation === "move" &&
+							draggingItem &&
+							dragTarget?.mode === "time" &&
+							dragTarget.time
+								? moveScheduledItem(draggingItem, dragTarget)
 								: null;
 						const previewRange =
 							previewItem && visibleDayKeys(previewItem).includes(key)
@@ -1696,6 +1820,8 @@ function WeekView({
 									key === today && "bg-blue-500/[0.025]",
 								)}
 								style={{ height: calendarHeight }}
+								data-calendar-date={key}
+								data-calendar-mode="time"
 								onDragOver={(event) => {
 									event.preventDefault();
 									event.dataTransfer.dropEffect = "move";
@@ -1775,12 +1901,7 @@ function WeekView({
 								) : null}
 								{previewItem && previewRange && dragTarget?.time ? (
 									<div
-										className={cn(
-											"pointer-events-none absolute inset-x-1 z-20 overflow-hidden rounded-md border px-2 py-1 text-xs backdrop-blur-sm",
-											dragOperation === "resize"
-												? "border-blue-500/80 bg-blue-500/15 shadow-[inset_0_-2px_0_rgb(59_130_246)]"
-												: "border-foreground/30 bg-foreground/15",
-										)}
+										className="pointer-events-none absolute inset-x-1 z-20 overflow-hidden rounded-md border border-foreground/30 bg-foreground/15 px-2 py-1 text-xs backdrop-blur-sm"
 										style={{
 											top:
 												((previewRange.start - HOUR_START * 60) / 60) *
@@ -1793,13 +1914,7 @@ function WeekView({
 										<span className="block truncate font-medium">
 											{previewItem.title}
 										</span>
-										{dragOperation === "resize" && dragTarget.date === key ? (
-											<span className="absolute right-1 bottom-1 rounded bg-blue-600 px-1 py-0.5 text-[10px] leading-none font-semibold text-white tabular-nums shadow-sm">
-												종료 {dragTarget.time}
-											</span>
-										) : (
-											<span className="opacity-70">{previewRange.label}</span>
-										)}
+										<span className="opacity-70">{previewRange.label}</span>
 									</div>
 								) : null}
 								{layoutTimedItems(timed, key).map((layout) => {
@@ -1872,7 +1987,7 @@ function MonthView({
 	today: string;
 	selectedDate: string;
 	onSelectDate: (date: string) => void;
-	onCreate: (date: string) => void;
+	onCreate: (date: string, time?: string) => void;
 	onOpen: (item: OrbitItem) => void;
 	draggingId: string | null;
 	dragOperation: DragOperation;
@@ -1883,7 +1998,7 @@ function MonthView({
 	) => void;
 	onResizeStart: (
 		item: OrbitItem,
-		event: React.DragEvent<HTMLButtonElement>,
+		event: React.PointerEvent<HTMLButtonElement>,
 	) => void;
 	onDragEnd: () => void;
 	onDragPreview: (target: DragTarget | null) => void;
@@ -1946,6 +2061,8 @@ function MonthView({
 											dragTarget.mode === "keep-time" &&
 											"bg-accent ring-1 ring-inset ring-foreground/20",
 									)}
+									data-calendar-date={key}
+									data-calendar-mode="keep-time"
 									onDragOver={(event) => {
 										event.preventDefault();
 										event.dataTransfer.dropEffect = "move";
