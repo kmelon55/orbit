@@ -2,8 +2,9 @@ import {
 	ArrowRight,
 	CalendarClock,
 	CalendarDays,
+	Check,
 	Circle,
-	GripVertical,
+	ListFilter,
 	Plus,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -13,7 +14,12 @@ import { itemColor } from "#/lib/orbit/item-colors";
 import { isPendingItemId } from "#/lib/orbit/optimistic-mutations";
 import { folderOf, formatDayKey } from "#/lib/orbit/para";
 import type { OrbitItem, OrbitSnapshot, OrbitSpace } from "#/lib/orbit/schema";
-import { isCurrentEvent } from "#/lib/orbit/task-events";
+import {
+	completedOnDay,
+	isVisibleTaskEvent,
+	type TaskCompletionFilter,
+	taskListDay,
+} from "#/lib/orbit/task-filters";
 import { onItemUndone } from "#/lib/orbit/undo-events";
 import {
 	ConfirmItemDialog,
@@ -30,11 +36,15 @@ import {
 	taskTitleClass,
 } from "@/components/task-check";
 import { Button } from "@/components/ui/button";
+import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "@/components/ui/popover";
 import { useTaskToggle } from "@/hooks/use-task-toggle";
 import { cn } from "@/lib/utils";
 import { ItemLocation } from "./item-move-dialog";
 
-type TaskView = "open" | "done";
 type RescheduleTarget = "today" | "tomorrow";
 
 const RESCHEDULE_EXIT_MS = 140;
@@ -71,10 +81,6 @@ function formatDue(item: OrbitItem, today: string) {
 	return time ? `${label} ${time}` : label;
 }
 
-function taskContext(item: OrbitItem) {
-	return folderOf(item) ?? (item.space === "inbox" ? "소속 없음" : item.space);
-}
-
 function rescheduledDue(item: OrbitItem, day: string) {
 	return `${day}${item.due?.slice(10) ?? ""}`;
 }
@@ -101,7 +107,8 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 			document.removeEventListener("visibilitychange", refresh);
 		};
 	}, []);
-	const [view, setView] = useState<TaskView>("open");
+	const [view, setView] = useState<TaskCompletionFilter>("open");
+	const [showEvents, setShowEvents] = useState(false);
 	const [editor, setEditor] = useState<{
 		open: boolean;
 		item?: OrbitItem;
@@ -163,42 +170,52 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 				),
 		[snapshot.items, optimisticDueById],
 	);
-	const events = snapshot.items
-		.filter((item) => isCurrentEvent(item, now))
-		.sort((a, b) => (a.start ?? "9999").localeCompare(b.start ?? "9999"));
 	const openTasks = tasks.filter((item) => taskToggle.keepInOpenList(item));
 	const doneTasks = tasks.filter((item) => taskToggle.keepInDoneList(item));
-	const groups = useMemo(
-		() => [
-			{
-				key: "overdue",
-				label: "기한 지남",
-				items: openTasks.filter((item) => {
-					const day = dueDay(item);
-					return Boolean(day && day < today);
-				}),
-			},
-			{
-				key: "today",
-				label: "오늘",
-				items: openTasks.filter((item) => dueDay(item) === today),
-			},
-			{
-				key: "upcoming",
-				label: "다가오는 할 일",
-				items: openTasks.filter((item) => {
-					const day = dueDay(item);
-					return Boolean(day && day > today);
-				}),
-			},
-			{
-				key: "unscheduled",
-				label: "날짜 없음",
-				items: openTasks.filter((item) => !dueDay(item)),
-			},
-		],
-		[openTasks, today],
+	const todayDone = tasks.filter((item) => completedOnDay(item, today));
+	const visibleTasks =
+		view === "done"
+			? doneTasks
+			: view === "today"
+				? tasks.filter(
+						(item) =>
+							taskToggle.keepInOpenList(item) || completedOnDay(item, today),
+					)
+				: openTasks;
+	const events = showEvents
+		? snapshot.items.filter((item) => isVisibleTaskEvent(item, today))
+		: [];
+	const visibleItems = [...visibleTasks, ...events].sort((a, b) =>
+		(a.start ?? a.due ?? "9999").localeCompare(b.start ?? b.due ?? "9999"),
 	);
+	const groups = [
+		{
+			key: "overdue",
+			label: "기한 지남",
+			items: visibleItems.filter((item) => {
+				const day = taskListDay(item, today);
+				return Boolean(day && day < today);
+			}),
+		},
+		{
+			key: "today",
+			label: "오늘",
+			items: visibleItems.filter((item) => taskListDay(item, today) === today),
+		},
+		{
+			key: "upcoming",
+			label: showEvents ? "다가오는 항목" : "다가오는 할 일",
+			items: visibleItems.filter((item) => {
+				const day = taskListDay(item, today);
+				return Boolean(day && day > today);
+			}),
+		},
+		{
+			key: "unscheduled",
+			label: "날짜 없음",
+			items: visibleItems.filter((item) => !taskListDay(item, today)),
+		},
+	];
 
 	async function createTask() {
 		setEditor({ open: true });
@@ -349,24 +366,55 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 						</div>
 					</header>
 
-					<div className="mb-4 flex w-fit rounded-lg bg-muted p-0.5 sm:mb-6">
-						{(["open", "done"] as const).map((value) => (
-							<Button
-								key={value}
-								variant="ghost"
-								size="sm"
-								className={cn(
-									"h-7 px-3",
-									view === value &&
-										"bg-background shadow-sm hover:bg-background",
-								)}
-								onClick={() => setView(value)}
-							>
-								{value === "open"
-									? `진행 중 ${openTasks.length}`
-									: `완료 ${doneTasks.length}`}
-							</Button>
-						))}
+					<div className="mb-4 flex flex-wrap items-center gap-2 sm:mb-6">
+						<Popover>
+							<PopoverTrigger asChild>
+								<Button variant="outline" size="sm">
+									<ListFilter /> 필터
+								</Button>
+							</PopoverTrigger>
+							<PopoverContent align="start" className="w-60 space-y-1 p-1.5">
+								{(
+									[
+										["open", "미완료"],
+										["today", "오늘 완료한 할 일도 보기"],
+										["done", "완료한 할 일 전체"],
+									] as const
+								).map(([value, label]) => (
+									<Button
+										key={value}
+										variant="ghost"
+										size="sm"
+										className="w-full justify-start"
+										aria-pressed={view === value}
+										onClick={() => setView(value)}
+									>
+										<Check
+											className={cn("size-4", view !== value && "invisible")}
+										/>
+										{label}
+									</Button>
+								))}
+								<div className="my-1 border-t" />
+								<Button
+									variant="ghost"
+									size="sm"
+									className="w-full justify-start"
+									aria-pressed={showEvents}
+									onClick={() => setShowEvents((current) => !current)}
+								>
+									<Check className={cn("size-4", !showEvents && "invisible")} />{" "}
+									일정 함께 보기
+								</Button>
+							</PopoverContent>
+						</Popover>
+						<span className="text-xs text-muted-foreground">
+							{view === "done"
+								? `완료 ${doneTasks.length}`
+								: `미완료 ${openTasks.length}`}
+							{view === "today" ? ` · 오늘 완료 ${todayDone.length}` : ""}
+							{showEvents ? ` · 일정 ${events.length}` : ""}
+						</span>
 					</div>
 
 					{rescheduleError ? (
@@ -375,55 +423,8 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 						</output>
 					) : null}
 
-					{view === "open" ? (
+					{view !== "done" ? (
 						<div className="space-y-4">
-							<section className="orbit-card overflow-hidden">
-								<div className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
-									<h3 className="text-xs font-semibold text-muted-foreground">
-										진행 중인 일정
-									</h3>
-									<span className="text-xs text-muted-foreground">
-										{events.length}
-									</span>
-								</div>
-								{events.map((item) => (
-									<button
-										key={item.id}
-										type="button"
-										onClick={() => setEditor({ open: true, item })}
-										className="flex min-h-14 w-full items-center gap-3 border-b border-border/55 px-3 text-left last:border-b-0 hover:bg-muted/40 sm:px-4"
-									>
-										<span
-											className={cn(
-												"grid size-5 shrink-0 place-items-center rounded-full border",
-												itemColor(item).surface,
-											)}
-										>
-											<CalendarDays className="size-3" />
-										</span>
-										<span className="min-w-0 flex-1 py-2">
-											<span className="block text-sm font-medium">
-												{item.title}
-											</span>
-											<span className="mt-0.5 block truncate text-xs text-muted-foreground">
-												{taskContext(item)}
-											</span>
-										</span>
-										<span className="max-w-32 shrink-0 text-right text-[11px] text-muted-foreground sm:max-w-none sm:text-xs">
-											{item.start?.slice(0, 16).replace("T", " ") ??
-												"날짜 없음"}
-											{item.end && item.end !== item.start
-												? ` ~ ${item.end.slice(0, 16).replace("T", " ")}`
-												: ""}
-										</span>
-									</button>
-								))}
-								{events.length === 0 ? (
-									<p className="px-4 py-4 text-sm text-muted-foreground">
-										진행 중인 일정이 없습니다.
-									</p>
-								) : null}
-							</section>
 							{groups.map((group) => (
 								<section key={group.key} className="orbit-card overflow-hidden">
 									<div className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
@@ -439,6 +440,7 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 										snapshot={snapshot}
 										today={today}
 										taskToggle={taskToggle}
+										exitOnToggle={view !== "today"}
 										canReschedule={group.key !== "unscheduled"}
 										settling={reschedulingIds.length > 0}
 										departingIds={departingIds}
@@ -458,10 +460,11 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 					) : (
 						<div className="orbit-card overflow-hidden">
 							<TaskRows
-								items={doneTasks}
+								items={visibleItems}
 								snapshot={snapshot}
 								today={today}
 								taskToggle={taskToggle}
+								exitOnToggle
 								canReschedule={false}
 								settling={false}
 								departingIds={[]}
@@ -565,6 +568,7 @@ function TaskRows({
 	snapshot,
 	today,
 	taskToggle,
+	exitOnToggle,
 	canReschedule,
 	settling,
 	departingIds,
@@ -582,6 +586,7 @@ function TaskRows({
 	snapshot: OrbitSnapshot;
 	today: string;
 	taskToggle: ReturnType<typeof useTaskToggle>;
+	exitOnToggle: boolean;
 	canReschedule: boolean;
 	settling: boolean;
 	departingIds: string[];
@@ -641,40 +646,57 @@ function TaskRows({
 							onOpen={() => onOpen(item)}
 							onArchive={() => onArchive(item)}
 							onDelete={() => onDelete(item)}
-							onToggleTask={() => void taskToggle.toggle(item, { exit: true })}
+							onToggleTask={
+								item.type === "task"
+									? () => void taskToggle.toggle(item, { exit: exitOnToggle })
+									: undefined
+							}
 							onMove={(space, folder) => onMove(item, space, folder)}
 						>
-							<fieldset
-								draggable={canReschedule}
-								onDragStart={(event) => onDragStart(event, item)}
+							{/* biome-ignore lint/a11y/useSemanticElements: This row groups task actions; fieldset's anonymous box breaks flex centering. */}
+							<div
+								role="group"
+								draggable={canReschedule && item.type === "task" && !checked}
+								onDragStart={(event) => {
+									if (item.type === "task" && !checked)
+										onDragStart(event, item);
+								}}
 								onDragEnd={onDragEnd}
 								className={cn(
 									"group flex min-h-14 items-center gap-3 border-b border-border/55 px-3 transition-[background-color,opacity,transform] duration-150 last:border-b-0 hover:bg-muted/40 sm:px-4",
-									canReschedule && "cursor-grab active:cursor-grabbing",
+									canReschedule &&
+										item.type === "task" &&
+										!checked &&
+										"cursor-grab active:cursor-grabbing",
 									draggingId === item.id && "opacity-45",
 									departing && "pointer-events-none -translate-x-2 opacity-0",
 									arriving &&
 										"animate-in fade-in slide-in-from-right-2 duration-200",
 								)}
 							>
-								{canReschedule ? (
+								{item.type === "task" ? (
+									<TaskCheck
+										color={item.color}
+										checked={checked}
+										animate={taskToggle.isAnimating(item.id)}
+										disabled={taskToggle.isBusy(item.id)}
+										onClick={() =>
+											void taskToggle.toggle(item, { exit: exitOnToggle })
+										}
+										aria-label={
+											checked ? `${item.title} 다시 열기` : `${item.title} 완료`
+										}
+									/>
+								) : (
 									<span
-										className="-mr-1 hidden size-5 shrink-0 items-center justify-center text-muted-foreground/45 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 sm:flex"
-										aria-hidden="true"
+										className={cn(
+											"grid size-5 shrink-0 place-items-center rounded-full border",
+											itemColor(item).surface,
+										)}
 									>
-										<GripVertical className="size-3.5" />
+										<CalendarDays className="size-3" />
 									</span>
-								) : null}
-								<TaskCheck
-									color={item.color}
-									checked={checked}
-									animate={taskToggle.isAnimating(item.id)}
-									disabled={taskToggle.isBusy(item.id)}
-									onClick={() => void taskToggle.toggle(item, { exit: true })}
-									aria-label={
-										checked ? `${item.title} 다시 열기` : `${item.title} 완료`
-									}
-								/>
+								)}
 								<button
 									type="button"
 									onClick={() => onOpen(item)}
@@ -694,25 +716,38 @@ function TaskRows({
 									snapshot={snapshot}
 									onMove={(space, folder) => onMove(item, space, folder)}
 								/>
-								<DatePicker
-									value={day ?? ""}
-									onChange={(value) => void changeDate(item, value)}
-									label={`${item.title} 날짜 변경`}
-									allowClear
-									disabled={
-										savingIds.has(item.id) ||
-										taskToggle.isBusy(item.id) ||
-										settling ||
-										isPendingItemId(item.id)
-									}
-									triggerContent={formatDue(item, today)}
-									variant="ghost"
-									className={cn(
-										"h-8 w-auto max-w-28 shrink-0 gap-1 px-1.5 text-[11px] text-muted-foreground sm:max-w-none sm:gap-1.5 sm:text-xs",
-										day && day < today && !checked && "text-destructive",
-									)}
-								/>
-							</fieldset>
+								{item.type === "task" ? (
+									<DatePicker
+										value={day ?? ""}
+										onChange={(value) => void changeDate(item, value)}
+										label={`${item.title} 날짜 변경`}
+										allowClear
+										disabled={
+											savingIds.has(item.id) ||
+											taskToggle.isBusy(item.id) ||
+											settling ||
+											isPendingItemId(item.id)
+										}
+										triggerContent={formatDue(item, today)}
+										variant="ghost"
+										className={cn(
+											"h-8 w-auto max-w-28 shrink-0 gap-1 px-1.5 text-[11px] text-muted-foreground sm:max-w-none sm:gap-1.5 sm:text-xs",
+											day && day < today && !checked && "text-destructive",
+										)}
+									/>
+								) : (
+									<button
+										type="button"
+										onClick={() => onOpen(item)}
+										className="max-w-28 shrink-0 text-right text-[11px] text-muted-foreground sm:max-w-none sm:text-xs"
+									>
+										{item.start?.slice(0, 16).replace("T", " ")}
+										{item.end && item.end !== item.start
+											? ` ~ ${item.end.slice(0, 16).replace("T", " ")}`
+											: ""}
+									</button>
+								)}
+							</div>
 						</ItemContextMenu>
 					</TaskExit>
 				);
