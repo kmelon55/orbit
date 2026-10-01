@@ -270,7 +270,13 @@ export function ScheduleEditor({
 										: "새 할 일"}
 							</div>
 							<DialogTitle className="sr-only">
-								{item ? "일정 편집" : "새 일정"}
+								{item
+									? kind === "task"
+										? "할 일 편집"
+										: "일정 편집"
+									: kind === "task"
+										? "새 할 일"
+										: "새 일정"}
 							</DialogTitle>
 							<DialogDescription className="sr-only">
 								제목, 날짜, 시간과 메모를 입력하세요.

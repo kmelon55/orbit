@@ -34,6 +34,13 @@ import { ScheduleColors } from "@/components/schedule-colors";
 import { ScheduleEditor } from "@/components/schedule-editor";
 import { TaskCheck, taskTitleClass } from "@/components/task-check";
 import { Button } from "@/components/ui/button";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogTitle,
+	DialogTrigger,
+} from "@/components/ui/dialog";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useTaskToggle } from "@/hooks/use-task-toggle";
 import { cn } from "@/lib/utils";
@@ -42,6 +49,8 @@ const WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"];
 const HOUR_START = 0;
 const HOUR_END = 24;
 const HOUR_HEIGHT = 56;
+const MONTH_ITEMS_TOP = 44;
+const MONTH_LANE_HEIGHT = 26;
 
 type CalendarView = "day" | "week" | "month";
 type EditorState = {
@@ -88,6 +97,60 @@ function CalendarTaskCheck({
 			}}
 			onPointerDown={(event) => event.stopPropagation()}
 		/>
+	);
+}
+
+function CalendarCreateButton({
+	date,
+	onCreate,
+	className,
+}: {
+	date: string;
+	onCreate: (date: string, time?: string, kind?: EditorState["kind"]) => void;
+	className?: string;
+}) {
+	const [open, setOpen] = useState(false);
+	function choose(kind: EditorState["kind"]) {
+		setOpen(false);
+		onCreate(date, undefined, kind);
+	}
+	return (
+		<Dialog open={open} onOpenChange={setOpen}>
+			<DialogTrigger asChild>
+				<Button
+					variant="ghost"
+					size="icon-xs"
+					className={className}
+					aria-label={`${date} 항목 추가`}
+					onClick={(event) => event.stopPropagation()}
+					onDoubleClick={(event) => event.stopPropagation()}
+				>
+					<Plus />
+				</Button>
+			</DialogTrigger>
+			<DialogContent className="max-w-sm gap-4 p-4 sm:p-5">
+				<DialogTitle>{shortDayLabel(date)}</DialogTitle>
+				<DialogDescription className="sr-only">
+					추가할 항목을 선택하세요.
+				</DialogDescription>
+				<div className="grid grid-cols-2 gap-3">
+					<Button
+						variant="outline"
+						className="h-28 flex-col gap-3 rounded-xl text-base"
+						onClick={() => choose("task")}
+					>
+						<ListTodo className="size-7" /> 할 일
+					</Button>
+					<Button
+						variant="outline"
+						className="h-28 flex-col gap-3 rounded-xl text-base"
+						onClick={() => choose("event")}
+					>
+						<CalendarDays className="size-7" /> 일정
+					</Button>
+				</div>
+			</DialogContent>
+		</Dialog>
 	);
 }
 
@@ -648,9 +711,18 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 	}, [dated]);
 	const selectedItems = byDay.get(selectedDate) ?? [];
 
-	function openNew(date = formatDayKey(cursor), time = "09:00") {
+	function openNew(
+		date = formatDayKey(cursor),
+		time = "09:00",
+		kind: EditorState["kind"] = "event",
+	) {
 		updateCalendar({ selected: date });
-		setEditor({ open: true, kind: "event", date, time });
+		setEditor({
+			open: true,
+			kind,
+			date,
+			time: kind === "event" ? time : undefined,
+		});
 	}
 
 	function openItem(item: OrbitItem) {
@@ -947,10 +1019,10 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 					<ScheduleColors />
 					<Button
 						size="sm"
-						aria-label="새 일정"
+						aria-label="일정 추가"
 						onClick={() => openNew(selectedDate)}
 					>
-						<Plus /> <span className="hidden sm:inline">새 일정</span>
+						<Plus /> <span className="hidden sm:inline">일정 추가</span>
 					</Button>
 				</header>
 				<div className="grid shrink-0 grid-cols-3 gap-1 border-b border-border/60 bg-muted/20 p-1.5 sm:hidden">
@@ -1075,7 +1147,7 @@ function MobileAgenda({
 }: {
 	items: OrbitItem[];
 	date: string;
-	onCreate: (date: string, time?: string) => void;
+	onCreate: (date: string, time?: string, kind?: EditorState["kind"]) => void;
 	onOpen: (item: OrbitItem) => void;
 	compact?: boolean;
 }) {
@@ -1159,7 +1231,7 @@ function MobileDayView({
 	today: string;
 	selectedDate: string;
 	onSelectDate: (date: string) => void;
-	onCreate: (date: string, time?: string) => void;
+	onCreate: (date: string, time?: string, kind?: EditorState["kind"]) => void;
 	onOpen: (item: OrbitItem) => void;
 }) {
 	const start = startOfWeek(cursor);
@@ -1209,13 +1281,7 @@ function MobileDayView({
 							{items.length > 0 ? `${items.length}개 항목` : "여유 있는 날"}
 						</p>
 					</div>
-					<Button
-						variant="outline"
-						size="sm"
-						onClick={() => onCreate(selectedDate)}
-					>
-						<Plus /> 일정
-					</Button>
+					<CalendarCreateButton date={selectedDate} onCreate={onCreate} />
 				</div>
 				<MobileAgenda
 					items={items}
@@ -1242,7 +1308,7 @@ function MobileWeekView({
 	today: string;
 	selectedDate: string;
 	onSelectDate: (date: string) => void;
-	onCreate: (date: string, time?: string) => void;
+	onCreate: (date: string, time?: string, kind?: EditorState["kind"]) => void;
 	onOpen: (item: OrbitItem) => void;
 }) {
 	const start = startOfWeek(cursor);
@@ -1282,14 +1348,7 @@ function MobileWeekView({
 										{items.length ? `${items.length}개` : "비어 있음"}
 									</span>
 								</button>
-								<Button
-									variant="ghost"
-									size="icon-sm"
-									onClick={() => onCreate(key)}
-									aria-label={`${key} 일정 추가`}
-								>
-									<Plus />
-								</Button>
+								<CalendarCreateButton date={key} onCreate={onCreate} />
 							</div>
 							{items.length > 0 ? (
 								<div className="space-y-1 p-1.5">
@@ -1341,7 +1400,7 @@ function MobileCalendarView({
 	today: string;
 	selectedDate: string;
 	onSelectDate: (date: string) => void;
-	onCreate: (date: string, time?: string) => void;
+	onCreate: (date: string, time?: string, kind?: EditorState["kind"]) => void;
 	onOpen: (item: OrbitItem) => void;
 	onMove: (amount: number) => void;
 }) {
@@ -1413,7 +1472,7 @@ function CalendarRail({
 	onChangeVisibility: (kind: keyof CalendarVisibility) => void;
 	onMoveMonth: (amount: number) => void;
 	onSelectDate: (date: string) => void;
-	onCreate: (date: string, time?: string) => void;
+	onCreate: (date: string, time?: string, kind?: EditorState["kind"]) => void;
 	onOpen: (item: OrbitItem) => void;
 }) {
 	const days = gridDays(cursor);
@@ -1528,14 +1587,7 @@ function CalendarRail({
 							{selectedItems.length}개 항목
 						</p>
 					</div>
-					<Button
-						variant="ghost"
-						size="icon-sm"
-						onClick={() => onCreate(selectedDate)}
-						aria-label={`${selectedDate} 일정 추가`}
-					>
-						<Plus />
-					</Button>
+					<CalendarCreateButton date={selectedDate} onCreate={onCreate} />
 				</div>
 				{selectedItems.length > 0 ? (
 					<div className="space-y-1.5">
@@ -1608,7 +1660,7 @@ function WeekView({
 	today: string;
 	selectedDate: string;
 	onSelectDate: (date: string) => void;
-	onCreate: (date: string, time?: string) => void;
+	onCreate: (date: string, time?: string, kind?: EditorState["kind"]) => void;
 	onOpen: (item: OrbitItem) => void;
 	draggingId: string | null;
 	dragOperation: DragOperation;
@@ -1987,7 +2039,7 @@ function MonthView({
 	today: string;
 	selectedDate: string;
 	onSelectDate: (date: string) => void;
-	onCreate: (date: string, time?: string) => void;
+	onCreate: (date: string, time?: string, kind?: EditorState["kind"]) => void;
 	onOpen: (item: OrbitItem) => void;
 	draggingId: string | null;
 	dragOperation: DragOperation;
@@ -2012,7 +2064,7 @@ function MonthView({
 	const days = gridDays(cursor);
 	const monthLayout = buildMonthLayout(byDay, days);
 	const rowHeights = monthLayout.rowLaneCounts.map((count) =>
-		Math.max(112, 38 + count * 26),
+		Math.max(112, MONTH_ITEMS_TOP + count * MONTH_LANE_HEIGHT + 6),
 	);
 	const gridTemplateRows = rowHeights
 		.map((height) => `minmax(${height}px, 1fr)`)
@@ -2106,18 +2158,14 @@ function MonthView({
 										>
 											{day.getDate()}
 										</button>
-										<Button
-											variant="ghost"
-											size="icon-xs"
-											className="relative z-20 hidden opacity-0 transition-opacity group-hover/day:opacity-100 focus:opacity-100 sm:inline-flex"
-											onClick={(event) => {
-												event.stopPropagation();
-												onCreate(key);
-											}}
-											aria-label={`${key} 일정 추가`}
-										>
-											<Plus />
-										</Button>
+										<CalendarCreateButton
+											date={key}
+											onCreate={onCreate}
+											className={cn(
+												"relative z-20 size-5 opacity-100 transition-opacity group-hover/day:opacity-100 focus:opacity-100 sm:size-6 sm:opacity-0",
+												key !== selectedDate && "hidden sm:inline-flex",
+											)}
+										/>
 									</div>
 								</div>
 							);
@@ -2135,7 +2183,8 @@ function MonthView({
 								style={{
 									gridColumn: `${segment.startColumn + 1} / ${segment.endColumn + 2}`,
 									gridRow: segment.row + 1,
-									paddingTop: 32 + segment.lane * 26,
+									paddingTop:
+										MONTH_ITEMS_TOP + segment.lane * MONTH_LANE_HEIGHT,
 								}}
 							>
 								{/* biome-ignore lint/a11y/noStaticElementInteractions: Calendar bars accept native drag-and-drop across their date span. */}
@@ -2217,9 +2266,12 @@ function MonthView({
 			</div>
 			{isMobile ? (
 				<div className="border-t bg-muted/20 p-3">
-					<h3 className="mb-2 text-sm font-semibold">
-						{shortDayLabel(selectedDate)}
-					</h3>
+					<div className="mb-2 flex items-center justify-between">
+						<h3 className="text-sm font-semibold">
+							{shortDayLabel(selectedDate)}
+						</h3>
+						<CalendarCreateButton date={selectedDate} onCreate={onCreate} />
+					</div>
 					<MobileAgenda
 						items={byDay.get(selectedDate) ?? []}
 						date={selectedDate}
