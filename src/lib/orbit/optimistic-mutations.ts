@@ -35,7 +35,12 @@ function predict(
 		case "archive-item":
 			return moveItemLocally(item, "archive");
 		case "toggle-task":
-			return { ...item, status: item.status === "done" ? "open" : "done" };
+			return {
+				...item,
+				status: item.status === "done" ? "open" : "done",
+				completedAt:
+					item.status === "done" ? undefined : new Date().toISOString(),
+			};
 		case "update-note":
 			return { ...item, ...mutation.input };
 		case "file-item": {
@@ -64,6 +69,12 @@ function predict(
 			next.status =
 				next.type === "task"
 					? (input.status ?? item.status ?? "open")
+					: undefined;
+			next.completedAt =
+				next.status === "done"
+					? item.status === "done"
+						? item.completedAt
+						: new Date().toISOString()
 					: undefined;
 			return next;
 		}

@@ -47,6 +47,7 @@ export const orbitItemSchema = z.object({
 	space: orbitSpaceSchema,
 	color: orbitFolderColorSchema.optional(),
 	status: orbitStatusSchema.optional(),
+	completedAt: z.string().optional(),
 	project: z.string().optional(),
 	folder: z.string().optional(),
 	due: z.string().optional(),

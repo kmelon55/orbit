@@ -603,6 +603,7 @@ function itemFrontmatter(
 	else delete data.color;
 	if (input.status) data.status = input.status;
 	else delete data.status;
+	if (input.type !== "task" || input.status !== "done") delete data.completedAt;
 	if (input.project) data.project = input.project;
 	else delete data.project;
 	if (input.due) data.due = input.due;
@@ -853,6 +854,12 @@ export async function fileOrbitItem(id: string, input: FileItemInput) {
 			? (next.status ??
 				(typeof current.status === "string" ? current.status : "open"))
 			: undefined;
+	const completedAt =
+		status === "done"
+			? current.status === "done"
+				? current.completedAt
+				: new Date().toISOString()
+			: undefined;
 	const project =
 		next.project === null
 			? undefined
@@ -909,6 +916,7 @@ export async function fileOrbitItem(id: string, input: FileItemInput) {
 			},
 			current,
 		),
+		...(completedAt ? { completedAt } : {}),
 	});
 
 	if (path.resolve(destPath) !== path.resolve(found.filePath)) {
@@ -926,10 +934,14 @@ export async function toggleOrbitTask(id: string) {
 		throw new Error("Only tasks can be toggled");
 	}
 	const nextStatus = found.parsed.data.status === "done" ? "open" : "done";
+	const now = new Date().toISOString();
+	const metadata = { ...found.parsed.data };
+	delete metadata.completedAt;
 	const contents = matter.stringify(found.parsed.content, {
-		...found.parsed.data,
+		...metadata,
 		status: nextStatus,
-		updated: new Date().toISOString(),
+		updated: now,
+		...(nextStatus === "done" ? { completedAt: now } : {}),
 	});
 	await atomicWrite(found.filePath, contents);
 	return readOrbitItem(found.filePath, vaultRoot);

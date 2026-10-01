@@ -106,6 +106,53 @@ test("item colors persist across edits, rescheduling, moves, and reset", async (
 	}
 });
 
+test("task completion timestamps survive edits and moves and reset when reopened", async () => {
+	const previousVault = process.env.ORBIT_VAULT_DIR;
+	const vault = await mkdtemp(path.join(os.tmpdir(), "orbit-completed-"));
+	process.env.ORBIT_VAULT_DIR = vault;
+	try {
+		const task = await createOrbitItem({
+			title: "완료 날짜",
+			body: "",
+			type: "task",
+			space: "inbox",
+		});
+		assert.ok(task);
+		const done = await toggleOrbitTask(task.id);
+		assert.ok(done?.completedAt);
+		assert.equal(done.status, "done");
+		const edited = await updateOrbitNote(task.id, {
+			title: task.title,
+			body: "수정",
+			tags: [],
+		});
+		assert.equal(edited?.completedAt, done.completedAt);
+		const moved = await fileOrbitItem(task.id, {
+			space: "project",
+			folder: "완료",
+			due: "2026-10-05",
+		});
+		assert.equal(moved?.completedAt, done.completedAt);
+		const reopened = await toggleOrbitTask(task.id);
+		assert.equal(reopened?.completedAt, undefined);
+		assert.equal(reopened?.status, "open");
+		const viaEdit = await fileOrbitItem(task.id, {
+			space: "inbox",
+			status: "done",
+		});
+		assert.ok(viaEdit?.completedAt);
+		assert.equal(
+			(await fileOrbitItem(task.id, { space: "inbox", status: "open" }))
+				?.completedAt,
+			undefined,
+		);
+	} finally {
+		if (previousVault === undefined) delete process.env.ORBIT_VAULT_DIR;
+		else process.env.ORBIT_VAULT_DIR = previousVault;
+		await rm(vault, { recursive: true, force: true });
+	}
+});
+
 test("archived notes keep their folder in the unified folder browser", async () => {
 	const previousVault = process.env.ORBIT_VAULT_DIR;
 	const vault = await mkdtemp(path.join(os.tmpdir(), "orbit-archive-"));

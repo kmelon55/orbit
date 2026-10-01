@@ -116,6 +116,9 @@ export function parseItem(
 		type: data.type ?? "note",
 		space: data.space ?? space,
 		status: data.status,
+		completedAt: data.completedAt
+			? normalizeDate(data.completedAt, updated)
+			: undefined,
 		color: orbitFolderColorSchema.safeParse(data.color).data,
 		project: data.project,
 		folder: folderFromPath(relativePath),
