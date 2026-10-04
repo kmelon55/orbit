@@ -1,5 +1,6 @@
 import { OAuth2Client } from "google-auth-library";
 import { simpleParser } from "mailparser";
+import { type BodyPart, readBody } from "./body.server";
 import { mailConfig } from "./config.server";
 import { addresses } from "./content.server";
 import { mailStore, messageKey } from "./store.server";
@@ -89,6 +90,97 @@ type GmailMeta = {
 		parts?: { filename?: string }[];
 	};
 };
+type GmailPart = {
+	partId?: string;
+	mimeType?: string;
+	filename?: string;
+	headers?: { name: string; value: string }[];
+	body?: { size?: number; data?: string; attachmentId?: string };
+	parts?: GmailPart[];
+};
+async function gmailPartContent(
+	account: MailAccount,
+	message: MailMessage,
+	part: GmailPart,
+) {
+	if ((part.body?.size || 0) > MAX_RAW_BYTES)
+		throw new Error("첨부파일이 너무 큽니다.");
+	const body = part.body?.attachmentId
+		? await gmailRequest<{ data: string }>(
+				account,
+				`messages/${encodeURIComponent(message.remoteId)}/attachments/${encodeURIComponent(part.body.attachmentId)}`,
+			)
+		: part.body;
+	const content = Buffer.from(body?.data || "", "base64url");
+	if (content.length > MAX_RAW_BYTES)
+		throw new Error("첨부파일이 너무 큽니다.");
+	return content;
+}
+export async function gmailBody(account: MailAccount, message: MailMessage) {
+	const full = await gmailRequest<{ payload: GmailPart }>(
+		account,
+		`messages/${encodeURIComponent(message.remoteId)}?format=full`,
+	);
+	const parts = new Map<string, GmailPart>();
+	function convert(part: GmailPart): BodyPart {
+		const id = `gmail:${part.partId || "root"}`;
+		parts.set(id, part);
+		const header = (name: string) =>
+			part.headers?.find((h) => h.name.toLowerCase() === name)?.value;
+		return {
+			id,
+			type: part.mimeType || "application/octet-stream",
+			filename: part.filename,
+			charset: header("content-type")?.match(
+				/charset\s*=\s*"?([^";\s]+)/i,
+			)?.[1],
+			disposition: header("content-disposition")
+				?.split(";")[0]
+				.trim()
+				.toLowerCase(),
+			contentId: header("content-id"),
+			size: part.body?.size || 0,
+			children: part.mimeType?.startsWith("multipart/")
+				? part.parts?.map(convert)
+				: undefined,
+		};
+	}
+	const root = convert(full.payload);
+	const headers = `${(full.payload.headers || [])
+		.map((h) => `${h.name}: ${h.value}`)
+		.join("\r\n")}\r\n`;
+	return readBody(headers, root, (part) => {
+		const original = parts.get(part.id);
+		if (!original) throw new Error("메일 본문을 찾을 수 없습니다.");
+		return gmailPartContent(account, message, original);
+	});
+}
+export async function gmailAttachment(
+	account: MailAccount,
+	message: MailMessage,
+	partId: string,
+) {
+	const full = await gmailRequest<{ payload: GmailPart }>(
+		account,
+		`messages/${encodeURIComponent(message.remoteId)}?format=full`,
+	);
+	function find(part: GmailPart): GmailPart | undefined {
+		if (`gmail:${part.partId || "root"}` === partId) return part;
+		for (const child of part.parts || []) {
+			const found = find(child);
+			if (found) return found;
+		}
+	}
+	const part = find(full.payload);
+	if (!part) throw new Error("첨부파일을 찾을 수 없습니다.");
+	const content = await gmailPartContent(account, message, part);
+	return {
+		content,
+		size: content.length,
+		contentType: part.mimeType || "application/octet-stream",
+		filename: part.filename || "첨부파일",
+	};
+}
 const queries: Record<MailFolder, string> = {
 	inbox: "in:inbox",
 	spam: "in:spam",

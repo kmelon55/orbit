@@ -3,6 +3,8 @@ import MailComposer from "nodemailer/lib/mail-composer";
 import { parseMail, toDetail } from "./content.server";
 import { relatedMessages } from "./conversations";
 import {
+	gmailAttachment,
+	gmailBody,
 	gmailConversation,
 	gmailRaw,
 	gmailRequest,
@@ -12,6 +14,8 @@ import {
 import { accountAddresses, senderAddress } from "./identities";
 import {
 	findMailbox,
+	imapAttachment,
+	imapBody,
 	imapClient,
 	imapRaw,
 	listImap,
@@ -176,7 +180,23 @@ const bodyRequests = new Map<
 	string,
 	Promise<{ hidden: MailDetail; visible: MailDetail }>
 >();
-export async function detailMessage(id: string, remoteImages = false) {
+export async function attachmentMessage(id: string, part: string) {
+	const message = mailStore().message(id);
+	const account = mailStore().account(message.accountId);
+	// Keep numeric links from existing cached bodies working during the transition.
+	if (/^\d+$/.test(part))
+		return (await rawMessage(id)).parsed.attachments[Number(part)];
+	if (account.provider === "gmail" && /^gmail:(?:root|[\d.]+)$/.test(part))
+		return gmailAttachment(account, message, part);
+	if (account.provider !== "gmail" && /^imap:\d+(?:\.\d+)*$/.test(part))
+		return imapAttachment(account, message, part);
+	throw new Error("첨부파일을 찾을 수 없습니다.");
+}
+export async function detailMessage(
+	id: string,
+	remoteImages = false,
+	prefetch = false,
+) {
 	const store = mailStore();
 	const message = store.message(id);
 	const cached = store.body(id);
@@ -189,16 +209,30 @@ export async function detailMessage(id: string, remoteImages = false) {
 	const key = `${mailDirectory()}:${id}`;
 	let pending = bodyRequests.get(key);
 	if (!pending) {
-		pending = rawMessage(id)
-			.then(({ message, parsed }) => {
-				const hidden = toDetail(message, parsed);
-				const visible = toDetail(message, parsed, true);
+		const account = store.account(message.accountId);
+		pending = (
+			account.provider === "gmail"
+				? gmailBody(account, message)
+				: imapBody(account, message, prefetch)
+		)
+			.then(({ parsed, attachments }) => {
+				const hidden = {
+					...toDetail(message, parsed),
+					attachments,
+					hasAttachments: attachments.length > 0,
+				};
+				const visible = {
+					...toDetail(message, parsed, true),
+					attachments,
+					hasAttachments: attachments.length > 0,
+				};
 				// A message/account can be removed while the provider request is in flight.
 				try {
 					const current = store.message(id);
 					store.saveMessages([
 						{
 							...current,
+							hasAttachments: attachments.length > 0,
 							messageId: hidden.messageId,
 							deliveredTo: hidden.deliveredTo,
 							references: hidden.references,

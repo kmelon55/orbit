@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Readable } from "node:stream";
 import { afterEach, beforeEach, mock, test } from "node:test";
 import { OAuth2Client } from "google-auth-library";
 import { ImapFlow } from "imapflow";
@@ -108,8 +109,58 @@ function mockGmail(
 	raw: Buffer,
 	onSend?: (input: { raw: string; threadId: string }) => void,
 ) {
+	const parsedMail = parseMail(raw);
 	mock.method(globalThis, "fetch", async (url: unknown, init?: RequestInit) => {
 		const path = String(url);
+		if (path.includes("format=full")) {
+			const parsed = await parsedMail;
+			return Response.json({
+				payload: {
+					mimeType: "multipart/mixed",
+					partId: "",
+					headers: parsed.headerLines.map((h) => ({
+						name: h.key,
+						value: h.line.slice(h.line.indexOf(":") + 1).trim(),
+					})),
+					parts: [
+						{
+							partId: "0",
+							mimeType: "multipart/alternative",
+							parts: [
+								{
+									partId: "0.0",
+									mimeType: "text/plain",
+									body: {
+										data: Buffer.from(parsed.text || "").toString("base64url"),
+									},
+								},
+								{
+									partId: "0.1",
+									mimeType: "text/html",
+									body: {
+										data: Buffer.from(parsed.html || "").toString("base64url"),
+									},
+								},
+							],
+						},
+						...parsed.attachments.map((a, i) => ({
+							partId: String(i + 1),
+							mimeType: a.contentType,
+							filename: a.filename,
+							headers: [{ name: "Content-Disposition", value: "attachment" }],
+							body: { size: a.size, attachmentId: String(i) },
+						})),
+					],
+				},
+			});
+		}
+		if (path.includes("/attachments/")) {
+			const parsed = await parsedMail;
+			const index = Number(path.split("/attachments/")[1]);
+			return Response.json({
+				data: parsed.attachments[index].content.toString("base64url"),
+			});
+		}
 		if (path.endsWith("messages/send")) {
 			onSend?.(JSON.parse(String(init?.body)));
 			return Response.json({ id: "sent" });
@@ -611,6 +662,190 @@ test("body opens share a provider request, cache encrypted variants, and preserv
 	await assert.rejects(() => detailMessage(m.id), /메일을 찾을 수 없습니다/);
 });
 
+test("Gmail prefetch skips large file bytes, keeps unread, caches the body and downloads only the requested attachment", async () => {
+	const m = message();
+	mailStore().saveMessages([m]);
+	const calls: string[] = [];
+	mock.method(globalThis, "fetch", async (url: unknown) => {
+		const path = String(url);
+		calls.push(path);
+		if (path.endsWith("?format=full"))
+			return Response.json({
+				payload: {
+					mimeType: "multipart/mixed",
+					headers: [
+						{ name: "From", value: "Sender <sender@example.com>" },
+						{ name: "To", value: account.email },
+					],
+					parts: [
+						{
+							partId: "0",
+							mimeType: "text/plain",
+							body: {
+								data: Buffer.from("빠른 본문").toString("base64url"),
+								size: 13,
+							},
+						},
+						{
+							partId: "1",
+							mimeType: "application/pdf",
+							filename: "large.pdf",
+							body: { attachmentId: "large-file", size: 200_000_000 },
+						},
+						{
+							partId: "2",
+							mimeType: "text/plain",
+							filename: "작은파일.txt",
+							body: { attachmentId: "small-file", size: 5 },
+						},
+					],
+				},
+			});
+		if (path.endsWith("/attachments/small-file"))
+			return Response.json({
+				data: Buffer.from("bytes").toString("base64url"),
+			});
+		throw new Error(`Unexpected request: ${path}`);
+	});
+	const prefetch = await handleMailRequest(
+		request(`message?id=${m.id}&images=1&prefetch=1`),
+	);
+	assert.equal(prefetch.status, 200);
+	const body = await prefetch.json();
+	assert.equal(body.text, "빠른 본문");
+	assert.equal(body.attachments[0].size, 200_000_000);
+	assert.equal(mailStore().message(m.id).unread, true);
+	assert.equal(calls.length, 1);
+	await handleMailRequest(request(`message?id=${m.id}`));
+	assert.equal(calls.length, 1);
+	const file = await handleMailRequest(
+		request(`attachment?message=${m.id}&part=gmail%3A2`),
+	);
+	assert.equal(file.status, 200);
+	assert.equal(await file.text(), "bytes");
+	assert.equal(calls.length, 3);
+	assert.ok(
+		calls.every(
+			(path) => !path.includes("format=raw") && !path.includes("large-file"),
+		),
+	);
+});
+
+test("IMAP body reads only text and inline image parts; lazy text attachments retain their original bytes", async () => {
+	const { detailMessage } = await import("./service.server");
+	account = { ...account, provider: "icloud" };
+	mailStore().saveAccount(account, { password: "app-password" });
+	const m = {
+		...message(),
+		remoteId: "7:42",
+		mailbox: "INBOX",
+		uidValidity: "7",
+	};
+	mailStore().saveMessages([m]);
+	mock.method(ImapFlow.prototype, "connect", async function (this: ImapFlow) {
+		Object.defineProperty(this, "usable", { value: true, configurable: true });
+	});
+	mock.method(
+		ImapFlow.prototype,
+		"getMailboxLock",
+		async function (this: ImapFlow) {
+			this.mailbox = { uidValidity: 7n } as Exclude<ImapFlow["mailbox"], false>;
+			return { release() {} };
+		},
+	);
+	let fileFetches = 0;
+	mock.method(
+		ImapFlow.prototype,
+		"fetchOne",
+		async (uid: string, query: { bodyParts?: unknown }) => {
+			assert.equal(uid, "42");
+			if (query.bodyParts) {
+				fileFetches++;
+				assert.deepEqual(query.bodyParts, [
+					"3.mime",
+					{ key: "3", start: 0, maxLength: 35 * 1024 * 1024 + 1 },
+				]);
+				return {
+					bodyParts: new Map([
+						[
+							"3.mime",
+							Buffer.from(
+								"Content-Type: text/plain; charset=iso-8859-1\r\nContent-Transfer-Encoding: base64\r\n",
+							),
+						],
+						["3", Buffer.from("Y2Fm6Q==")],
+					]),
+				};
+			}
+			return {
+				headers: Buffer.from(
+					`From: sender@example.com\r\nTo: ${account.email}\r\nSubject: Hello\r\n`,
+				),
+				bodyStructure: {
+					type: "multipart/mixed",
+					childNodes: [
+						{ part: "1", type: "text/html", size: 40 },
+						{
+							part: "2",
+							type: "image/png",
+							id: "<logo>",
+							disposition: "inline",
+							size: 3,
+						},
+						{
+							part: "3",
+							type: "text/plain",
+							parameters: { name: "café.txt", charset: "iso-8859-1" },
+							size: 8,
+						},
+						{
+							part: "4",
+							type: "application/pdf",
+							dispositionParameters: { filename: "huge.pdf" },
+							size: 200_000_000,
+						},
+					],
+				},
+			};
+		},
+	);
+	const downloads: string[] = [];
+	mock.method(
+		ImapFlow.prototype,
+		"download",
+		async (_uid: string, part: string) => {
+			downloads.push(part);
+			assert.ok(part === "1" || part === "2");
+			return {
+				content: Readable.from([
+					part === "1"
+						? Buffer.from('<p>본문</p><img src="cid:logo">')
+						: Buffer.from([1, 2, 3]),
+				]),
+			};
+		},
+	);
+	const body = await detailMessage(m.id, true, true);
+	assert.match(body.html, /본문/);
+	assert.match(body.html, /data:image\/png;base64,AQID/);
+	assert.deepEqual(downloads, ["1", "2"]);
+	assert.deepEqual(
+		body.attachments.map((a) => a.id),
+		["imap:3", "imap:4"],
+	);
+	assert.equal(fileFetches, 0);
+	const file = await handleMailRequest(
+		request(`attachment?message=${m.id}&part=imap%3A3`),
+	);
+	assert.equal(file.status, 200);
+	assert.deepEqual(
+		Buffer.from(await file.arrayBuffer()),
+		Buffer.from([0x63, 0x61, 0x66, 0xe9]),
+	);
+	assert.equal(fileFetches, 1);
+	assert.equal(mailStore().message(m.id).unread, true);
+});
+
 test("IMAP first page fetches a bounded sequence window and reuses its connection", async () => {
 	const { listImap } = await import("./imap.server");
 	account = { ...account, provider: "icloud" };
@@ -682,6 +917,53 @@ test("a slow IMAP list does not block opening a body", async () => {
 	} finally {
 		release();
 		await list;
+	}
+});
+
+test("IMAP body connections survive a minute of inactivity and expire after five minutes", async () => {
+	const { usingImap } = await import("./imap.server");
+	account = { ...account, provider: "icloud" };
+	mailStore().saveAccount(account, { password: "app-password" });
+	let connects = 0;
+	mock.method(ImapFlow.prototype, "connect", async function (this: ImapFlow) {
+		connects++;
+		Object.defineProperty(this, "usable", { value: true, configurable: true });
+	});
+	mock.method(ImapFlow.prototype, "close", () => {});
+	mock.timers.enable({ apis: ["setTimeout"] });
+	try {
+		await usingImap(account, async () => {}, "body");
+		mock.timers.tick(61_000);
+		await usingImap(account, async () => {}, "body");
+		assert.equal(connects, 1);
+		mock.timers.tick(300_001);
+		await usingImap(account, async () => {}, "body");
+		assert.equal(connects, 2);
+	} finally {
+		mock.timers.reset();
+	}
+});
+
+test("slow IMAP prefetch does not queue a different foreground body behind it", async () => {
+	const { usingImap } = await import("./imap.server");
+	account = { ...account, provider: "icloud" };
+	mailStore().saveAccount(account, { password: "app-password" });
+	mock.method(ImapFlow.prototype, "connect", async function (this: ImapFlow) {
+		Object.defineProperty(this, "usable", { value: true, configurable: true });
+	});
+	let release = () => {};
+	const pending = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const prefetch = usingImap(account, () => pending, "prefetch");
+	try {
+		assert.equal(
+			await usingImap(account, async () => "ready", "body"),
+			"ready",
+		);
+	} finally {
+		release();
+		await prefetch;
 	}
 });
 

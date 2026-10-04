@@ -61,7 +61,7 @@ export function MailMessageContent({
 				{detail.attachments.length > 0 && (
 					<div className="flex flex-wrap gap-2">
 						{detail.attachments.map((a) => {
-							const url = `/api/mail/${demo ? "demo/" : ""}attachment?message=${detail.id}&part=${a.id}`;
+							const url = `/api/mail/${demo ? "demo/" : ""}attachment?message=${encodeURIComponent(detail.id)}&part=${encodeURIComponent(a.id)}`;
 							return (
 								<div
 									key={a.id}

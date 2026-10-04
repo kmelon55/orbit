@@ -3,9 +3,12 @@ import {
 	type FetchMessageObject,
 	ImapFlow,
 	type MessageAddressObject,
+	type MessageStructureObject,
 	type SearchObject,
 } from "imapflow";
 import nodemailer from "nodemailer";
+import { type BodyPart, readBody } from "./body.server";
+import { parseMail } from "./content.server";
 import { deliveryAddresses, matchesAddress } from "./identities";
 import { mailDirectory, mailStore, messageKey } from "./store.server";
 import {
@@ -117,10 +120,13 @@ export async function usingImap<T>(
 		return await next;
 	} finally {
 		if (connection.tail === next) {
-			connection.timer = setTimeout(() => {
-				connection.client.close();
-				connections.delete(key);
-			}, 60_000);
+			connection.timer = setTimeout(
+				() => {
+					connection.client.close();
+					connections.delete(key);
+				},
+				lane === "body" || lane === "prefetch" ? 5 * 60_000 : 60_000,
+			);
 			connection.timer.unref();
 		}
 	}
@@ -317,6 +323,148 @@ async function lockMessage(client: ImapFlow, m: MailMessage) {
 		throw new Error("메일함이 변경되었습니다. 목록을 다시 불러와 주세요.");
 	}
 	return lock;
+}
+function imapBodyPart(part: MessageStructureObject): BodyPart {
+	return {
+		id: `imap:${part.part || "1"}`,
+		type: part.type.toLowerCase(),
+		charset: "utf-8",
+		filename: part.dispositionParameters?.filename || part.parameters?.name,
+		disposition: part.disposition?.toLowerCase(),
+		contentId: part.id,
+		size: part.size || 0,
+		children: part.type.toLowerCase().startsWith("multipart/")
+			? part.childNodes?.map(imapBodyPart)
+			: undefined,
+	};
+}
+async function downloadPart(client: ImapFlow, uid: string, part: string) {
+	const download = await client.download(uid, part, {
+		uid: true,
+		maxBytes: MAX_RAW_BYTES + 1,
+		chunkSize: 256 * 1024,
+	});
+	const chunks: Buffer[] = [];
+	let size = 0;
+	for await (const chunk of download.content) {
+		const bytes = Buffer.from(chunk);
+		size += bytes.length;
+		if (size > MAX_RAW_BYTES) {
+			download.content.destroy();
+			throw new Error("첨부파일이 너무 큽니다.");
+		}
+		chunks.push(bytes);
+	}
+	return Buffer.concat(chunks);
+}
+export async function imapBody(
+	account: MailAccount,
+	message: MailMessage,
+	prefetch = false,
+) {
+	return usingImap(
+		account,
+		async (client) => {
+			const lock = await lockMessage(client, message);
+			try {
+				const uid = message.remoteId.split(":")[1];
+				const meta = await client.fetchOne(
+					uid,
+					{ headers: true, bodyStructure: true },
+					{ uid: true },
+				);
+				if (!meta || !meta.bodyStructure)
+					throw new Error("원본 메일이 이동되거나 삭제되었습니다.");
+				return await readBody(
+					meta.headers?.toString() || "",
+					imapBodyPart(meta.bodyStructure),
+					(part) => downloadPart(client, uid, part.id.slice(5)),
+				);
+			} finally {
+				lock.release();
+			}
+		},
+		prefetch ? "prefetch" : "body",
+	);
+}
+export async function imapAttachment(
+	account: MailAccount,
+	message: MailMessage,
+	partId: string,
+) {
+	return usingImap(
+		account,
+		async (client) => {
+			const lock = await lockMessage(client, message);
+			try {
+				const uid = message.remoteId.split(":")[1];
+				const meta = await client.fetchOne(
+					uid,
+					{ bodyStructure: true },
+					{ uid: true },
+				);
+				function find(part: BodyPart): BodyPart | undefined {
+					if (part.id === partId && !part.children) return part;
+					for (const child of part.children || []) {
+						const found = find(child);
+						if (found) return found;
+					}
+				}
+				if (!meta || !meta.bodyStructure)
+					throw new Error("첨부파일을 찾을 수 없습니다.");
+				const part = find(imapBodyPart(meta.bodyStructure));
+				if (!part) throw new Error("첨부파일을 찾을 수 없습니다.");
+				if (part.size > MAX_RAW_BYTES)
+					throw new Error("첨부파일이 너무 큽니다.");
+				const key = partId.slice(5);
+				// Fetch just this file's MIME bytes. download() converts some text parts to
+				// UTF-8, which would change the bytes of text files without a disposition.
+				const file = await client.fetchOne(
+					uid,
+					{
+						bodyParts: [
+							`${key}.mime`,
+							{ key, start: 0, maxLength: MAX_RAW_BYTES + 1 },
+						],
+					},
+					{ uid: true },
+				);
+				if (!file) throw new Error("첨부파일을 찾을 수 없습니다.");
+				const encoded = file.bodyParts?.get(key);
+				const headers = file.bodyParts?.get(`${key}.mime`);
+				if (!encoded || !headers)
+					throw new Error("첨부파일을 찾을 수 없습니다.");
+				if (encoded.length > MAX_RAW_BYTES)
+					throw new Error("첨부파일이 너무 큽니다.");
+				const mimeHeaders = headers
+					.toString()
+					.replace(
+						/^Content-Disposition:[^\r\n]*(?:\r?\n[ \t][^\r\n]*)*\r?\n/gim,
+						"",
+					)
+					.trimEnd();
+				const parsed = await parseMail(
+					Buffer.concat([
+						Buffer.from(
+							`${mimeHeaders}\r\nContent-Disposition: attachment\r\n\r\n`,
+						),
+						encoded,
+					]),
+				);
+				const content = parsed.attachments[0]?.content;
+				if (!content) throw new Error("첨부파일을 찾을 수 없습니다.");
+				return {
+					content,
+					size: content.length,
+					contentType: part.type,
+					filename: part.filename || "첨부파일",
+				};
+			} finally {
+				lock.release();
+			}
+		},
+		"attachment",
+	);
 }
 export async function imapRaw(account: MailAccount, m: MailMessage) {
 	return usingImap(

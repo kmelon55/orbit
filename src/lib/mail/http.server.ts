@@ -19,13 +19,13 @@ import {
 import { startMailRuntime, stopAccount, syncAccount } from "./runtime.server";
 import {
 	accountQueue,
+	attachmentMessage,
 	connectImap,
 	conversationMessages,
 	detailMessage,
 	listRemote,
 	mutateMessage,
 	publicError,
-	rawMessage,
 	sendMail,
 } from "./service.server";
 import { mailStore } from "./store.server";
@@ -226,18 +226,19 @@ export async function handleMailRequest(request: Request): Promise<Response> {
 					await detailMessage(
 						id(url.searchParams.get("id")),
 						url.searchParams.get("images") === "1",
+						url.searchParams.get("prefetch") === "1",
 					),
 				);
 			if (path === "attachment") {
-				const { parsed } = await rawMessage(
-					id(url.searchParams.get("message")),
-				);
-				const index = z.coerce
-					.number()
-					.int()
-					.min(0)
+				const part = z
+					.string()
+					.max(100)
+					.regex(/^(?:\d+|gmail:(?:root|[\d.]+)|imap:\d+(?:\.\d+)*)$/)
 					.parse(url.searchParams.get("part"));
-				const a = parsed.attachments[index];
+				const a = await attachmentMessage(
+					id(url.searchParams.get("message")),
+					part,
+				);
 				if (!a) return json({ error: "첨부파일을 찾을 수 없습니다." }, 404);
 				const inline =
 					url.searchParams.get("download") !== "1" && canPreview(a.contentType);
