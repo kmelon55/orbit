@@ -12,7 +12,7 @@ export function completedOnDay(item: OrbitItem, day: string) {
 
 export function taskListDay(item: OrbitItem, today: string) {
 	if (item.type === "task") {
-		return completedOnDay(item, today) ? today : item.due?.slice(0, 10);
+		return item.due?.slice(0, 10);
 	}
 	const start = item.start?.slice(0, 10);
 	const end = item.end?.slice(0, 10) ?? start;
