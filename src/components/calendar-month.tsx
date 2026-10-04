@@ -45,7 +45,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useTaskToggle } from "@/hooks/use-task-toggle";
 import { cn } from "@/lib/utils";
 
-const WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"];
+const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 const HOUR_START = 0;
 const HOUR_END = 24;
 const HOUR_HEIGHT = 56;
@@ -181,7 +181,7 @@ function startOfMonth(date: Date) {
 
 function startOfWeek(date: Date) {
 	const next = new Date(date);
-	const offset = (next.getDay() + 6) % 7;
+	const offset = next.getDay();
 	next.setDate(next.getDate() - offset);
 	next.setHours(0, 0, 0, 0);
 	return next;
@@ -1251,7 +1251,7 @@ function MobileDayView({
 							onClick={() => onSelectDate(key)}
 							className="flex min-h-14 flex-col items-center justify-center rounded-xl text-[10px] text-muted-foreground"
 						>
-							<span>{WEEKDAYS[(day.getDay() + 6) % 7]}</span>
+							<span>{WEEKDAYS[day.getDay()]}</span>
 							<span
 								className={cn(
 									"mt-0.5 grid size-7 place-items-center rounded-full text-sm font-semibold text-foreground",
@@ -1342,7 +1342,7 @@ function MobileWeekView({
 										{day.getDate()}
 									</span>
 									<span className="text-sm font-medium">
-										{WEEKDAYS[(day.getDay() + 6) % 7]}요일
+										{WEEKDAYS[day.getDay()]}요일
 									</span>
 									<span className="text-xs text-muted-foreground">
 										{items.length ? `${items.length}개` : "비어 있음"}
@@ -1741,7 +1741,7 @@ function WeekView({
 								onDoubleClick={() => onCreate(key)}
 							>
 								<span className="block text-[11px] text-muted-foreground">
-									{WEEKDAYS[(day.getDay() + 6) % 7]}
+									{WEEKDAYS[day.getDay()]}
 								</span>
 								<span
 									className={cn(
@@ -2078,7 +2078,7 @@ function MonthView({
 							key={day}
 							className={cn(
 								"border-r px-2 py-2.5 text-center text-[11px] font-medium text-muted-foreground last:border-r-0",
-								index >= 5 && "bg-muted/20",
+								(index === 0 || index === 6) && "bg-muted/20",
 							)}
 						>
 							{day}
