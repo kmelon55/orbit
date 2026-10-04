@@ -19,6 +19,7 @@ import {
 } from "react";
 import { buildMonthLayout } from "#/lib/orbit/calendar-layout";
 import {
+	calendarMoveTime,
 	calendarResizeTime,
 	type CalendarDragTarget as DragTarget,
 	resizeCalendarItem as resizeScheduledItem,
@@ -657,6 +658,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 	const [draggingId, setDraggingId] = useState<string | null>(null);
 	const [dragOperation, setDragOperation] = useState<DragOperation>("move");
 	const [dragTarget, setDragTarget] = useState<DragTarget | null>(null);
+	const [dragGrabOffset, setDragGrabOffset] = useState(0);
 	const [dragError, setDragError] = useState<string | null>(null);
 	const localItemsRef = useRef(localItems);
 	const draggingIdRef = useRef<string | null>(null);
@@ -833,6 +835,14 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 	) {
 		event.dataTransfer.effectAllowed = "move";
 		event.dataTransfer.setData("text/orbit-item-id", item.id);
+		const rect = event.currentTarget.getBoundingClientRect();
+		const timed = event.currentTarget.closest('[data-calendar-mode="time"]');
+		setDragGrabOffset(timed ? Math.max(0, event.clientY - rect.top) : 0);
+		event.dataTransfer.setDragImage(
+			event.currentTarget,
+			event.clientX - rect.left,
+			event.clientY - rect.top,
+		);
 		draggingIdRef.current = item.id;
 		dragOperationRef.current = "move";
 		setDraggingId(item.id);
@@ -1143,6 +1153,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 									<WeekView
 										cursor={cursor}
 										dayCount={view === "day" ? 1 : 7}
+										dragGrabOffset={dragGrabOffset}
 										byDay={byDay}
 										today={today}
 										selectedDate={selectedDate}
@@ -1682,6 +1693,7 @@ function WeekView({
 	draggingId,
 	dragOperation,
 	dragTarget,
+	dragGrabOffset,
 	onDragStart,
 	onResizeStart,
 	onDragEnd,
@@ -1699,6 +1711,7 @@ function WeekView({
 	draggingId: string | null;
 	dragOperation: DragOperation;
 	dragTarget: DragTarget | null;
+	dragGrabOffset: number;
 	onDragStart: (
 		item: OrbitItem,
 		event: React.DragEvent<HTMLButtonElement>,
@@ -1739,16 +1752,12 @@ function WeekView({
 	}, [cursor, today]);
 
 	function timeAt(clientY: number, element: HTMLElement) {
-		const rect = element.getBoundingClientRect();
-		const relativeMinutes = Math.max(
-			0,
-			Math.min(
-				(HOUR_END - HOUR_START) * 60 - 30,
-				Math.round(((clientY - rect.top) / HOUR_HEIGHT) * 2) * 30,
-			),
+		return calendarMoveTime(
+			clientY,
+			element.getBoundingClientRect().top,
+			HOUR_HEIGHT,
+			dragGrabOffset,
 		);
-		const absoluteMinutes = HOUR_START * 60 + relativeMinutes;
-		return `${String(Math.floor(absoluteMinutes / 60)).padStart(2, "0")}:${String(absoluteMinutes % 60).padStart(2, "0")}`;
 	}
 
 	return (

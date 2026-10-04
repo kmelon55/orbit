@@ -61,3 +61,20 @@ export function calendarResizeTime(
 	);
 	return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 }
+
+// Move the card's top edge, preserving the point where it was grabbed.
+export function calendarMoveTime(
+	clientY: number,
+	top: number,
+	hourHeight: number,
+	grabOffset = 0,
+) {
+	const minutes = Math.max(
+		0,
+		Math.min(
+			1410,
+			Math.round(((clientY - top - grabOffset) / hourHeight) * 4) * 15,
+		),
+	);
+	return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+}

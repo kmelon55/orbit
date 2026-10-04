@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calendarResizeTime, resizeCalendarItem } from "./calendar-resize";
+import {
+	calendarMoveTime,
+	calendarResizeTime,
+	resizeCalendarItem,
+} from "./calendar-resize";
 import { orbitItemSchema } from "./schema";
 
 const event = orbitItemSchema.parse({
@@ -77,4 +81,19 @@ test("pointer positions snap every 15 minutes, including midnight", () => {
 	assert.equal(calendarResizeTime(100 + 11.25 * 56, 100, 56), "11:15");
 	assert.equal(calendarResizeTime(90, 100, 56), "00:00");
 	assert.equal(calendarResizeTime(1500, 100, 56), "24:00");
+});
+
+test("moving anchors the preview and destination to the grabbed point on the card", () => {
+	for (const offset of [0, 12, 28, 56, 112]) {
+		assert.equal(
+			calendarMoveTime(100 + 9 * 56 + offset, 100, 56, offset),
+			"09:00",
+		);
+		assert.equal(
+			calendarMoveTime(100 + 10.25 * 56 + offset, 100, 56, offset),
+			"10:15",
+		);
+	}
+	assert.equal(calendarMoveTime(90, 100, 56, 20), "00:00");
+	assert.equal(calendarMoveTime(1700, 100, 56, 20), "23:30");
 });
