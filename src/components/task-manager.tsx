@@ -26,7 +26,6 @@ import {
 	type ItemConfirmAction,
 	ItemContextMenu,
 } from "@/components/item-context-menu";
-import { ScheduleColors } from "@/components/schedule-colors";
 import { DatePicker } from "@/components/schedule-controls";
 import { ScheduleEditor } from "@/components/schedule-editor";
 import {
@@ -356,7 +355,6 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 							</p>
 						</div>
 						<div className="flex items-center gap-1">
-							<ScheduleColors />
 							<Button
 								variant="outline"
 								onClick={() => setEditor({ open: true, kind: "event" })}
@@ -680,6 +678,7 @@ function TaskRows({
 								{item.type === "task" ? (
 									<TaskCheck
 										color={item.color}
+										category={item.category}
 										checked={checked}
 										animate={taskToggle.isAnimating(item.id)}
 										disabled={taskToggle.isBusy(item.id)}

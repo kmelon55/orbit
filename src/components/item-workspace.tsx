@@ -1260,6 +1260,7 @@ export function ItemWorkspace({
 										{item.type === "task" ? (
 											<TaskCheck
 												color={item.color}
+												category={item.category}
 												checked={checked}
 												animate={taskToggle.isAnimating(item.id)}
 												disabled={taskToggle.isBusy(item.id)}

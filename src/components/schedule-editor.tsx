@@ -16,6 +16,7 @@ import {
 	type OrbitMutation,
 	orbitItemSchema,
 } from "#/lib/orbit/schema";
+import { ScheduleCategorySelect } from "@/components/schedule-categories";
 import { DatePicker, TimePicker } from "@/components/schedule-controls";
 import { ScheduleRangeCalendar } from "@/components/schedule-range-calendar";
 import {
@@ -82,6 +83,7 @@ export function ScheduleEditor({
 	const [title, setTitle] = useState("");
 	const [body, setBody] = useState("");
 	const color = item?.color;
+	const [category, setCategory] = useState<string | undefined>();
 	const [startDate, setStartDate] = useState(initialDate ?? today);
 	const [endDate, setEndDate] = useState(initialDate ?? today);
 	const [startTime, setStartTime] = useState(initialTime);
@@ -104,6 +106,7 @@ export function ScheduleEditor({
 				? nextDay(resolvedStart)
 				: resolvedStart;
 		setTitle(item?.title ?? "");
+		setCategory(item?.category);
 		setBody(item?.body ?? "");
 		setStartDate(resolvedStart);
 		setEndDate(dayOf(item?.end, defaultEndDate));
@@ -159,7 +162,8 @@ export function ScheduleEditor({
 			item.start === start &&
 			item.end === end &&
 			item.due === due &&
-			item.color === color
+			item.color === color &&
+			item.category === category
 		) {
 			onOpenChange(false);
 			return;
@@ -173,6 +177,7 @@ export function ScheduleEditor({
 						body,
 						type: kind,
 						color: color ?? null,
+						category: category ?? null,
 						space:
 							kind === "event"
 								? "event"
@@ -193,6 +198,7 @@ export function ScheduleEditor({
 						body,
 						type: kind,
 						color,
+						category,
 						space: kind === "event" ? "event" : "inbox",
 						start,
 						end,
@@ -259,7 +265,7 @@ export function ScheduleEditor({
 						<DialogHeader className="border-b border-border/60 px-5 pt-5 pb-4">
 							<div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
 								<span
-									className={`size-2.5 rounded-full ${itemColor({ type: kind, color }).dot}`}
+									className={`size-2.5 rounded-full ${itemColor({ type: kind, color, category }).dot}`}
 								/>
 								{item
 									? kind === "event"
@@ -291,6 +297,7 @@ export function ScheduleEditor({
 						</DialogHeader>
 
 						<div className="grid gap-4 px-5 py-4">
+							<ScheduleCategorySelect value={category} onChange={setCategory} />
 							{kind === "event" ? (
 								<div className="grid gap-3">
 									<div className="flex items-center gap-3">

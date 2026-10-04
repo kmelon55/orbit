@@ -101,3 +101,9 @@ export function undoOrbitMutation(
 ) {
 	return withDatabase(() => operations.undoOrbitMutation(...args), true);
 }
+
+export function saveScheduleCategory(
+	...args: Parameters<typeof operations.saveScheduleCategory>
+) {
+	return withDatabase(() => operations.saveScheduleCategory(...args), true);
+}

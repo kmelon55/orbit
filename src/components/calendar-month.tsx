@@ -1,7 +1,6 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
 	CalendarDays,
-	Check,
 	ChevronLeft,
 	ChevronRight,
 	Circle,
@@ -30,8 +29,13 @@ import { koreanHolidayName } from "#/lib/orbit/korean-holidays";
 import type { CalendarSearch } from "#/lib/orbit/navigation-search";
 import { isPendingItemId } from "#/lib/orbit/optimistic-mutations";
 import { formatDayKey, itemDayKey } from "#/lib/orbit/para";
+import { visibleScheduleCategory } from "#/lib/orbit/schedule-categories";
 import type { OrbitItem, OrbitSnapshot } from "#/lib/orbit/schema";
-import { ScheduleColors } from "@/components/schedule-colors";
+import {
+	type CalendarDisplayOptions,
+	ScheduleDisplayMenu,
+	ScheduleDisplayOptions,
+} from "@/components/schedule-categories";
 import { ScheduleEditor } from "@/components/schedule-editor";
 import { TaskCheck, taskTitleClass } from "@/components/task-check";
 import { Button } from "@/components/ui/button";
@@ -119,6 +123,7 @@ function CalendarTaskCheck({
 	return (
 		<TaskCheck
 			color={item.color}
+			category={item.category}
 			checked={checked}
 			animate={tasks.isAnimating(item.id)}
 			disabled={tasks.isBusy(item.id) || isPendingItemId(item.id)}
@@ -616,6 +621,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 	const cursorKey = location.date ?? formatDayKey();
 	const cursor = useMemo(() => parseDayKey(cursorKey), [cursorKey]);
 	const selectedDate = location.selected ?? cursorKey;
+	const hiddenCategories = location.hiddenCategories;
 	const updateCalendar = useCallback(
 		(patch: CalendarSearch) => {
 			void navigate({
@@ -633,6 +639,18 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 		open: false,
 		kind: "event",
 	});
+	const displayOptions: CalendarDisplayOptions = {
+		visibility,
+		onChangeVisibility: (kind) =>
+			setVisibility((current) => ({ ...current, [kind]: !current[kind] })),
+		hidden: hiddenCategories ?? [],
+		onChangeHidden: (hiddenCategories) =>
+			updateCalendar({
+				hiddenCategories: hiddenCategories.length
+					? hiddenCategories
+					: undefined,
+			}),
+	};
 	const calendarRef = useRef<HTMLDivElement>(null);
 	const resizePointerRef = useRef<number | null>(null);
 	const [localItems, setLocalItems] = useState(snapshot.items);
@@ -725,10 +743,18 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 				)
 				.filter(
 					(item) =>
-						(item.type === "event" && visibility.event && item.start) ||
-						(item.type === "task" && visibility.task && item.due),
+						visibleScheduleCategory(item, hiddenCategories ?? []) &&
+						((item.type === "event" && visibility.event && item.start) ||
+							(item.type === "task" && visibility.task && item.due)),
 				),
-		[localItems, visibility, draggingId, dragOperation, dragTarget],
+		[
+			localItems,
+			visibility,
+			hiddenCategories,
+			draggingId,
+			dragOperation,
+			dragTarget,
+		],
 	);
 	const byDay = useMemo(() => {
 		const map = new Map<string, OrbitItem[]>();
@@ -1053,7 +1079,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 							</Button>
 						))}
 					</div>
-					<ScheduleColors />
+					<ScheduleDisplayMenu {...displayOptions} />
 					<Button
 						size="sm"
 						aria-label="일정 추가"
@@ -1101,13 +1127,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 								cursor={cursor}
 								selectedDate={selectedDate}
 								selectedItems={selectedItems}
-								visibility={visibility}
-								onChangeVisibility={(kind) =>
-									setVisibility((current) => ({
-										...current,
-										[kind]: !current[kind],
-									}))
-								}
+								displayOptions={displayOptions}
 								onMoveMonth={(amount) =>
 									updateCalendar({
 										date: formatDayKey(addMonths(cursor, amount)),
@@ -1510,8 +1530,7 @@ function CalendarRail({
 	cursor,
 	selectedDate,
 	selectedItems,
-	visibility,
-	onChangeVisibility,
+	displayOptions,
 	onMoveMonth,
 	onSelectDate,
 	onCreate,
@@ -1520,8 +1539,7 @@ function CalendarRail({
 	cursor: Date;
 	selectedDate: string;
 	selectedItems: OrbitItem[];
-	visibility: CalendarVisibility;
-	onChangeVisibility: (kind: keyof CalendarVisibility) => void;
+	displayOptions: CalendarDisplayOptions;
 	onMoveMonth: (amount: number) => void;
 	onSelectDate: (date: string) => void;
 	onCreate: (date: string, time?: string, kind?: EditorState["kind"]) => void;
@@ -1589,47 +1607,7 @@ function CalendarRail({
 			</div>
 
 			<div className="border-b border-border/60 p-3.5">
-				<p className="mb-2 px-1 text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-					표시
-				</p>
-				<div className="space-y-0.5">
-					<button
-						type="button"
-						onClick={() => onChangeVisibility("event")}
-						className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-muted/70"
-					>
-						<span
-							className={cn(
-								"grid size-4 place-items-center rounded border",
-								visibility.event
-									? "border-foreground bg-foreground text-background"
-									: "border-border bg-background",
-							)}
-						>
-							{visibility.event ? <Check className="size-3" /> : null}
-						</span>
-						<CalendarDays className="size-3.5 text-muted-foreground" />
-						<span>일정</span>
-					</button>
-					<button
-						type="button"
-						onClick={() => onChangeVisibility("task")}
-						className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-muted/70"
-					>
-						<span
-							className={cn(
-								"grid size-4 place-items-center rounded border",
-								visibility.task
-									? "border-foreground bg-foreground text-background"
-									: "border-border bg-background",
-							)}
-						>
-							{visibility.task ? <Check className="size-3" /> : null}
-						</span>
-						<ListTodo className="size-3.5 text-muted-foreground" />
-						<span>할 일</span>
-					</button>
-				</div>
+				<ScheduleDisplayOptions {...displayOptions} />
 			</div>
 
 			<div className="min-h-0 flex-1 overflow-y-auto p-3.5">

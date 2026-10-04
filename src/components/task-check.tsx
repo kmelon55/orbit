@@ -6,12 +6,14 @@ import { cn } from "@/lib/utils";
 export function TaskCheck({
 	checked,
 	color,
+	category,
 	animate = false,
 	className,
 	...props
 }: {
 	checked: boolean;
 	color?: OrbitItem["color"];
+	category?: OrbitItem["category"];
 	animate?: boolean;
 } & ButtonHTMLAttributes<HTMLButtonElement>) {
 	return (
@@ -23,7 +25,7 @@ export function TaskCheck({
 			data-animate={animate ? "true" : undefined}
 			className={cn(
 				"orbit-task-check relative grid size-5 shrink-0 place-items-center rounded-full border-2 transition-[background-color,border-color,box-shadow,color] duration-200 ease-[var(--interaction-ease)] after:absolute after:-inset-2 after:content-[''] disabled:opacity-100",
-				itemColor({ type: "task", color }).surface,
+				itemColor({ type: "task", color, category }).surface,
 				!checked && "bg-background hover:bg-muted",
 
 				className,

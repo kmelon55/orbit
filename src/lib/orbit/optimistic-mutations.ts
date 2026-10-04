@@ -6,10 +6,15 @@ import {
 	projectFolderMutation,
 } from "./optimistic-folders";
 import {
+	DEFAULT_SCHEDULE_CATEGORIES,
+	upsertScheduleCategory,
+} from "./schedule-categories";
+import {
 	type OrbitItem,
 	type OrbitMutation,
 	type OrbitSnapshot,
 	orbitItemSchema,
+	type ScheduleCategory,
 } from "./schema";
 import { mergeSnapshotItems } from "./snapshot-overlay";
 
@@ -55,6 +60,7 @@ function predict(
 				"body",
 				"type",
 				"color",
+				"category",
 				"status",
 				"project",
 				"due",
@@ -86,6 +92,8 @@ function predict(
 // Confirmed writes and pending operations are separate. If a later queued write
 // fails, its rollback reveals the earlier success instead of the original snapshot.
 export class OptimisticItems {
+	private pendingCategories = new Map<string, ScheduleCategory>();
+	private confirmedCategories = new Map<string, ScheduleCategory>();
 	private folders = new Map<
 		string,
 		{ mutation: FolderMutation; settled: boolean }
@@ -112,7 +120,9 @@ export class OptimisticItems {
 	}
 
 	start(requestId: string, mutation: OrbitMutation, snapshot: OrbitSnapshot) {
-		if (isFolderMutation(mutation)) {
+		if (mutation.action === "save-schedule-category") {
+			this.pendingCategories.set(requestId, mutation.input);
+		} else if (isFolderMutation(mutation)) {
 			this.folders.set(requestId, { mutation, settled: false });
 		} else if ("id" in mutation) {
 			const item = this.project(snapshot).items.find(
@@ -151,6 +161,12 @@ export class OptimisticItems {
 	}
 
 	finish(event: MutationLifecycle) {
+		const category = this.pendingCategories.get(event.requestId);
+		if (category) {
+			this.pendingCategories.delete(event.requestId);
+			if (event.phase === "success")
+				this.confirmedCategories.set(category.id, category);
+		}
 		const folder = this.folders.get(event.requestId);
 		if (folder) {
 			if (event.phase === "success") folder.settled = true;
@@ -165,6 +181,17 @@ export class OptimisticItems {
 	}
 
 	reconcile(snapshot: OrbitSnapshot) {
+		for (const [id, category] of this.confirmedCategories) {
+			if (
+				snapshot.scheduleCategories?.some(
+					(entry) =>
+						entry.id === id &&
+						entry.name === category.name &&
+						entry.color === category.color,
+				)
+			)
+				this.confirmedCategories.delete(id);
+		}
 		for (const [id, entry] of this.folders) {
 			if (entry.settled && folderMutationObserved(snapshot, entry.mutation))
 				this.folders.delete(id);
@@ -187,7 +214,13 @@ export class OptimisticItems {
 	}
 
 	project(snapshot: OrbitSnapshot): OrbitSnapshot {
-		if (!this.confirmed.size && !this.pending.size && !this.folders.size)
+		if (
+			!this.confirmed.size &&
+			!this.pending.size &&
+			!this.folders.size &&
+			!this.pendingCategories.size &&
+			!this.confirmedCategories.size
+		)
 			return snapshot;
 		const items = new Map(snapshot.items.map((item) => [item.id, item]));
 		for (const [id, item] of this.confirmed) {
@@ -216,6 +249,16 @@ export class OptimisticItems {
 		);
 		for (const entry of this.folders.values())
 			projected = projectFolderMutation(projected, entry.mutation);
+		if (this.pendingCategories.size || this.confirmedCategories.size) {
+			let categories =
+				projected.scheduleCategories ?? DEFAULT_SCHEDULE_CATEGORIES;
+			for (const category of [
+				...this.confirmedCategories.values(),
+				...this.pendingCategories.values(),
+			])
+				categories = upsertScheduleCategory(categories, category);
+			projected = { ...projected, scheduleCategories: categories };
+		}
 		return projected;
 	}
 }

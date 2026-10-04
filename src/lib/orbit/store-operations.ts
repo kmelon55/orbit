@@ -6,6 +6,10 @@ import LZString from "lz-string";
 import { databaseFor, getVaultRoot } from "./database";
 import { isInboxItem } from "./para";
 import {
+	DEFAULT_SCHEDULE_CATEGORIES,
+	upsertScheduleCategory,
+} from "./schedule-categories";
+import {
 	type CaptureInput,
 	type CreateFolderInput,
 	type CreateItemInput,
@@ -25,6 +29,9 @@ import {
 	type OrbitSnapshot,
 	type OrbitSpace,
 	orbitFolderColorSchema,
+	type ScheduleCategory,
+	scheduleCategoryIdSchema,
+	scheduleCategorySchema,
 	type UpdateFolderInput,
 	type UpdateNoteInput,
 	updateFolderInputSchema,
@@ -43,6 +50,7 @@ const PARA_VAULT: Record<"project" | "area" | "resource", string> = {
 const DEFAULT_FOLDER_COLOR: OrbitFolderColor = "lime";
 
 type FolderMetadata = {
+	scheduleCategories?: ScheduleCategory[];
 	treeOrder?: OrbitSnapshot["treeOrder"];
 	version: 1;
 	folders: Partial<
@@ -346,6 +354,36 @@ async function collectFolders(
 	return folders;
 }
 
+function readScheduleCategories(vaultRoot: string): ScheduleCategory[] {
+	const stored =
+		databaseFor(vaultRoot).metadata<FolderMetadata>(
+			"folders",
+		)?.scheduleCategories;
+	const parsed = scheduleCategorySchema.array().safeParse(stored);
+	return parsed.success ? parsed.data : DEFAULT_SCHEDULE_CATEGORIES;
+}
+
+export async function saveScheduleCategory(input: ScheduleCategory) {
+	const parsed = scheduleCategorySchema.parse(input);
+	const root = await ensureVault();
+	const categories = readScheduleCategories(root);
+	if (
+		categories.some(
+			(category) => category.id !== parsed.id && category.name === parsed.name,
+		)
+	)
+		throw new Error("같은 이름의 분류가 있습니다.");
+	if (
+		categories.length >= 50 &&
+		!categories.some((category) => category.id === parsed.id)
+	)
+		throw new Error("분류는 최대 50개까지 만들 수 있습니다.");
+	const metadata = await readFolderMetadata(root);
+	metadata.scheduleCategories = upsertScheduleCategory(categories, parsed);
+	await writeFolderMetadata(root, metadata);
+	return parsed;
+}
+
 export async function getOrbitSnapshot(): Promise<OrbitSnapshot> {
 	const vaultRoot = await ensureVault();
 	const items = await listOrbitItems();
@@ -375,6 +413,7 @@ export async function getOrbitSnapshot(): Promise<OrbitSnapshot> {
 	]);
 	return {
 		items,
+		scheduleCategories: readScheduleCategories(vaultRoot),
 		canvases,
 		treeOrder: metadata.treeOrder,
 		today: { tasks, events },
@@ -575,6 +614,7 @@ function itemFrontmatter(
 		space: OrbitSpace;
 		status?: OrbitItem["status"];
 		color?: OrbitItem["color"];
+		category?: OrbitItem["category"];
 		project?: string;
 		due?: string;
 		start?: string;
@@ -599,6 +639,8 @@ function itemFrontmatter(
 	delete data.folder;
 	delete data.path;
 	delete data.body;
+	if (input.category) data.category = input.category;
+	else delete data.category;
 	if (input.color) data.color = input.color;
 	else delete data.color;
 	if (input.status) data.status = input.status;
@@ -647,6 +689,7 @@ export async function createOrbitItem(input: CreateItemInput) {
 			title: parsed.title,
 			type: parsed.type,
 			color: parsed.color,
+			category: parsed.category,
 			space: parsed.space,
 			status,
 			project,
@@ -886,6 +929,11 @@ export async function fileOrbitItem(id: string, input: FileItemInput) {
 						: (next.color ??
 							orbitFolderColorSchema.safeParse(current.color).data),
 				project,
+				category:
+					next.category === null
+						? undefined
+						: (next.category ??
+							scheduleCategoryIdSchema.safeParse(current.category).data),
 				due:
 					next.due === null
 						? undefined
@@ -1101,6 +1149,7 @@ function itemMutationMessage(
 		before.end !== after.end
 	)
 		return "날짜를 변경했습니다.";
+	if (before.category !== after.category) return "분류를 변경했습니다.";
 	if (before.color !== after.color) return "색상을 변경했습니다.";
 	return data.action === "file-item" ? "변경했습니다." : "저장했습니다.";
 }

@@ -22,6 +22,7 @@ export type CalendarSearch = {
 	view?: "day" | "week" | "month";
 	date?: string;
 	selected?: string;
+	hiddenCategories?: string[];
 };
 export function calendarSearch(
 	search: Record<string, unknown>,
@@ -33,6 +34,19 @@ export function calendarSearch(
 				: undefined,
 		date: day(search.date),
 		selected: day(search.selected),
+		...(Array.isArray(search.hiddenCategories)
+			? {
+					hiddenCategories: [
+						...new Set(
+							search.hiddenCategories.filter(
+								(value): value is string =>
+									typeof value === "string" &&
+									/^[a-zA-Z0-9_-]{1,80}$/.test(value),
+							),
+						),
+					].slice(0, 51),
+				}
+			: {}),
 	};
 }
 

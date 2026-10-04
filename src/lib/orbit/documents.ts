@@ -6,6 +6,7 @@ import {
 	type OrbitItem,
 	orbitFolderColorSchema,
 	orbitItemSchema,
+	scheduleCategoryIdSchema,
 } from "./schema";
 import { splitVaultObjectKey } from "./vault-key";
 
@@ -120,6 +121,7 @@ export function parseItem(
 			? normalizeDate(data.completedAt, updated)
 			: undefined,
 		color: orbitFolderColorSchema.safeParse(data.color).data,
+		category: scheduleCategoryIdSchema.safeParse(data.category).data,
 		project: data.project,
 		folder: folderFromPath(relativePath),
 		due: data.due ? normalizeScheduleDate(data.due, fallbackDate) : undefined,

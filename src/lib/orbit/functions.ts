@@ -20,6 +20,7 @@ const mutateOrbitRequest = createServerFn({ method: "POST" })
 	.handler(async ({ data }) => {
 		const {
 			withItemUndo,
+			saveScheduleCategory,
 			moveOrbitTreeEntry,
 			archiveOrbitItem,
 			captureOrbitItem,
@@ -37,6 +38,8 @@ const mutateOrbitRequest = createServerFn({ method: "POST" })
 		} = await import("./store");
 		return withItemUndo(data, async () => {
 			switch (data.action) {
+				case "save-schedule-category":
+					return saveScheduleCategory(data.input);
 				case "move-tree-entry":
 					return moveOrbitTreeEntry(data.input);
 				case "capture":
@@ -98,11 +101,13 @@ export async function mutateOrbit(
 				? undefined
 				: "id" in mutation
 					? mutation.id
-					: mutation.action === "create-folder" ||
-							mutation.action === "update-folder" ||
-							mutation.action === "delete-folder"
-						? `folders:${mutation.input.space}`
-						: undefined;
+					: mutation.action === "save-schedule-category"
+						? "schedule-categories"
+						: mutation.action === "create-folder" ||
+								mutation.action === "update-folder" ||
+								mutation.action === "delete-folder"
+							? `folders:${mutation.input.space}`
+							: undefined;
 		const request = id
 			? (itemRequests.get(id) ?? Promise.resolve())
 					.catch(() => {})

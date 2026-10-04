@@ -12,11 +12,15 @@ export function ItemColorPicker({
 	value,
 	onChange,
 	disabled,
+	compact = false,
+	label,
 }: {
 	type: OrbitItem["type"];
 	value: OrbitItem["color"];
 	onChange: (color: OrbitItem["color"]) => void;
 	disabled?: boolean;
+	compact?: boolean;
+	label?: string;
 }) {
 	const [open, setOpen] = useState(false);
 	const selected = paletteItemColor({ type, color: value });
@@ -26,15 +30,20 @@ export function ItemColorPicker({
 				<Button
 					type="button"
 					variant="ghost"
-					size="sm"
+					size={compact ? "icon-sm" : "sm"}
 					disabled={disabled}
-					aria-label={`색상 선택: ${value ? selected.label : "기본"}`}
+					aria-label={label ?? `색상 선택: ${value ? selected.label : "기본"}`}
+					title={label}
 				>
 					<span className={cn("size-3 shrink-0 rounded-full", selected.dot)} />
-					색상{" "}
-					<span className="text-muted-foreground">
-						{value ? selected.label : "기본"}
-					</span>
+					{compact ? null : (
+						<>
+							색상{" "}
+							<span className="text-muted-foreground">
+								{value ? selected.label : "기본"}
+							</span>
+						</>
+					)}
 				</Button>
 			</Popover.Trigger>
 			<Popover.Portal>

@@ -1,5 +1,20 @@
 import type { OrbitFolderColor } from "#/lib/orbit/schema";
 
+export const FOLDER_COLOR_VALUES: Record<OrbitFolderColor, string> = {
+	amber: "#f59e0b",
+	red: "#ef4444",
+	orange: "#f97316",
+	lime: "#84cc16",
+	emerald: "#10b981",
+	cyan: "#06b6d4",
+	blue: "#3b82f6",
+	violet: "#8b5cf6",
+	pink: "#ec4899",
+	slate: "#64748b",
+	black: "#000000",
+	white: "#ffffff",
+};
+
 export const FOLDER_COLORS: Array<{
 	id: OrbitFolderColor;
 	label: string;

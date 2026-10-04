@@ -16,7 +16,7 @@ import {
 	OrbitSnapshotProvider,
 	useOrbitSnapshot,
 } from "@/components/orbit-snapshot-provider";
-import { ScheduleColorProvider } from "@/components/schedule-colors";
+import { ScheduleCategoryStyles } from "@/components/schedule-categories";
 import { ServiceWorkerRegister } from "@/components/service-worker-register";
 import { ThemeProvider } from "@/components/theme-provider";
 import appCss from "../styles.css?url";
@@ -92,6 +92,7 @@ function WorkspaceLayout() {
 	const snapshot = useOrbitSnapshot();
 	return (
 		<AppShell snapshot={snapshot}>
+			<ScheduleCategoryStyles />
 			<Outlet />
 		</AppShell>
 	);
@@ -105,9 +106,7 @@ function RootDocument({ children }: { children: ReactNode }) {
 				<HeadContent />
 			</head>
 			<body>
-				<ThemeProvider>
-					<ScheduleColorProvider>{children}</ScheduleColorProvider>
-				</ThemeProvider>
+				<ThemeProvider>{children}</ThemeProvider>
 				<ServiceWorkerRegister />
 				<Scripts />
 			</body>

@@ -23,6 +23,7 @@ import {
 	withDatabase,
 } from "./database";
 import { normalizeFolderMetadata } from "./documents";
+import { type ScheduleCategory, scheduleCategorySchema } from "./schema";
 
 function separateDestination(destination: string, root: string) {
 	const target = path.resolve(destination),
@@ -185,6 +186,7 @@ export function importOrbitDirectory(source: string) {
 					throw new Error("Folder metadata must not be a symlink");
 				const incomingRaw = JSON.parse(readFileSync(folderFile, "utf8")) as {
 					version: number;
+					scheduleCategories?: ScheduleCategory[];
 					folders: Record<string, Record<string, unknown>>;
 					treeOrder?: Record<string, Record<string, string[]>>;
 				};
@@ -200,6 +202,36 @@ export function importOrbitDirectory(source: string) {
 				for (const [space, order] of Object.entries(incoming.treeOrder ?? {})) {
 					current.treeOrder ??= {};
 					current.treeOrder[space] = { ...order, ...current.treeOrder[space] };
+				}
+				if (incoming.scheduleCategories) {
+					const categories = scheduleCategorySchema
+						.array()
+						.max(50)
+						.parse(incoming.scheduleCategories);
+					const existing = current.scheduleCategories ?? [];
+					for (const category of categories) {
+						const conflict = existing.find(
+							(entry) =>
+								entry.id === category.id || entry.name === category.name,
+						);
+						if (
+							conflict &&
+							(conflict.id !== category.id ||
+								conflict.name !== category.name ||
+								conflict.color !== category.color)
+						)
+							throw new Error(
+								`Import conflicts with schedule category: ${category.name}`,
+							);
+					}
+					current.scheduleCategories = [
+						...existing,
+						...categories.filter(
+							(category) => !existing.some((entry) => entry.id === category.id),
+						),
+					];
+					if (current.scheduleCategories.length > 50)
+						throw new Error("Too many schedule categories");
 				}
 				database.setMetadata("folders", current);
 			}

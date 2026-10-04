@@ -40,12 +40,26 @@ export const orbitFolderColorSchema = z.enum([
 	"white",
 ]);
 
+export const scheduleCategoryIdSchema = z
+	.string()
+	.min(1)
+	.max(80)
+	.regex(/^[a-zA-Z0-9_-]+$/)
+	.refine((id) => id !== "uncategorized", "Reserved category ID");
+export const scheduleCategorySchema = z.object({
+	id: scheduleCategoryIdSchema,
+	name: z.string().trim().min(1).max(80),
+	color: orbitFolderColorSchema,
+});
+export type ScheduleCategory = z.infer<typeof scheduleCategorySchema>;
+
 export const orbitItemSchema = z.object({
 	id: z.string().min(1),
 	title: z.string().min(1),
 	type: orbitItemTypeSchema,
 	space: orbitSpaceSchema,
 	color: orbitFolderColorSchema.optional(),
+	category: scheduleCategoryIdSchema.optional(),
 	status: orbitStatusSchema.optional(),
 	completedAt: z.string().optional(),
 	project: z.string().optional(),
@@ -66,6 +80,7 @@ export const captureInputSchema = z.object({
 	body: z.string().trim().max(20_000).default(""),
 	type: orbitItemTypeSchema.default("note"),
 	color: orbitFolderColorSchema.optional(),
+	category: scheduleCategoryIdSchema.optional(),
 	due: z.string().optional(),
 	start: z.string().optional(),
 	end: z.string().optional(),
@@ -92,6 +107,7 @@ export const fileItemInputSchema = z.object({
 	body: z.string().max(100_000).optional(),
 	type: orbitItemTypeSchema.optional(),
 	color: orbitFolderColorSchema.nullable().optional(),
+	category: scheduleCategoryIdSchema.nullable().optional(),
 	space: orbitSpaceSchema,
 	folder: z.string().trim().max(500).optional(),
 	due: z.string().nullable().optional(),
@@ -132,6 +148,10 @@ export type MoveTreeInput = z.infer<typeof moveTreeInputSchema>;
 export type TreeOrder = Record<string, string[]>;
 
 export const orbitMutationSchema = z.discriminatedUnion("action", [
+	z.object({
+		action: z.literal("save-schedule-category"),
+		input: scheduleCategorySchema,
+	}),
 	z.object({
 		action: z.literal("move-tree-entry"),
 		input: moveTreeInputSchema,
@@ -230,6 +250,7 @@ export type OrbitFolder = {
 };
 
 export type OrbitSnapshot = {
+	scheduleCategories?: ScheduleCategory[];
 	treeOrder?: Partial<Record<OrbitFolder["space"], TreeOrder>>;
 	items: OrbitItem[];
 	canvases: OrbitCanvas[];
