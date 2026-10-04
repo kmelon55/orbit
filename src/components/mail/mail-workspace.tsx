@@ -132,6 +132,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 	const [threadIncomplete, setThreadIncomplete] = useState(false);
 	const [detailRetry, setDetailRetry] = useState(0);
 	const detailCache = useRef(new Map<string, MailDetail>());
+	const prefetched = useRef(new Set<string>());
 	const threadCache = useRef(
 		new Map<
 			string,
@@ -139,6 +140,45 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 		>(),
 	);
 	const rows = useMemo(() => conversations(messages), [messages]);
+	useEffect(() => {
+		if (selected || loading || !rows.length) return;
+		const controller = new AbortController();
+		const timer = setTimeout(() => {
+			void (async () => {
+				// Warm a small visible window, serially. Opening mail cancels further work.
+				for (const [row] of rows.slice(0, 3)) {
+					const key = `${row.id}:true`;
+					if (controller.signal.aborted) break;
+					if (prefetched.current.has(row.id) || detailCache.current.has(key))
+						continue;
+					prefetched.current.add(row.id);
+					if (prefetched.current.size > 100)
+						prefetched.current.delete(
+							prefetched.current.values().next().value as string,
+						);
+					try {
+						const body = await api<MailDetail>(
+							`message?id=${encodeURIComponent(row.id)}&images=1&prefetch=1`,
+							undefined,
+							controller.signal,
+						);
+						if (controller.signal.aborted) break;
+						detailCache.current.set(key, body);
+						if (detailCache.current.size > 30)
+							detailCache.current.delete(
+								detailCache.current.keys().next().value as string,
+							);
+					} catch {
+						/* Reading and explicit retry handle provider errors. */
+					}
+				}
+			})();
+		}, 500);
+		return () => {
+			clearTimeout(timer);
+			controller.abort();
+		};
+	}, [selected, loading, rows, api]);
 	const views = useMemo(
 		() => mailViews(status?.accounts || []),
 		[status?.accounts],
