@@ -26,6 +26,7 @@ import {
 } from "#/lib/orbit/calendar-resize";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { itemColor } from "#/lib/orbit/item-colors";
+import { koreanHolidayName } from "#/lib/orbit/korean-holidays";
 import type { CalendarSearch } from "#/lib/orbit/navigation-search";
 import { isPendingItemId } from "#/lib/orbit/optimistic-mutations";
 import { formatDayKey, itemDayKey } from "#/lib/orbit/para";
@@ -41,6 +42,7 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "@/components/ui/dialog";
+import { useKoreanHolidays } from "@/hooks/use-korean-holidays";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useTaskToggle } from "@/hooks/use-task-toggle";
 import { cn } from "@/lib/utils";
@@ -49,8 +51,42 @@ const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 const HOUR_START = 0;
 const HOUR_END = 24;
 const HOUR_HEIGHT = 56;
-const MONTH_ITEMS_TOP = 44;
+const MONTH_ITEMS_TOP = 56;
 const MONTH_LANE_HEIGHT = 26;
+
+function calendarDayTone(day: Date) {
+	return day.getDay() === 0 || koreanHolidayName(formatDayKey(day))
+		? "text-red-600 dark:text-red-400"
+		: "";
+}
+
+function calendarDateLabel(day: string) {
+	const holiday = koreanHolidayName(day);
+	return holiday ? `${shortDayLabel(day)} · ${holiday}` : shortDayLabel(day);
+}
+
+function HolidayLabel({
+	date,
+	className,
+}: {
+	date: string;
+	className?: string;
+}) {
+	const holiday = koreanHolidayName(date);
+	if (!holiday) return null;
+	return (
+		<span
+			data-calendar-holiday={date}
+			title={holiday}
+			className={cn(
+				"block min-w-0 truncate text-[10px] leading-4 text-red-600 dark:text-red-400",
+				className,
+			)}
+		>
+			{holiday}
+		</span>
+	);
+}
 
 type CalendarView = "day" | "week" | "month";
 type EditorState = {
@@ -560,6 +596,7 @@ function CalendarEvent({
 }
 
 export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
+	useKoreanHolidays();
 	const taskToggle = useTaskToggle();
 	useEffect(() => {
 		taskToggle.sync(snapshot.items);
@@ -1249,12 +1286,16 @@ function MobileDayView({
 							key={key}
 							type="button"
 							onClick={() => onSelectDate(key)}
+							aria-label={calendarDateLabel(key)}
 							className="flex min-h-14 flex-col items-center justify-center rounded-xl text-[10px] text-muted-foreground"
 						>
-							<span>{WEEKDAYS[day.getDay()]}</span>
+							<span className={calendarDayTone(day)}>
+								{WEEKDAYS[day.getDay()]}
+							</span>
 							<span
 								className={cn(
 									"mt-0.5 grid size-7 place-items-center rounded-full text-sm font-semibold text-foreground",
+									!selected && key !== today && calendarDayTone(day),
 									selected && "bg-foreground text-background",
 									key === today && !selected && "text-blue-600",
 								)}
@@ -1277,6 +1318,7 @@ function MobileDayView({
 						<h3 className="text-base font-semibold">
 							{shortDayLabel(selectedDate)}
 						</h3>
+						<HolidayLabel date={selectedDate} />
 						<p className="text-xs text-muted-foreground">
 							{items.length > 0 ? `${items.length}개 항목` : "여유 있는 날"}
 						</p>
@@ -1331,18 +1373,28 @@ function MobileWeekView({
 								<button
 									type="button"
 									onClick={() => onSelectDate(key)}
-									className="flex flex-1 items-center gap-2 rounded-lg px-1.5 py-1 text-left"
+									aria-label={calendarDateLabel(key)}
+									className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 py-1 text-left"
 								>
 									<span
 										className={cn(
-											"grid size-8 place-items-center rounded-full text-sm font-semibold",
+											"grid size-8 shrink-0 place-items-center rounded-full text-sm font-semibold",
+											key !== today && calendarDayTone(day),
 											key === today && "bg-blue-600 text-white",
 										)}
 									>
 										{day.getDate()}
 									</span>
-									<span className="text-sm font-medium">
-										{WEEKDAYS[day.getDay()]}요일
+									<span className="min-w-0 flex-1">
+										<span
+											className={cn(
+												"text-sm font-medium",
+												calendarDayTone(day),
+											)}
+										>
+											{WEEKDAYS[day.getDay()]}요일
+										</span>
+										<HolidayLabel date={key} />
 									</span>
 									<span className="text-xs text-muted-foreground">
 										{items.length ? `${items.length}개` : "비어 있음"}
@@ -1517,10 +1569,13 @@ function CalendarRail({
 								key={key}
 								type="button"
 								onClick={() => onSelectDate(key)}
+								aria-label={calendarDateLabel(key)}
+								title={koreanHolidayName(key)}
 								className={cn(
 									"relative mx-auto grid size-7 place-items-center rounded-full text-[11px] tabular-nums transition-colors hover:bg-muted",
 									day.getMonth() !== cursor.getMonth() &&
 										"text-muted-foreground/40",
+									!selected && key !== today && calendarDayTone(day),
 									key === today && !selected && "font-semibold text-blue-600",
 									selected &&
 										"bg-foreground font-semibold text-background hover:bg-foreground",
@@ -1583,6 +1638,7 @@ function CalendarRail({
 						<p className="text-sm font-semibold">
 							{shortDayLabel(selectedDate)}
 						</p>
+						<HolidayLabel date={selectedDate} />
 						<p className="text-[11px] text-muted-foreground">
 							{selectedItems.length}개 항목
 						</p>
@@ -1733,6 +1789,7 @@ function WeekView({
 							<button
 								key={key}
 								type="button"
+								aria-label={calendarDateLabel(key)}
 								className={cn(
 									"relative border-r px-2 py-2 text-center last:border-r-0 hover:bg-muted/60",
 									dayCount > 1 && key === selectedDate && "bg-muted/45",
@@ -1740,17 +1797,24 @@ function WeekView({
 								onClick={() => onSelectDate(key)}
 								onDoubleClick={() => onCreate(key)}
 							>
-								<span className="block text-[11px] text-muted-foreground">
+								<span
+									className={cn(
+										"block text-[11px] text-muted-foreground",
+										calendarDayTone(day),
+									)}
+								>
 									{WEEKDAYS[day.getDay()]}
 								</span>
 								<span
 									className={cn(
 										"mt-1 inline-grid size-7 place-items-center rounded-full text-sm font-semibold",
+										key !== today && calendarDayTone(day),
 										key === today && "bg-blue-600 text-white",
 									)}
 								>
 									{day.getDate()}
 								</span>
+								<HolidayLabel date={key} />
 							</button>
 						);
 					})}
@@ -2079,6 +2143,7 @@ function MonthView({
 							className={cn(
 								"border-r px-2 py-2.5 text-center text-[11px] font-medium text-muted-foreground last:border-r-0",
 								(index === 0 || index === 6) && "bg-muted/20",
+								index === 0 && "text-red-600 dark:text-red-400",
 							)}
 						>
 							{day}
@@ -2105,6 +2170,7 @@ function MonthView({
 										"group/day relative min-h-28 border-r border-b p-0.5 sm:p-1.5 last:border-r-0",
 										(day.getDay() === 0 || day.getDay() === 6) &&
 											"bg-muted/[0.12]",
+										Boolean(koreanHolidayName(key)) && "bg-red-500/[0.025]",
 										day.getMonth() !== cursor.getMonth() &&
 											"bg-muted/25 text-muted-foreground",
 										key === selectedDate && key !== today && "bg-muted/[0.16]",
@@ -2147,13 +2213,15 @@ function MonthView({
 										<button
 											type="button"
 											onClick={() => onSelectDate(key)}
+											aria-label={calendarDateLabel(key)}
 											className={cn(
 												"relative z-20 grid size-7 place-items-center rounded-full text-xs font-medium tabular-nums hover:bg-muted",
+												key !== today && calendarDayTone(day),
 												key === today &&
 													"bg-blue-600 text-white hover:bg-blue-600",
 												key === selectedDate &&
 													key !== today &&
-													"bg-muted font-semibold text-foreground",
+													"bg-muted font-semibold",
 											)}
 										>
 											{day.getDate()}
@@ -2167,6 +2235,7 @@ function MonthView({
 											)}
 										/>
 									</div>
+									<HolidayLabel date={key} className="px-1" />
 								</div>
 							);
 						})}
@@ -2267,9 +2336,12 @@ function MonthView({
 			{isMobile ? (
 				<div className="border-t bg-muted/20 p-3">
 					<div className="mb-2 flex items-center justify-between">
-						<h3 className="text-sm font-semibold">
-							{shortDayLabel(selectedDate)}
-						</h3>
+						<div>
+							<h3 className="text-sm font-semibold">
+								{shortDayLabel(selectedDate)}
+							</h3>
+							<HolidayLabel date={selectedDate} />
+						</div>
 						<CalendarCreateButton date={selectedDate} onCreate={onCreate} />
 					</div>
 					<MobileAgenda
