@@ -11,9 +11,42 @@ type MonthSegment = {
 	lane: number;
 };
 
+export function isCalendarHeaderItem(item: OrbitItem) {
+	return (
+		!/(?:T\d{2}:\d{2})/.test(item.start ?? item.due ?? "") ||
+		(item.type === "event" &&
+			Boolean(
+				item.start &&
+					item.end &&
+					item.end.slice(0, 10) > item.start.slice(0, 10),
+			))
+	);
+}
+
+export function buildWeekLayout(byDay: Map<string, OrbitItem[]>, days: Date[]) {
+	const headerByDay = new Map<string, OrbitItem[]>();
+	const timedByDay = new Map<string, OrbitItem[]>();
+	for (const day of days) {
+		const key = formatDayKey(day);
+		const items = byDay.get(key) ?? [];
+		headerByDay.set(key, items.filter(isCalendarHeaderItem));
+		timedByDay.set(
+			key,
+			items.filter((item) => !isCalendarHeaderItem(item)),
+		);
+	}
+	const { segments, rowLaneCounts } = buildMonthLayout(
+		headerByDay,
+		days,
+		days.length || 1,
+	);
+	return { segments, laneCount: rowLaneCounts[0], timedByDay };
+}
+
 export function buildMonthLayout(
 	byDay: Map<string, OrbitItem[]>,
 	days: Date[],
+	columns = 7,
 ) {
 	const dayKeys = days.map((day) => formatDayKey(day));
 	const uniqueItems = new Map<string, OrbitItem>();
@@ -32,13 +65,13 @@ export function buildMonthLayout(
 		let index = Math.min(...indices);
 		const lastIndex = Math.max(...indices);
 		while (index <= lastIndex) {
-			const row = Math.floor(index / 7);
-			const segmentEnd = Math.min(lastIndex, row * 7 + 6);
+			const row = Math.floor(index / columns);
+			const segmentEnd = Math.min(lastIndex, (row + 1) * columns - 1);
 			segments.push({
 				item,
 				row,
-				startColumn: index % 7,
-				endColumn: segmentEnd % 7,
+				startColumn: index % columns,
+				endColumn: segmentEnd % columns,
 				startKey: dayKeys[index],
 				endKey: dayKeys[segmentEnd],
 				lane: 0,
@@ -79,7 +112,7 @@ export function buildMonthLayout(
 	return {
 		segments,
 		rowLaneCounts: Array.from(
-			{ length: 6 },
+			{ length: Math.max(1, Math.ceil(days.length / columns)) },
 			(_, row) => rowLanes.get(row)?.length ?? 0,
 		),
 	};

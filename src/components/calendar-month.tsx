@@ -9,15 +9,22 @@ import {
 	Plus,
 } from "lucide-react";
 import {
+	type ComponentProps,
+	type CSSProperties,
 	createContext,
 	useCallback,
 	useContext,
 	useEffect,
+	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
 } from "react";
-import { buildMonthLayout } from "#/lib/orbit/calendar-layout";
+import {
+	buildMonthLayout,
+	buildWeekLayout,
+	isCalendarHeaderItem,
+} from "#/lib/orbit/calendar-layout";
 import {
 	calendarMoveTime,
 	calendarResizeTime,
@@ -358,8 +365,8 @@ function monthLabel(date: Date) {
 	}).format(date);
 }
 
-function weekLabel(date: Date) {
-	const start = startOfWeek(date);
+function weekLabel(date: Date, rolling = false) {
+	const start = rolling ? date : startOfWeek(date);
 	const end = addDays(start, 6);
 	const formatter = new Intl.DateTimeFormat("ko-KR", {
 		month: "short",
@@ -483,6 +490,12 @@ function layoutTimedItems(items: OrbitItem[], dayKey: string) {
 	return result;
 }
 
+function timedCardHeight(item: OrbitItem, start: number, end: number) {
+	return item.type === "task"
+		? 24
+		: Math.max(2, ((end - start) / 60) * HOUR_HEIGHT);
+}
+
 function CalendarEvent({
 	item,
 	compact = false,
@@ -496,6 +509,9 @@ function CalendarEvent({
 	onDragEnd,
 	dragging = false,
 	dragOperation = "move",
+	stickyContent = false,
+	showRange = false,
+	contentOffset,
 }: {
 	item: OrbitItem;
 	compact?: boolean;
@@ -509,6 +525,9 @@ function CalendarEvent({
 	onDragEnd: () => void;
 	dragging?: boolean;
 	dragOperation?: DragOperation;
+	stickyContent?: boolean;
+	showRange?: boolean;
+	contentOffset?: string;
 }) {
 	const startKey = itemDayKey(item);
 	const endKey = visibleEndDayKey(item);
@@ -529,13 +548,15 @@ function CalendarEvent({
 	return (
 		<div
 			className={cn(
-				"group/event relative h-full min-h-0 cursor-grab active:cursor-grabbing",
+				"group/event relative min-h-0 min-w-0 cursor-grab active:cursor-grabbing",
+				compact ? "h-6" : "h-full",
 				dragging && dragOperation === "move" && "opacity-35",
 			)}
 		>
 			<button
 				type="button"
 				draggable
+				title={showRange ? `${item.title} · ${displayTime}` : item.title}
 				onDragStart={onDragStart}
 				onDragEnd={onDragEnd}
 				onClick={(event) => {
@@ -544,34 +565,47 @@ function CalendarEvent({
 				}}
 				onDoubleClick={(event) => event.stopPropagation()}
 				className={cn(
-					"flex h-full min-h-0 w-full min-w-0 items-start overflow-hidden border px-0.5 sm:px-2 text-left transition-colors",
+					"flex h-full min-h-0 w-full min-w-0 items-start border px-0.5 sm:px-2 text-left transition-colors",
+					stickyContent ? "overflow-clip" : "overflow-hidden",
 					eventTone(item),
 					continuesFromBefore ? "rounded-l-sm border-l-0" : "rounded-l-md",
 					continuesAfter ? "rounded-r-sm border-r-0" : "rounded-r-md",
 					compact
-						? "h-6 items-center text-[9px] sm:text-[11px] leading-6"
+						? "h-6 items-center text-[9px] leading-4 sm:text-[11px]"
 						: dense
 							? "items-center py-0.5 text-[11px] shadow-sm"
 							: "py-1.5 text-xs shadow-sm",
 				)}
 			>
 				<span
+					style={contentOffset ? { marginLeft: contentOffset } : undefined}
 					className={cn(
 						"min-w-0 flex-1",
+						stickyContent && "sticky top-(--calendar-sticky-top) self-start",
 						item.type === "task" && "pl-6",
 						dense && "flex items-center gap-1.5",
 					)}
 				>
-					<span className={cn("block truncate font-medium", dense && "flex-1")}>
-						{compact && !continuesFromBefore ? (
+					<span
+						className={cn(
+							"block min-w-0 truncate font-medium",
+							dense && "flex-1",
+						)}
+					>
+						{compact && !showRange && !continuesFromBefore ? (
 							<span className="mr-1 hidden sm:inline font-normal tabular-nums opacity-65">
 								{displayTime ?? timeOf(item.start ?? item.due)}
 							</span>
 						) : null}
 						<CalendarItemTitle item={item} />
+						{showRange ? (
+							<span className="ml-2 font-normal tabular-nums opacity-75">
+								{displayTime}
+							</span>
+						) : null}
 					</span>
 					{compact ? null : dense ? (
-						<span className="shrink-0 tabular-nums opacity-75">
+						<span className="max-w-[45%] shrink-0 truncate tabular-nums opacity-75">
 							{displayTime ?? timeOf(item.start ?? item.due)}
 						</span>
 					) : (
@@ -621,6 +655,16 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 	const view = location.view ?? "month";
 	const cursorKey = location.date ?? formatDayKey();
 	const cursor = useMemo(() => parseDayKey(cursorKey), [cursorKey]);
+	const viewportAnchor =
+		view === "week"
+			? formatDayKey(startOfWeek(cursor))
+			: view === "month"
+				? formatDayKey(startOfMonth(cursor))
+				: cursorKey;
+	const [visibleDate, setVisibleDate] = useState(viewportAnchor);
+	const [navigationVersion, setNavigationVersion] = useState(0);
+	useEffect(() => setVisibleDate(viewportAnchor), [viewportAnchor]);
+	const visibleCursor = useMemo(() => parseDayKey(visibleDate), [visibleDate]);
 	const selectedDate = location.selected ?? cursorKey;
 	const hiddenCategories = location.hiddenCategories;
 	const updateCalendar = useCallback(
@@ -693,13 +737,17 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 				event.preventDefault();
 				updateCalendar({
 					view: nextView,
-					date: nextView === "day" ? selectedDate : cursorKey,
+					date: nextView === "day" ? selectedDate : visibleDate,
 				});
 				return;
 			}
 			if (event.key.toLowerCase() === "t") {
 				event.preventDefault();
+				setNavigationVersion((version) => version + 1);
 				const now = new Date();
+				setVisibleDate(
+					view === "week" ? formatDayKey(startOfWeek(now)) : formatDayKey(now),
+				);
 				updateCalendar({
 					date: formatDayKey(now),
 					selected: formatDayKey(now),
@@ -723,8 +771,8 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 					view === "day"
 						? addDays(cursor, amount)
 						: view === "week"
-							? addDays(cursor, amount * 7)
-							: addMonths(cursor, amount);
+							? addDays(visibleCursor, amount * 7)
+							: addMonths(visibleCursor, amount);
 				updateCalendar({
 					date: formatDayKey(next),
 					selected: formatDayKey(next),
@@ -733,7 +781,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 		};
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [cursor, cursorKey, selectedDate, view, updateCalendar]);
+	}, [cursor, visibleCursor, visibleDate, selectedDate, view, updateCalendar]);
 	const today = formatDayKey();
 	const dated = useMemo(
 		() =>
@@ -809,7 +857,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 	function chooseView(next: CalendarView) {
 		updateCalendar({
 			view: next,
-			date: next === "day" ? selectedDate : cursorKey,
+			date: next === "day" ? selectedDate : visibleDate,
 		});
 	}
 
@@ -818,8 +866,8 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 			view === "day"
 				? addDays(cursor, amount)
 				: view === "week"
-					? addDays(cursor, amount * 7)
-					: addMonths(cursor, amount);
+					? addDays(visibleCursor, amount * 7)
+					: addMonths(visibleCursor, amount);
 		updateCalendar({
 			date: formatDayKey(next),
 			selected:
@@ -1033,7 +1081,13 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 						size="sm"
 						className="hidden font-medium sm:inline-flex"
 						onClick={() => {
+							setNavigationVersion((version) => version + 1);
 							const now = new Date();
+							setVisibleDate(
+								view === "week"
+									? formatDayKey(startOfWeek(now))
+									: formatDayKey(now),
+							);
 							updateCalendar({
 								date: formatDayKey(now),
 								selected: formatDayKey(now),
@@ -1064,8 +1118,8 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 						{view === "day"
 							? dayLabel(cursor)
 							: view === "week"
-								? weekLabel(cursor)
-								: monthLabel(cursor)}
+								? weekLabel(visibleCursor, true)
+								: monthLabel(visibleCursor)}
 					</h2>
 					<div className="hidden rounded-lg bg-muted/80 p-0.5 sm:flex">
 						{(["day", "week", "month"] as const).map((value, index) => (
@@ -1119,7 +1173,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 				) : null}
 
 				<div className="flex min-h-0 flex-1">
-					{isMobile && view !== "month" ? (
+					{isMobile && view === "day" ? (
 						<MobileCalendarView
 							view={view}
 							cursor={cursor}
@@ -1134,13 +1188,13 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 					) : (
 						<>
 							<CalendarRail
-								cursor={cursor}
+								cursor={visibleCursor}
 								selectedDate={selectedDate}
 								selectedItems={selectedItems}
 								displayOptions={displayOptions}
 								onMoveMonth={(amount) =>
 									updateCalendar({
-										date: formatDayKey(addMonths(cursor, amount)),
+										date: formatDayKey(addMonths(visibleCursor, amount)),
 									})
 								}
 								onSelectDate={selectDate}
@@ -1151,6 +1205,8 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 							<div className="flex min-w-0 flex-1 flex-col">
 								{view !== "month" ? (
 									<WeekView
+										key={`${navigationVersion}:${view}:${view === "week" ? formatDayKey(startOfWeek(cursor)) : cursorKey}`}
+										onVisibleDate={setVisibleDate}
 										cursor={cursor}
 										dayCount={view === "day" ? 1 : 7}
 										dragGrabOffset={dragGrabOffset}
@@ -1171,6 +1227,8 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 									/>
 								) : (
 									<MonthView
+										onVisibleDate={setVisibleDate}
+										key={`${navigationVersion}:${cursor.getFullYear()}-${cursor.getMonth()}`}
 										cursor={cursor}
 										byDay={byDay}
 										today={today}
@@ -1674,15 +1732,13 @@ function CalendarRail({
 					</div>
 				)}
 			</div>
-			<div className="border-t border-border/60 px-4 py-2.5 text-[10px] leading-4 text-muted-foreground">
-				빈 시간을 클릭해 추가 · 카드를 드래그해 이동 · 끝 모서리로 기간 조정
-			</div>
 		</aside>
 	);
 }
 
 function WeekView({
 	cursor,
+	onVisibleDate,
 	dayCount,
 	byDay,
 	today,
@@ -1701,6 +1757,7 @@ function WeekView({
 	onDrop,
 }: {
 	cursor: Date;
+	onVisibleDate: (date: string) => void;
 	dayCount: 1 | 7;
 	byDay: Map<string, OrbitItem[]>;
 	today: string;
@@ -1729,11 +1786,63 @@ function WeekView({
 	) => void;
 }) {
 	const scrollRef = useRef<HTMLDivElement>(null);
+	const headerRef = useRef<HTMLDivElement>(null);
+	const initialized = useRef(false);
+	const pendingPrepend = useRef<{ start: number; left: number } | null>(null);
+	const [viewportWidth, setViewportWidth] = useState(0);
+	const [range, setRange] = useState({ start: -14, end: 20 });
+	const columnWidth =
+		dayCount === 1
+			? Math.max(284, viewportWidth - 56)
+			: Math.max(96, (viewportWidth - 56) / 7);
+	useLayoutEffect(() => {
+		const element = scrollRef.current;
+		if (!element) return;
+		const measure = () => setViewportWidth(element.clientWidth);
+		measure();
+		const observer = new ResizeObserver(measure);
+		observer.observe(element);
+		return () => observer.disconnect();
+	}, []);
+	const previousColumnWidth = useRef(columnWidth);
+	useLayoutEffect(() => {
+		const element = scrollRef.current;
+		if (!element || viewportWidth === 0 || dayCount === 1) return;
+		if (pendingPrepend.current?.start === range.start) {
+			element.scrollLeft = pendingPrepend.current.left + 7 * columnWidth;
+			pendingPrepend.current = null;
+		} else if (!initialized.current) {
+			element.scrollLeft = -range.start * columnWidth;
+			initialized.current = true;
+		} else if (previousColumnWidth.current !== columnWidth) {
+			element.scrollLeft =
+				(element.scrollLeft / previousColumnWidth.current) * columnWidth;
+		}
+		element.style.setProperty(
+			"--calendar-scroll-left",
+			`${element.scrollLeft}px`,
+		);
+		previousColumnWidth.current = columnWidth;
+	}, [columnWidth, viewportWidth, dayCount, range.start]);
+	const [headerHeight, setHeaderHeight] = useState(80);
+	useLayoutEffect(() => {
+		const header = headerRef.current;
+		if (!header) return;
+		const measure = () =>
+			setHeaderHeight(header.getBoundingClientRect().height);
+		measure();
+		const observer = new ResizeObserver(measure);
+		observer.observe(header);
+		return () => observer.disconnect();
+	}, []);
 	const start = dayCount === 1 ? new Date(cursor) : startOfWeek(cursor);
 	start.setHours(0, 0, 0, 0);
-	const days = Array.from({ length: dayCount }, (_, index) =>
-		addDays(start, index),
+	const days = Array.from(
+		{ length: dayCount === 1 ? 1 : range.end - range.start + 1 },
+		(_, index) => addDays(start, dayCount === 1 ? 0 : range.start + index),
 	);
+	const columns = days.length;
+	const weekLayout = buildWeekLayout(byDay, days);
 	const hours = Array.from(
 		{ length: HOUR_END - HOUR_START },
 		(_, index) => HOUR_START + index,
@@ -1761,137 +1870,257 @@ function WeekView({
 	}
 
 	return (
-		<div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
-			<div className={dayCount === 1 ? "min-w-[340px]" : "min-w-[760px]"}>
+		<div
+			ref={scrollRef}
+			data-calendar-week-scroll
+			onScroll={(event) => {
+				if (dayCount === 1 || !initialized.current || pendingPrepend.current)
+					return;
+				const element = event.currentTarget;
+				element.style.setProperty(
+					"--calendar-scroll-left",
+					`${element.scrollLeft}px`,
+				);
+				const index = Math.floor((element.scrollLeft + 1) / columnWidth);
+				onVisibleDate(formatDayKey(addDays(start, range.start + index)));
+				if (element.scrollLeft < columnWidth * 2) {
+					pendingPrepend.current = {
+						start: range.start - 7,
+						left: element.scrollLeft,
+					};
+					setRange((current) => ({ ...current, start: current.start - 7 }));
+				} else if (
+					element.scrollWidth - element.scrollLeft - element.clientWidth <
+					columnWidth * 2
+				) {
+					setRange((current) => ({ ...current, end: current.end + 7 }));
+				}
+			}}
+			className="relative min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain [overflow-anchor:none]"
+			style={
+				{ "--calendar-sticky-top": `${headerHeight + 4}px` } as CSSProperties
+			}
+		>
+			<div style={{ width: 56 + columns * columnWidth }}>
 				<div
-					className="sticky top-0 z-20 grid border-b bg-background/95 backdrop-blur"
-					style={{
-						gridTemplateColumns: `56px repeat(${dayCount}, minmax(96px, 1fr))`,
-					}}
+					ref={headerRef}
+					className="sticky top-0 z-30 bg-background/95 backdrop-blur"
 				>
-					<div className="border-r" />
-					{days.map((day) => {
-						const key = formatDayKey(day);
-						return (
-							<button
-								key={key}
-								type="button"
-								aria-label={calendarDateLabel(key)}
-								className={cn(
-									"relative border-r px-2 py-2 text-center last:border-r-0 hover:bg-muted/60",
-									dayCount > 1 && key === selectedDate && "bg-muted/45",
-								)}
-								onClick={() => onSelectDate(key)}
-								onDoubleClick={() => onCreate(key)}
-							>
-								<span
+					<div
+						className="grid border-b"
+						style={{
+							gridTemplateColumns: `56px repeat(${columns}, minmax(0, 1fr))`,
+						}}
+					>
+						<div className="sticky left-0 z-40 border-r bg-background" />
+						{days.map((day) => {
+							const key = formatDayKey(day);
+							return (
+								<button
+									key={key}
+									type="button"
+									aria-label={calendarDateLabel(key)}
 									className={cn(
-										"block text-[11px] text-muted-foreground",
-										calendarDayTone(day),
+										"relative border-r px-2 py-2 text-center last:border-r-0 hover:bg-muted/60",
+										dayCount > 1 && key === selectedDate && "bg-muted/45",
 									)}
+									onClick={() => onSelectDate(key)}
+									onDoubleClick={() => onCreate(key)}
 								>
-									{WEEKDAYS[day.getDay()]}
-								</span>
-								<span
-									className={cn(
-										"mt-1 inline-grid size-7 place-items-center rounded-full text-sm font-semibold",
-										key !== today && calendarDayTone(day),
-										key === today && "bg-blue-600 text-white",
-									)}
-								>
-									{day.getDate()}
-								</span>
-								<HolidayLabel date={key} />
-							</button>
-						);
-					})}
-				</div>
-
-				<div
-					className="grid border-b"
-					style={{
-						gridTemplateColumns: `56px repeat(${dayCount}, minmax(96px, 1fr))`,
-					}}
-				>
-					<div className="border-r px-2 py-2 text-[10px] text-muted-foreground">
-						종일
+									<span
+										className={cn(
+											"block text-[11px] text-muted-foreground",
+											calendarDayTone(day),
+										)}
+									>
+										{WEEKDAYS[day.getDay()]}
+									</span>
+									<span
+										className={cn(
+											"mt-1 inline-grid size-7 place-items-center rounded-full text-sm font-semibold",
+											key !== today && calendarDayTone(day),
+											key === today && "bg-blue-600 text-white",
+										)}
+									>
+										{day.getDate() === 1
+											? `${day.getMonth() + 1}/1`
+											: day.getDate()}
+									</span>
+									<HolidayLabel date={key} />
+								</button>
+							);
+						})}
 					</div>
-					{days.map((day) => {
-						const key = formatDayKey(day);
-						const allDay = (byDay.get(key) ?? []).filter(
-							(item) => !timeOf(item.start ?? item.due),
-						);
-						return (
-							// biome-ignore lint/a11y/noStaticElementInteractions: Calendar cells are native drop targets; items remain keyboard-editable.
-							<div
-								key={key}
-								className={cn(
-									"min-h-11 space-y-1 border-r p-1 last:border-r-0",
-									key === today && "bg-blue-500/[0.025]",
-									dragTarget?.date === key &&
-										dragTarget.mode === "all-day" &&
-										"bg-accent ring-1 ring-inset ring-foreground/20",
-								)}
-								data-calendar-date={key}
-								data-calendar-mode="keep-time"
-								onDragOver={(event) => {
-									event.preventDefault();
-									event.dataTransfer.dropEffect = "move";
-									onDragPreview({ date: key, mode: "all-day" });
-								}}
-								onDragEnter={(event) => {
-									event.preventDefault();
-									onDragPreview({ date: key, mode: "all-day" });
-								}}
-								onDragLeave={(event) => {
-									if (
-										event.relatedTarget instanceof Node &&
-										event.currentTarget.contains(event.relatedTarget)
-									)
-										return;
-									onDragPreview(null);
-								}}
-								onDrop={(event) => {
-									event.preventDefault();
-									const payload = dragPayload(event.dataTransfer);
-									onDrop(
-										{ date: key, mode: "all-day" },
-										payload.id,
-										payload.operation,
-									);
-								}}
-								onDoubleClick={() => onCreate(key)}
-							>
-								{allDay.map((item) => (
-									<CalendarEvent
-										key={item.id}
-										item={item}
-										compact
-										dayKey={key}
-										onClick={() => onOpen(item)}
-										onDragStart={(event) => onDragStart(item, event)}
-										onResizeStart={(event) => onResizeStart(item, event)}
-										onDragEnd={onDragEnd}
-										dragging={draggingId === item.id}
-										dragOperation={dragOperation}
+
+					<div
+						className="grid border-b"
+						style={{
+							gridTemplateColumns: `56px repeat(${columns}, minmax(0, 1fr))`,
+						}}
+					>
+						<div className="sticky left-0 z-40 border-r bg-background px-1 py-2 text-center text-[10px] text-muted-foreground">
+							종일·기간
+						</div>
+						<div
+							data-calendar-header
+							className="relative col-start-2 -col-end-1 grid overflow-y-auto"
+							style={{
+								gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+								maxHeight: 160,
+								height: Math.max(
+									44,
+									weekLayout.laneCount * MONTH_LANE_HEIGHT + 8,
+								),
+							}}
+						>
+							{days.map((day) => {
+								const key = formatDayKey(day);
+								const mode =
+									draggingItem &&
+									spansMultipleDays(draggingItem) &&
+									timeOf(draggingItem.start)
+										? "keep-time"
+										: "all-day";
+								const target: DragTarget = { date: key, mode };
+								return (
+									// biome-ignore lint/a11y/noStaticElementInteractions: Calendar cells accept native schedule drops and pointer resizing.
+									<div
+										key={key}
+										data-calendar-date={key}
+										data-calendar-mode={mode}
+										className={cn(
+											"min-w-0 border-r last:border-r-0 transition-colors hover:bg-muted/50",
+											key === today && "bg-blue-500/[0.025]",
+											dragTarget?.date === key &&
+												dragTarget.mode !== "time" &&
+												"bg-accent ring-1 ring-inset ring-foreground/20",
+										)}
+										onDragOver={(event) => {
+											event.preventDefault();
+											event.dataTransfer.dropEffect = "move";
+											onDragPreview(target);
+										}}
+										onDragEnter={(event) => {
+											event.preventDefault();
+											onDragPreview(target);
+										}}
+										onDragLeave={(event) => {
+											if (
+												event.relatedTarget instanceof Node &&
+												event.currentTarget.contains(event.relatedTarget)
+											)
+												return;
+											onDragPreview(null);
+										}}
+										onDrop={(event) => {
+											event.preventDefault();
+											const payload = dragPayload(event.dataTransfer);
+											onDrop(target, payload.id, payload.operation);
+										}}
+										onDoubleClick={() => onCreate(key)}
 									/>
-								))}
-							</div>
-						);
-					})}
+								);
+							})}
+							{weekLayout.segments.map((segment) => {
+								const rangeLabel = spansMultipleDays(segment.item)
+									? `${segment.item.start?.slice(5, 10).replace("-", "/")}${timeOf(segment.item.start) ? ` ${timeOf(segment.item.start)}` : ""}–${segment.item.end?.slice(5, 10).replace("-", "/")}${timeOf(segment.item.end) ? ` ${timeOf(segment.item.end)}` : ""}`
+									: itemTimeLabel(segment.item);
+								function targetAt(
+									event: React.DragEvent<HTMLDivElement>,
+								): DragTarget {
+									const rect = (
+										event.currentTarget.parentElement ?? event.currentTarget
+									).getBoundingClientRect();
+									const column = Math.max(
+										0,
+										Math.min(
+											columns - 1,
+											Math.floor(
+												(event.clientX - rect.left) / (rect.width / columns),
+											),
+										),
+									);
+									return {
+										date: formatDayKey(days[column]),
+										mode:
+											draggingItem &&
+											spansMultipleDays(draggingItem) &&
+											timeOf(draggingItem.start)
+												? "keep-time"
+												: "all-day",
+									};
+								}
+								return (
+									// biome-ignore lint/a11y/noStaticElementInteractions: Spanning bars accept drops across their dates.
+									<div
+										key={segment.item.id}
+										className="absolute z-10 min-w-0"
+										style={{
+											top: 4 + segment.lane * MONTH_LANE_HEIGHT,
+											left: `calc(${(segment.startColumn / columns) * 100}% + 3px)`,
+											width: `calc(${((segment.endColumn - segment.startColumn + 1) / columns) * 100}% - 6px)`,
+										}}
+										onDragOver={(event) => {
+											event.preventDefault();
+											event.dataTransfer.dropEffect = "move";
+											onDragPreview(targetAt(event));
+										}}
+										onDragLeave={(event) => {
+											if (
+												event.relatedTarget instanceof Node &&
+												event.currentTarget.contains(event.relatedTarget)
+											)
+												return;
+											onDragPreview(null);
+										}}
+										onDrop={(event) => {
+											event.preventDefault();
+											event.stopPropagation();
+											const payload = dragPayload(event.dataTransfer);
+											onDrop(targetAt(event), payload.id, payload.operation);
+										}}
+									>
+										<CalendarEvent
+											item={segment.item}
+											compact
+											showRange={spansMultipleDays(segment.item)}
+											contentOffset={`clamp(0px, calc(var(--calendar-scroll-left, 0px) - ${segment.startColumn * columnWidth}px), calc(100% - 80px))`}
+											displayTime={rangeLabel}
+											dayKey={segment.startKey}
+											resizeEndKey={segment.endKey}
+											onClick={() => onOpen(segment.item)}
+											onDragStart={(event) => onDragStart(segment.item, event)}
+											onResizeStart={(event) =>
+												onResizeStart(segment.item, event)
+											}
+											onDragEnd={onDragEnd}
+											dragging={draggingId === segment.item.id}
+											dragOperation={dragOperation}
+										/>
+									</div>
+								);
+							})}
+						</div>
+					</div>
 				</div>
 
 				<div
 					className="grid"
 					style={{
-						gridTemplateColumns: `56px repeat(${dayCount}, minmax(96px, 1fr))`,
+						gridTemplateColumns: `56px repeat(${columns}, minmax(0, 1fr))`,
 					}}
 				>
-					<div className="relative border-r" style={{ height: calendarHeight }}>
+					<div
+						className="sticky left-0 z-20 border-r bg-background"
+						style={{ height: calendarHeight }}
+					>
 						{hours.map((hour) => (
 							<span
 								key={hour}
-								className="absolute right-2 -translate-y-1/2 text-[10px] text-muted-foreground"
+								className={cn(
+									"absolute right-2 text-[10px] text-muted-foreground",
+									hour === HOUR_START ? "translate-y-1" : "-translate-y-1/2",
+								)}
 								style={{ top: (hour - HOUR_START) * HOUR_HEIGHT }}
 							>
 								{String(hour).padStart(2, "0")}:00
@@ -1900,9 +2129,7 @@ function WeekView({
 					</div>
 					{days.map((day) => {
 						const key = formatDayKey(day);
-						const timed = (byDay.get(key) ?? []).filter((item) =>
-							timeOf(item.start ?? item.due),
-						);
+						const timed = weekLayout.timedByDay.get(key) ?? [];
 						const previewItem =
 							dragOperation === "move" &&
 							draggingItem &&
@@ -1911,8 +2138,20 @@ function WeekView({
 								? moveScheduledItem(draggingItem, dragTarget)
 								: null;
 						const previewRange =
-							previewItem && visibleDayKeys(previewItem).includes(key)
+							previewItem &&
+							!isCalendarHeaderItem(previewItem) &&
+							visibleDayKeys(previewItem).includes(key)
 								? timedRangeForDay(previewItem, key)
+								: null;
+						const previewLayout =
+							previewItem && previewRange
+								? layoutTimedItems(
+										[
+											...timed.filter((item) => item.id !== previewItem.id),
+											previewItem,
+										],
+										key,
+									).find((entry) => entry.item.id === previewItem.id)
 								: null;
 						return (
 							// biome-ignore lint/a11y/noStaticElementInteractions: Timeline columns accept native schedule drops.
@@ -1964,14 +2203,25 @@ function WeekView({
 									);
 								}}
 							>
-								<button
-									type="button"
-									aria-label={`${key} 시간 선택`}
-									className="absolute inset-0 z-0 w-full text-left"
-									onClick={(event) => {
-										onCreate(key, timeAt(event.clientY, event.currentTarget));
-									}}
-								/>
+								{Array.from({ length: hours.length * 2 }, (_, index) => {
+									const time = `${String(Math.floor(index / 2)).padStart(2, "0")}:${index % 2 ? "30" : "00"}`;
+									return (
+										<button
+											key={time}
+											type="button"
+											aria-label={`${key} ${time} 항목 추가`}
+											className={cn(
+												"absolute inset-x-0 z-0 w-full cursor-pointer text-left transition-colors [&:hover]:bg-foreground/[0.06] focus-visible:bg-foreground/[0.06] focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring",
+												draggingId && "pointer-events-none",
+											)}
+											style={{
+												top: (index * HOUR_HEIGHT) / 2,
+												height: HOUR_HEIGHT / 2,
+											}}
+											onClick={() => onCreate(key, time)}
+										/>
+									);
+								})}
 								{hours.map((hour) => (
 									<div
 										key={hour}
@@ -2002,34 +2252,59 @@ function WeekView({
 										<span className="absolute -top-1 -left-1 size-2 rounded-full bg-red-500" />
 									</div>
 								) : null}
-								{previewItem && previewRange && dragTarget?.time ? (
+								{previewItem &&
+								previewRange &&
+								previewLayout &&
+								dragTarget?.time ? (
 									<div
-										className="pointer-events-none absolute inset-x-1 z-20 overflow-hidden rounded-md border border-foreground/30 bg-foreground/15 px-2 py-1 text-xs backdrop-blur-sm"
+										data-calendar-drag-preview
+										aria-hidden="true"
+										className="pointer-events-none absolute z-20 opacity-65"
 										style={{
 											top:
 												((previewRange.start - HOUR_START * 60) / 60) *
 												HOUR_HEIGHT,
-											height:
-												((previewRange.end - previewRange.start) / 60) *
-												HOUR_HEIGHT,
+											height: timedCardHeight(
+												previewItem,
+												previewRange.start,
+												previewRange.end,
+											),
+											left: `calc(${(previewLayout.column / previewLayout.columns) * 100}% + 3px)`,
+											width: `calc(${100 / previewLayout.columns}% - 5px)`,
 										}}
 									>
-										<span className="block truncate font-medium">
-											{previewItem.title}
-										</span>
-										<span className="opacity-70">{previewRange.label}</span>
+										<CalendarEvent
+											item={previewItem}
+											dayKey={key}
+											displayTime={previewRange.label}
+											dense={
+												timedCardHeight(
+													previewItem,
+													previewRange.start,
+													previewRange.end,
+												) < 40
+											}
+											stickyContent={
+												timedCardHeight(
+													previewItem,
+													previewRange.start,
+													previewRange.end,
+												) >= 40
+											}
+											onClick={() => {}}
+											onDragStart={() => {}}
+											onDragEnd={() => {}}
+										/>
 									</div>
 								) : null}
 								{layoutTimedItems(timed, key).map((layout) => {
 									const top =
 										((layout.start - HOUR_START * 60) / 60) * HOUR_HEIGHT;
-									const height =
-										layout.item.type === "task"
-											? 24
-											: Math.max(
-													2,
-													((layout.end - layout.start) / 60) * HOUR_HEIGHT,
-												);
+									const height = timedCardHeight(
+										layout.item,
+										layout.start,
+										layout.end,
+									);
 									return (
 										<div
 											key={layout.item.id}
@@ -2044,6 +2319,7 @@ function WeekView({
 											<CalendarEvent
 												item={layout.item}
 												dense={height < 40}
+												stickyContent={height >= 40}
 												dayKey={key}
 												displayTime={layout.label}
 												resizeEndKey={key}
@@ -2068,8 +2344,148 @@ function WeekView({
 	);
 }
 
-function MonthView({
+function MonthView(
+	props: ComponentProps<typeof MonthGrid> & {
+		onVisibleDate: (date: string) => void;
+	},
+) {
+	const { cursor, selectedDate, byDay, onCreate, onOpen, onVisibleDate } =
+		props;
+	const isMobile = useIsMobile();
+	const scrollRef = useRef<HTMLDivElement>(null);
+	const currentWeekRef = useRef<HTMLElement>(null);
+	const initialized = useRef(false);
+	const pendingPrepend = useRef<{
+		start: number;
+		height: number;
+		top: number;
+	} | null>(null);
+	const [viewportHeight, setViewportHeight] = useState(0);
+	const [range, setRange] = useState({ start: -6, end: 11 });
+	const firstWeek = startOfWeek(startOfMonth(cursor));
+
+	useLayoutEffect(() => {
+		const element = scrollRef.current;
+		if (!element) return;
+		const measure = () => setViewportHeight(element.clientHeight);
+		measure();
+		const observer = new ResizeObserver(measure);
+		observer.observe(element);
+		return () => observer.disconnect();
+	}, []);
+
+	useLayoutEffect(() => {
+		const element = scrollRef.current;
+		if (!element) return;
+		if (pendingPrepend.current?.start === range.start) {
+			const previous = pendingPrepend.current;
+			element.scrollTop = previous.top + element.scrollHeight - previous.height;
+			pendingPrepend.current = null;
+		} else if (
+			!initialized.current &&
+			viewportHeight > 0 &&
+			currentWeekRef.current
+		) {
+			element.scrollTop = currentWeekRef.current.offsetTop - 40;
+			initialized.current = true;
+		}
+	}, [range.start, viewportHeight]);
+
+	return (
+		<div className="flex min-h-0 flex-1 flex-col">
+			<div
+				ref={scrollRef}
+				data-calendar-month-scroll
+				className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none]"
+				onScroll={(event) => {
+					if (!initialized.current || pendingPrepend.current) return;
+					const element = event.currentTarget;
+					const top = element.getBoundingClientRect().top + 40;
+					const visibleWeek = Array.from(
+						element.querySelectorAll<HTMLElement>("[data-calendar-week]"),
+					).find((row) => row.getBoundingClientRect().bottom > top + 1);
+					if (visibleWeek?.dataset.calendarWeek)
+						onVisibleDate(
+							formatDayKey(
+								addDays(parseDayKey(visibleWeek.dataset.calendarWeek), 4),
+							),
+						);
+					if (element.scrollTop < 240) {
+						pendingPrepend.current = {
+							start: range.start - 6,
+							height: element.scrollHeight,
+							top: element.scrollTop,
+						};
+						setRange((current) => ({ ...current, start: current.start - 6 }));
+					} else if (
+						element.scrollHeight - element.scrollTop - element.clientHeight <
+						240
+					) {
+						setRange((current) => ({ ...current, end: current.end + 6 }));
+					}
+				}}
+			>
+				<div className="sticky top-0 z-30 grid h-10 grid-cols-7 border-b bg-background/95 backdrop-blur">
+					{WEEKDAYS.map((day, index) => (
+						<div
+							key={day}
+							className={cn(
+								"flex items-center justify-center border-r text-[11px] font-medium text-muted-foreground last:border-r-0",
+								(index === 0 || index === 6) && "bg-muted/20",
+								index === 0 && "text-red-600 dark:text-red-400",
+							)}
+						>
+							{day}
+						</div>
+					))}
+				</div>
+				{Array.from({ length: range.end - range.start + 1 }, (_, index) => {
+					const offset = range.start + index;
+					const week = addDays(firstWeek, offset * 7);
+					return (
+						<section
+							key={formatDayKey(week)}
+							ref={offset === 0 ? currentWeekRef : undefined}
+							data-calendar-week={formatDayKey(week)}
+							aria-label={weekLabel(week)}
+						>
+							<MonthGrid
+								{...props}
+								days={Array.from({ length: 7 }, (_, day) => addDays(week, day))}
+								minHeight={Math.max(112, (viewportHeight - 40) / 5)}
+							/>
+						</section>
+					);
+				})}
+			</div>
+			{isMobile ? (
+				<div className="border-t bg-muted/20 p-3">
+					<div className="mb-2 flex items-center justify-between">
+						<div>
+							<h3 className="text-sm font-semibold">
+								{shortDayLabel(selectedDate)}
+							</h3>
+							<HolidayLabel date={selectedDate} />
+						</div>
+						<CalendarCreateButton date={selectedDate} onCreate={onCreate} />
+					</div>
+					<MobileAgenda
+						items={byDay.get(selectedDate) ?? []}
+						date={selectedDate}
+						onCreate={onCreate}
+						onOpen={onOpen}
+						compact
+					/>
+				</div>
+			) : null}
+		</div>
+	);
+}
+
+function MonthGrid({
 	cursor,
+	days: suppliedDays,
+	minHeight = 0,
 	byDay,
 	today,
 	selectedDate,
@@ -2086,6 +2502,8 @@ function MonthView({
 	onDrop,
 }: {
 	cursor: Date;
+	days?: Date[];
+	minHeight?: number;
 	byDay: Map<string, OrbitItem[]>;
 	today: string;
 	selectedDate: string;
@@ -2111,8 +2529,7 @@ function MonthView({
 		operation?: DragOperation,
 	) => void;
 }) {
-	const isMobile = useIsMobile();
-	const days = gridDays(cursor);
+	const days = suppliedDays ?? gridDays(cursor);
 	const monthLayout = buildMonthLayout(byDay, days);
 	const rowHeights = monthLayout.rowLaneCounts.map((count) =>
 		Math.max(112, MONTH_ITEMS_TOP + count * MONTH_LANE_HEIGHT + 6),
@@ -2121,22 +2538,8 @@ function MonthView({
 		.map((height) => `minmax(${height}px, 1fr)`)
 		.join(" ");
 	return (
-		<div className="min-h-0 flex-1 overflow-auto">
-			<div className="flex min-h-full min-w-0 flex-col">
-				<div className="sticky top-0 z-20 grid shrink-0 grid-cols-7 border-b bg-background/95 backdrop-blur">
-					{WEEKDAYS.map((day, index) => (
-						<div
-							key={day}
-							className={cn(
-								"border-r px-2 py-2.5 text-center text-[11px] font-medium text-muted-foreground last:border-r-0",
-								(index === 0 || index === 6) && "bg-muted/20",
-								index === 0 && "text-red-600 dark:text-red-400",
-							)}
-						>
-							{day}
-						</div>
-					))}
-				</div>
+		<div className="flex flex-col" style={{ minHeight }}>
+			<div className="flex min-w-0 flex-1 flex-col">
 				<div
 					className="relative flex-1"
 					style={{
@@ -2158,7 +2561,8 @@ function MonthView({
 										(day.getDay() === 0 || day.getDay() === 6) &&
 											"bg-muted/[0.12]",
 										Boolean(koreanHolidayName(key)) && "bg-red-500/[0.025]",
-										day.getMonth() !== cursor.getMonth() &&
+										!suppliedDays &&
+											day.getMonth() !== cursor.getMonth() &&
 											"bg-muted/25 text-muted-foreground",
 										key === selectedDate && key !== today && "bg-muted/[0.16]",
 										key === today && "bg-blue-500/[0.04]",
@@ -2209,9 +2613,12 @@ function MonthView({
 												key === selectedDate &&
 													key !== today &&
 													"bg-muted font-semibold",
+												day.getDate() === 1 && "w-auto whitespace-nowrap px-1",
 											)}
 										>
-											{day.getDate()}
+											{day.getDate() === 1
+												? `${day.getMonth() + 1}월 1일`
+												: day.getDate()}
 										</button>
 										<CalendarCreateButton
 											date={key}
@@ -2320,26 +2727,6 @@ function MonthView({
 					</div>
 				</div>
 			</div>
-			{isMobile ? (
-				<div className="border-t bg-muted/20 p-3">
-					<div className="mb-2 flex items-center justify-between">
-						<div>
-							<h3 className="text-sm font-semibold">
-								{shortDayLabel(selectedDate)}
-							</h3>
-							<HolidayLabel date={selectedDate} />
-						</div>
-						<CalendarCreateButton date={selectedDate} onCreate={onCreate} />
-					</div>
-					<MobileAgenda
-						items={byDay.get(selectedDate) ?? []}
-						date={selectedDate}
-						onCreate={onCreate}
-						onOpen={onOpen}
-						compact
-					/>
-				</div>
-			) : null}
 		</div>
 	);
 }
