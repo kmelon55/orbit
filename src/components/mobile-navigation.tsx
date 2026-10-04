@@ -7,7 +7,7 @@ import {
 	ListTodo,
 	Plus,
 } from "lucide-react";
-import { type PointerEvent, useRef, useState } from "react";
+import { type PointerEvent, useLayoutEffect, useRef, useState } from "react";
 import type { OrbitItemType } from "#/lib/orbit/schema";
 import { QuickCapture } from "@/components/quick-capture";
 import {
@@ -64,6 +64,10 @@ export function MobileNavigation() {
 		select: (state) => state.location.pathname,
 	});
 	const [composerOpen, setComposerOpen] = useState(false);
+	const [composerViewport, setComposerViewport] = useState<{
+		top: number;
+		height: number;
+	} | null>(null);
 	const [composerKind, setComposerKind] = useState<QuickKind>("note");
 	const [radialOpen, setRadialOpen] = useState(false);
 	const [selectedKind, setSelectedKind] = useState<QuickSelection | null>(null);
@@ -71,6 +75,29 @@ export function MobileNavigation() {
 	const selectedKindRef = useRef<QuickSelection | null>(null);
 	const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const gestureStartRef = useRef({ x: 0, y: 0 });
+
+	useLayoutEffect(() => {
+		if (!composerOpen) return;
+		const viewport = window.visualViewport;
+		function updateViewport() {
+			const top = viewport?.offsetTop ?? 0;
+			const height = viewport?.height ?? window.innerHeight;
+			setComposerViewport((current) =>
+				current?.top === top && current.height === height
+					? current
+					: { top, height },
+			);
+		}
+		updateViewport();
+		viewport?.addEventListener("resize", updateViewport);
+		viewport?.addEventListener("scroll", updateViewport);
+		window.addEventListener("resize", updateViewport);
+		return () => {
+			viewport?.removeEventListener("resize", updateViewport);
+			viewport?.removeEventListener("scroll", updateViewport);
+			window.removeEventListener("resize", updateViewport);
+		};
+	}, [composerOpen]);
 
 	function openComposer(kind: QuickKind) {
 		setComposerKind(kind);
@@ -272,10 +299,13 @@ export function MobileNavigation() {
 
 			<Sheet open={composerOpen} onOpenChange={setComposerOpen}>
 				<SheetContent
-					side="bottom"
-					className="max-h-[88svh] overflow-y-auto rounded-t-[1.5rem] px-3 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]"
+					side="top"
+					className="overflow-y-auto overscroll-contain rounded-[1.5rem] border p-3 data-[side=top]:inset-x-3 data-[side=top]:data-open:slide-in-from-top-0 data-[side=top]:data-closed:slide-out-to-top-0"
+					style={{
+						top: `calc(${composerViewport?.top ?? 0}px + max(0.75rem, env(safe-area-inset-top)))`,
+						maxHeight: `calc(${composerViewport ? `${composerViewport.height}px` : "100dvh"} - max(0.75rem, env(safe-area-inset-top)) - 0.75rem)`,
+					}}
 				>
-					<div className="mx-auto h-1 w-10 rounded-full bg-muted-foreground/25" />
 					<SheetHeader className="px-1 pt-1 pb-0">
 						<SheetTitle>
 							{composerKind === "note"
