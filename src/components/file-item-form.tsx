@@ -15,6 +15,14 @@ import type {
 import { DatePicker, TimePicker } from "@/components/schedule-controls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+	Select,
+	SelectContent,
+	SelectGroup,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
@@ -50,9 +58,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 		</div>
 	);
 }
-
-const controlClass =
-	"h-9 w-full rounded-lg border border-input bg-background px-2.5 text-sm outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--interaction-ease)] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40";
 
 export function FileItemForm({
 	item,
@@ -214,18 +219,44 @@ export function FileItemForm({
 			{folderSpace && (
 				<div className="grid gap-3 sm:grid-cols-2">
 					<Field label="폴더">
-						<select
-							value={folder}
-							onChange={(event) => setFolder(event.target.value)}
-							className={controlClass}
+						<Select
+							value={folder ? `folder:${folder}` : "root"}
+							onValueChange={(value) =>
+								setFolder(value === "root" ? "" : value.slice(7))
+							}
 						>
-							<option value="">루트 (폴더 없음)</option>
-							{folders.map((entry) => (
-								<option key={entry.slug} value={entry.slug}>
-									{entry.slug}
-								</option>
-							))}
-						</select>
+							<SelectTrigger
+								aria-label="폴더"
+								className="h-9 w-full min-w-0 bg-background"
+							>
+								<SelectValue className="min-w-0 flex-1 text-left">
+									<span className="truncate">
+										{folder || "루트 (폴더 없음)"}
+									</span>
+								</SelectValue>
+							</SelectTrigger>
+							<SelectContent
+								position="popper"
+								align="start"
+								className="max-w-[calc(100vw-2rem)]"
+							>
+								<SelectGroup>
+									<SelectItem value="root" className="py-2">
+										루트 (폴더 없음)
+									</SelectItem>
+									{folders.map((entry) => (
+										<SelectItem
+											key={entry.slug}
+											value={`folder:${entry.slug}`}
+											textValue={entry.slug}
+											className="py-2 [&>span:last-child]:min-w-0"
+										>
+											<span className="truncate">{entry.slug}</span>
+										</SelectItem>
+									))}
+								</SelectGroup>
+							</SelectContent>
+						</Select>
 					</Field>
 					<Field label="새 폴더">
 						<Input

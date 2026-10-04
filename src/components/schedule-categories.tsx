@@ -22,6 +22,14 @@ import {
 	DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+	Select,
+	SelectContent,
+	SelectGroup,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 function useScheduleCategories() {
@@ -82,29 +90,80 @@ export function ScheduleCategorySelect({
 }) {
 	const categories = useScheduleCategories();
 	const selected = categories.find((category) => category.id === value);
+	const uncategorized = useUncategorizedCategory();
+	const triggerId = useId();
 	return (
-		<label className="flex items-center gap-3 text-sm">
-			<span
-				className={cn(
-					"size-3 shrink-0 rounded-full",
-					selected ? folderColor(selected.color).dot : folderColor("slate").dot,
-				)}
+		<div className="flex items-center gap-3 text-sm">
+			<CalendarDays
+				aria-hidden="true"
+				className="size-4 shrink-0 text-muted-foreground"
 			/>
-			<span>캘린더</span>
-			<select
-				aria-label="캘린더"
-				value={value ?? ""}
-				onChange={(event) => onChange(event.target.value || undefined)}
-				className="h-9 min-w-0 flex-1 rounded-md border bg-background px-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+			<label htmlFor={triggerId}>캘린더</label>
+			<Select
+				value={value ?? "uncategorized"}
+				onValueChange={(next) =>
+					onChange(next === "uncategorized" ? undefined : next)
+				}
 			>
-				<option value="">미분류</option>
-				{categories.map((category) => (
-					<option key={category.id} value={category.id}>
-						{category.name}
-					</option>
-				))}
-			</select>
-		</label>
+				<SelectTrigger
+					id={triggerId}
+					aria-label="캘린더"
+					className="h-9 min-w-0 flex-1 bg-background px-3"
+				>
+					<SelectValue className="min-w-0 flex-1 text-left">
+						<span
+							aria-hidden="true"
+							className={cn(
+								"size-3 shrink-0 rounded-full",
+								folderColor(selected?.color ?? uncategorized.color).dot,
+							)}
+						/>
+						<span className="truncate">
+							{selected?.name ?? value ?? "미분류"}
+						</span>
+					</SelectValue>
+				</SelectTrigger>
+				<SelectContent
+					position="popper"
+					align="start"
+					className="max-w-[calc(100vw-2rem)]"
+				>
+					<SelectGroup>
+						<SelectItem
+							value="uncategorized"
+							textValue="미분류"
+							className="py-2 [&>span:last-child]:min-w-0"
+						>
+							<span
+								aria-hidden="true"
+								className={cn(
+									"size-3 shrink-0 rounded-full",
+									folderColor(uncategorized.color).dot,
+								)}
+							/>
+							<span className="truncate">미분류</span>
+						</SelectItem>
+						{categories.map((category) => (
+							<SelectItem
+								key={category.id}
+								value={category.id}
+								textValue={category.name}
+								className="py-2 [&>span:last-child]:min-w-0"
+							>
+								<span
+									aria-hidden="true"
+									className={cn(
+										"size-3 shrink-0 rounded-full",
+										folderColor(category.color).dot,
+									)}
+								/>
+								<span className="truncate">{category.name}</span>
+							</SelectItem>
+						))}
+					</SelectGroup>
+				</SelectContent>
+			</Select>
+		</div>
 	);
 }
 
