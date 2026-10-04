@@ -96,6 +96,9 @@ function targetDays(item: OrbitItem, today: string): RescheduleTarget[] {
 export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 	const [now, setNow] = useState(() => new Date());
 	const today = formatDayKey(now);
+	const upcomingEnd = new Date(now);
+	upcomingEnd.setDate(upcomingEnd.getDate() + 7);
+	const upcomingEndKey = formatDayKey(upcomingEnd);
 	useEffect(() => {
 		const refresh = () => setNow(new Date());
 		const timer = window.setInterval(refresh, 30_000);
@@ -207,7 +210,7 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 			label: showEvents ? "다가오는 항목" : "다가오는 할 일",
 			items: visibleItems.filter((item) => {
 				const day = taskListDay(item, today);
-				return Boolean(day && day > today);
+				return Boolean(day && day > today && day <= upcomingEndKey);
 			}),
 		},
 		{
