@@ -235,7 +235,10 @@ test("calendar filter URLs restore multiple hidden categories across tasks and e
 		itemColor({ type: "task", category: "business" }).surface,
 		/orbit-category-business-surface/,
 	);
-	assert.equal(itemColor({ type: "task" }).surface, "orbit-task-surface");
+	assert.match(
+		itemColor({ type: "task" }).surface,
+		/orbit-category-uncategorized-surface/,
+	);
 	assert.equal(
 		visibleScheduleCategory(
 			{ type: "task", category: "personal" },
@@ -288,4 +291,81 @@ test("optimistic category edits roll back to the preceding saved value and recon
 	};
 	store.reconcile(refreshed);
 	assert.equal(store.project(refreshed), refreshed);
+});
+
+test("uncategorized color persists independently of item membership, transfers, and reconciles optimistic edits", async () => {
+	const previous = process.env.ORBIT_VAULT_DIR;
+	const parent = mkdtempSync(path.join(os.tmpdir(), "orbit-uncategorized-"));
+	process.env.ORBIT_VAULT_DIR = path.join(parent, "source");
+	try {
+		const source = await getOrbitSnapshot();
+		assert.equal(source.uncategorizedScheduleColor, "slate");
+		const item = await createOrbitItem({
+			title: "Uncategorized",
+			type: "task",
+			space: "event",
+			body: "",
+			due: "2026-10-05",
+		});
+		assert.ok(item);
+		const mutation: OrbitMutation = {
+			action: "save-schedule-category",
+			input: { id: "uncategorized", name: "미분류", color: "pink" },
+		};
+		const optimistic = new OptimisticItems();
+		optimistic.start("first", mutation, source);
+		assert.equal(optimistic.project(source).uncategorizedScheduleColor, "pink");
+		assert.deepEqual(
+			optimistic.project(source).scheduleCategories,
+			source.scheduleCategories,
+		);
+		optimistic.finish({ requestId: "first", mutation, phase: "success" });
+		optimistic.start(
+			"second",
+			{ ...mutation, input: { ...mutation.input, color: "blue" } },
+			source,
+		);
+		assert.equal(optimistic.project(source).uncategorizedScheduleColor, "blue");
+		optimistic.finish({ requestId: "second", mutation, phase: "failure" });
+		assert.equal(optimistic.project(source).uncategorizedScheduleColor, "pink");
+		await saveScheduleCategory(mutation.input);
+		closeOrbitDatabases();
+		const saved = await getOrbitSnapshot();
+		assert.equal(saved.uncategorizedScheduleColor, "pink");
+		assert.deepEqual(saved.scheduleCategories, DEFAULT_SCHEDULE_CATEGORIES);
+		assert.equal((await getOrbitItem(item.id))?.category, undefined);
+		assert.equal(
+			scheduleCategorySchema.safeParse(mutation.input).success,
+			false,
+		);
+		await assert.rejects(
+			saveScheduleCategory({
+				id: "uncategorized",
+				name: "Renamed",
+				color: "red",
+			}),
+		);
+		await assert.rejects(
+			saveScheduleCategory({ id: "other", name: "미분류", color: "red" }),
+		);
+		optimistic.reconcile(saved);
+		assert.equal(
+			optimistic.project({ ...saved, uncategorizedScheduleColor: "cyan" })
+				.uncategorizedScheduleColor,
+			"cyan",
+		);
+		const exported = path.join(parent, "exported");
+		await exportOrbitDirectory(exported);
+		process.env.ORBIT_VAULT_DIR = path.join(parent, "imported");
+		await importOrbitDirectory(exported);
+		assert.equal((await getOrbitSnapshot()).uncategorizedScheduleColor, "pink");
+		await saveScheduleCategory({ ...mutation.input, color: "cyan" });
+		await importOrbitDirectory(exported);
+		assert.equal((await getOrbitSnapshot()).uncategorizedScheduleColor, "cyan");
+	} finally {
+		closeOrbitDatabases();
+		if (previous === undefined) delete process.env.ORBIT_VAULT_DIR;
+		else process.env.ORBIT_VAULT_DIR = previous;
+		rmSync(parent, { recursive: true, force: true });
+	}
 });

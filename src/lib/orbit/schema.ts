@@ -52,6 +52,14 @@ export const scheduleCategorySchema = z.object({
 	color: orbitFolderColorSchema,
 });
 export type ScheduleCategory = z.infer<typeof scheduleCategorySchema>;
+export const scheduleCategorySettingsSchema = z.union([
+	scheduleCategorySchema,
+	z.object({
+		id: z.literal("uncategorized"),
+		name: z.literal("미분류"),
+		color: orbitFolderColorSchema,
+	}),
+]);
 
 export const orbitItemSchema = z.object({
 	id: z.string().min(1),
@@ -150,7 +158,7 @@ export type TreeOrder = Record<string, string[]>;
 export const orbitMutationSchema = z.discriminatedUnion("action", [
 	z.object({
 		action: z.literal("save-schedule-category"),
-		input: scheduleCategorySchema,
+		input: scheduleCategorySettingsSchema,
 	}),
 	z.object({
 		action: z.literal("move-tree-entry"),
@@ -250,6 +258,7 @@ export type OrbitFolder = {
 };
 
 export type OrbitSnapshot = {
+	uncategorizedScheduleColor?: OrbitFolderColor;
 	scheduleCategories?: ScheduleCategory[];
 	treeOrder?: Partial<Record<OrbitFolder["space"], TreeOrder>>;
 	items: OrbitItem[];

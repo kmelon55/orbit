@@ -7,7 +7,7 @@ import { mutateOrbit } from "#/lib/orbit/functions";
 import { DEFAULT_SCHEDULE_CATEGORIES } from "#/lib/orbit/schedule-categories";
 import {
 	type ScheduleCategory,
-	scheduleCategorySchema,
+	scheduleCategorySettingsSchema,
 } from "#/lib/orbit/schema";
 import { ItemColorPicker } from "@/components/item-color-picker";
 import { useOrbitSnapshot } from "@/components/orbit-snapshot-provider";
@@ -47,11 +47,21 @@ function useScheduleCategories() {
 	return categories;
 }
 
+function useUncategorizedCategory(): ScheduleCategory {
+	const snapshot = useOrbitSnapshot();
+	return {
+		id: "uncategorized",
+		name: "미분류",
+		color: snapshot.uncategorizedScheduleColor ?? "slate",
+	};
+}
+
 export function ScheduleCategoryStyles() {
 	const categories = useScheduleCategories();
+	const uncategorized = useUncategorizedCategory();
 	return (
 		<style>
-			{categories
+			{[...categories, uncategorized]
 				.map(({ id, color }) => {
 					const value = FOLDER_COLOR_VALUES[color];
 					return `.orbit-category-${id}-dot { background-color: ${value}; }
@@ -157,7 +167,11 @@ function CategoryDisplayRow({
 			await mutateOrbit({
 				data: {
 					action: "save-schedule-category",
-					input: { ...category, color: color ?? "blue" },
+					input: {
+						...category,
+						color:
+							color ?? (category.id === "uncategorized" ? "slate" : "blue"),
+					},
 				},
 			});
 		} catch {
@@ -191,6 +205,7 @@ export function ScheduleDisplayOptions({
 	onChangeHidden,
 }: CalendarDisplayOptions) {
 	const categories = useScheduleCategories();
+	const uncategorized = useUncategorizedCategory();
 	function toggleCategory(id: string) {
 		onChangeHidden(
 			hidden.includes(id)
@@ -236,21 +251,11 @@ export function ScheduleDisplayOptions({
 							onToggle={() => toggleCategory(category.id)}
 						/>
 					))}
-					<CalendarDisplayRow
-						name="미분류"
+					<CategoryDisplayRow
+						category={uncategorized}
 						visible={!hidden.includes("uncategorized")}
 						onToggle={() => toggleCategory("uncategorized")}
-					>
-						<span
-							className="flex size-8 shrink-0 items-center justify-center"
-							role="img"
-							aria-label="미분류 회색"
-						>
-							<span
-								className={cn("size-3 rounded-full", folderColor("slate").dot)}
-							/>
-						</span>
-					</CalendarDisplayRow>
+					/>
 				</div>
 			</div>
 		</fieldset>
@@ -286,10 +291,14 @@ export function ScheduleDisplayMenu(props: CalendarDisplayOptions) {
 
 function ScheduleCategoryManager() {
 	const categories = useScheduleCategories();
+	const uncategorized = useUncategorizedCategory();
+	const settingsCategories = [...categories, uncategorized];
 	const [editing, setEditing] = useState<ScheduleCategory | null>(null);
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
-	const saved = categories.find((category) => category.id === editing?.id);
+	const saved = settingsCategories.find(
+		(category) => category.id === editing?.id,
+	);
 	const changed =
 		editing &&
 		(editing.name.trim() !== saved?.name || editing.color !== saved?.color);
@@ -299,13 +308,13 @@ function ScheduleCategoryManager() {
 	}
 	async function save() {
 		if (!editing || saving) return;
-		const parsed = scheduleCategorySchema.safeParse(editing);
+		const parsed = scheduleCategorySettingsSchema.safeParse(editing);
 		if (!parsed.success) {
 			setError("캘린더 이름을 입력하세요.");
 			return;
 		}
 		if (
-			categories.some(
+			settingsCategories.some(
 				(category) =>
 					category.id !== editing.id && category.name === parsed.data.name,
 			)
@@ -357,7 +366,7 @@ function ScheduleCategoryManager() {
 					</DialogDescription>
 				</DialogHeader>
 				<div className="flex max-h-48 flex-col gap-1 overflow-y-auto">
-					{categories.map((category) => (
+					{settingsCategories.map((category) => (
 						<Button
 							key={category.id}
 							type="button"
@@ -402,13 +411,28 @@ function ScheduleCategoryManager() {
 							placeholder="캘린더 이름"
 							value={editing.name}
 							maxLength={80}
-							disabled={saving}
+							disabled={saving || editing.id === "uncategorized"}
 							onChange={(event) => {
 								setEditing({ ...editing, name: event.target.value });
 								setError(null);
 							}}
 						/>
 						<div className="flex items-center justify-between gap-3">
+							<ItemColorPicker
+								type="event"
+								value={editing.color}
+								label={`${editing.name || "캘린더"} 색상 선택`}
+								disabled={saving}
+								onChange={(color) => {
+									setEditing({
+										...editing,
+										color:
+											color ??
+											(editing.id === "uncategorized" ? "slate" : "blue"),
+									});
+									setError(null);
+								}}
+							/>
 							<Button
 								type="submit"
 								disabled={saving || !editing.name.trim() || !changed}

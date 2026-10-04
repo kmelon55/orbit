@@ -32,6 +32,7 @@ import {
 	type ScheduleCategory,
 	scheduleCategoryIdSchema,
 	scheduleCategorySchema,
+	scheduleCategorySettingsSchema,
 	type UpdateFolderInput,
 	type UpdateNoteInput,
 	updateFolderInputSchema,
@@ -50,6 +51,7 @@ const PARA_VAULT: Record<"project" | "area" | "resource", string> = {
 const DEFAULT_FOLDER_COLOR: OrbitFolderColor = "lime";
 
 type FolderMetadata = {
+	uncategorizedScheduleColor?: OrbitFolderColor;
 	scheduleCategories?: ScheduleCategory[];
 	treeOrder?: OrbitSnapshot["treeOrder"];
 	version: 1;
@@ -364,10 +366,17 @@ function readScheduleCategories(vaultRoot: string): ScheduleCategory[] {
 }
 
 export async function saveScheduleCategory(input: ScheduleCategory) {
-	const parsed = scheduleCategorySchema.parse(input);
+	const parsed = scheduleCategorySettingsSchema.parse(input);
 	const root = await ensureVault();
+	if (parsed.id === "uncategorized") {
+		const metadata = await readFolderMetadata(root);
+		metadata.uncategorizedScheduleColor = parsed.color;
+		await writeFolderMetadata(root, metadata);
+		return parsed;
+	}
 	const categories = readScheduleCategories(root);
 	if (
+		parsed.name === "미분류" ||
 		categories.some(
 			(category) => category.id !== parsed.id && category.name === parsed.name,
 		)
@@ -413,6 +422,9 @@ export async function getOrbitSnapshot(): Promise<OrbitSnapshot> {
 	]);
 	return {
 		items,
+		uncategorizedScheduleColor:
+			orbitFolderColorSchema.safeParse(metadata.uncategorizedScheduleColor)
+				.data ?? "slate",
 		scheduleCategories: readScheduleCategories(vaultRoot),
 		canvases,
 		treeOrder: metadata.treeOrder,

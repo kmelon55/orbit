@@ -183,6 +183,9 @@ export class OptimisticItems {
 	reconcile(snapshot: OrbitSnapshot) {
 		for (const [id, category] of this.confirmedCategories) {
 			if (
+				(id === "uncategorized" &&
+					(snapshot.uncategorizedScheduleColor ?? "slate") ===
+						category.color) ||
 				snapshot.scheduleCategories?.some(
 					(entry) =>
 						entry.id === id &&
@@ -255,8 +258,14 @@ export class OptimisticItems {
 			for (const category of [
 				...this.confirmedCategories.values(),
 				...this.pendingCategories.values(),
-			])
-				categories = upsertScheduleCategory(categories, category);
+			]) {
+				if (category.id === "uncategorized")
+					projected = {
+						...projected,
+						uncategorizedScheduleColor: category.color,
+					};
+				else categories = upsertScheduleCategory(categories, category);
+			}
 			projected = { ...projected, scheduleCategories: categories };
 		}
 		return projected;

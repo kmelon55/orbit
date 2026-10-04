@@ -26,14 +26,14 @@ export function paletteItemColor(item: Pick<OrbitItem, "type" | "color">) {
 	return { ...folderColor(color), surface: SURFACES[color] };
 }
 
-// Calendar membership sets the color for both tasks and events; no membership is gray.
+// Calendar membership sets the color for both tasks and events, including the default.
 export function itemColor(
 	item: Pick<OrbitItem, "type" | "color" | "category">,
 ) {
 	const kind = item.type === "event" ? "event" : "task";
 	const category =
-		(item.type === "event" || item.type === "task") && item.category
-			? ` orbit-category-${item.category}`
+		item.type === "event" || item.type === "task"
+			? ` orbit-category-${item.category ?? "uncategorized"}`
 			: "";
 	return {
 		...paletteItemColor({ type: item.type, color: "slate" }),
