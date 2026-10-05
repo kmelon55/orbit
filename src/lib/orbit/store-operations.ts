@@ -51,6 +51,7 @@ const PARA_VAULT: Record<"project" | "area" | "resource", string> = {
 const DEFAULT_FOLDER_COLOR: OrbitFolderColor = "lime";
 
 type FolderMetadata = {
+	uncategorizedScheduleName?: string;
 	uncategorizedScheduleColor?: OrbitFolderColor;
 	scheduleCategories?: ScheduleCategory[];
 	treeOrder?: OrbitSnapshot["treeOrder"];
@@ -368,26 +369,30 @@ function readScheduleCategories(vaultRoot: string): ScheduleCategory[] {
 export async function saveScheduleCategory(input: ScheduleCategory) {
 	const parsed = scheduleCategorySettingsSchema.parse(input);
 	const root = await ensureVault();
-	if (parsed.id === "uncategorized") {
-		const metadata = await readFolderMetadata(root);
-		metadata.uncategorizedScheduleColor = parsed.color;
-		await writeFolderMetadata(root, metadata);
-		return parsed;
-	}
 	const categories = readScheduleCategories(root);
+	const metadata = await readFolderMetadata(root);
+	const uncategorizedName =
+		scheduleCategorySchema.shape.name.safeParse(
+			metadata.uncategorizedScheduleName,
+		).data ?? "미분류";
 	if (
-		parsed.name === "미분류" ||
+		(parsed.id !== "uncategorized" && parsed.name === uncategorizedName) ||
 		categories.some(
 			(category) => category.id !== parsed.id && category.name === parsed.name,
 		)
 	)
 		throw new Error("같은 이름의 분류가 있습니다.");
+	if (parsed.id === "uncategorized") {
+		metadata.uncategorizedScheduleName = parsed.name;
+		metadata.uncategorizedScheduleColor = parsed.color;
+		await writeFolderMetadata(root, metadata);
+		return parsed;
+	}
 	if (
 		categories.length >= 50 &&
 		!categories.some((category) => category.id === parsed.id)
 	)
 		throw new Error("분류는 최대 50개까지 만들 수 있습니다.");
-	const metadata = await readFolderMetadata(root);
 	metadata.scheduleCategories = upsertScheduleCategory(categories, parsed);
 	await writeFolderMetadata(root, metadata);
 	return parsed;
@@ -422,6 +427,10 @@ export async function getOrbitSnapshot(): Promise<OrbitSnapshot> {
 	]);
 	return {
 		items,
+		uncategorizedScheduleName:
+			scheduleCategorySchema.shape.name.safeParse(
+				metadata.uncategorizedScheduleName,
+			).data ?? "미분류",
 		uncategorizedScheduleColor:
 			orbitFolderColorSchema.safeParse(metadata.uncategorizedScheduleColor)
 				.data ?? "slate",

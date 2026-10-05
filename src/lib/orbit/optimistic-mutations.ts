@@ -184,6 +184,7 @@ export class OptimisticItems {
 		for (const [id, category] of this.confirmedCategories) {
 			if (
 				(id === "uncategorized" &&
+					(snapshot.uncategorizedScheduleName ?? "미분류") === category.name &&
 					(snapshot.uncategorizedScheduleColor ?? "slate") ===
 						category.color) ||
 				snapshot.scheduleCategories?.some(
@@ -262,6 +263,7 @@ export class OptimisticItems {
 				if (category.id === "uncategorized")
 					projected = {
 						...projected,
+						uncategorizedScheduleName: category.name,
 						uncategorizedScheduleColor: category.color,
 					};
 				else categories = upsertScheduleCategory(categories, category);

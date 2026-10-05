@@ -56,7 +56,7 @@ export const scheduleCategorySettingsSchema = z.union([
 	scheduleCategorySchema,
 	z.object({
 		id: z.literal("uncategorized"),
-		name: z.literal("미분류"),
+		name: scheduleCategorySchema.shape.name,
 		color: orbitFolderColorSchema,
 	}),
 ]);
@@ -258,6 +258,7 @@ export type OrbitFolder = {
 };
 
 export type OrbitSnapshot = {
+	uncategorizedScheduleName?: string;
 	uncategorizedScheduleColor?: OrbitFolderColor;
 	scheduleCategories?: ScheduleCategory[];
 	treeOrder?: Partial<Record<OrbitFolder["space"], TreeOrder>>;

@@ -192,6 +192,7 @@ export function importOrbitDirectory(source: string) {
 				const incomingRaw = JSON.parse(readFileSync(folderFile, "utf8")) as {
 					version: number;
 					scheduleCategories?: ScheduleCategory[];
+					uncategorizedScheduleName?: string;
 					uncategorizedScheduleColor?: OrbitFolderColor;
 					folders: Record<string, Record<string, unknown>>;
 					treeOrder?: Record<string, Record<string, string[]>>;
@@ -238,6 +239,12 @@ export function importOrbitDirectory(source: string) {
 					];
 					if (current.scheduleCategories.length > 50)
 						throw new Error("Too many schedule categories");
+				}
+				if (incoming.uncategorizedScheduleName !== undefined) {
+					const name = scheduleCategorySchema.shape.name.parse(
+						incoming.uncategorizedScheduleName,
+					);
+					current.uncategorizedScheduleName ??= name;
 				}
 				if (incoming.uncategorizedScheduleColor !== undefined) {
 					const color = orbitFolderColorSchema.parse(

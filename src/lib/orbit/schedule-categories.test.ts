@@ -293,12 +293,13 @@ test("optimistic category edits roll back to the preceding saved value and recon
 	assert.equal(store.project(refreshed), refreshed);
 });
 
-test("uncategorized color persists independently of item membership, transfers, and reconciles optimistic edits", async () => {
+test("uncategorized name and color persist independently of item membership, transfer, and reconcile optimistic edits", async () => {
 	const previous = process.env.ORBIT_VAULT_DIR;
 	const parent = mkdtempSync(path.join(os.tmpdir(), "orbit-uncategorized-"));
 	process.env.ORBIT_VAULT_DIR = path.join(parent, "source");
 	try {
 		const source = await getOrbitSnapshot();
+		assert.equal(source.uncategorizedScheduleName, "미분류");
 		assert.equal(source.uncategorizedScheduleColor, "slate");
 		const item = await createOrbitItem({
 			title: "Uncategorized",
@@ -310,10 +311,14 @@ test("uncategorized color persists independently of item membership, transfers, 
 		assert.ok(item);
 		const mutation: OrbitMutation = {
 			action: "save-schedule-category",
-			input: { id: "uncategorized", name: "미분류", color: "pink" },
+			input: { id: "uncategorized", name: "기본 일정", color: "pink" },
 		};
 		const optimistic = new OptimisticItems();
 		optimistic.start("first", mutation, source);
+		assert.equal(
+			optimistic.project(source).uncategorizedScheduleName,
+			"기본 일정",
+		);
 		assert.equal(optimistic.project(source).uncategorizedScheduleColor, "pink");
 		assert.deepEqual(
 			optimistic.project(source).scheduleCategories,
@@ -322,15 +327,27 @@ test("uncategorized color persists independently of item membership, transfers, 
 		optimistic.finish({ requestId: "first", mutation, phase: "success" });
 		optimistic.start(
 			"second",
-			{ ...mutation, input: { ...mutation.input, color: "blue" } },
+			{
+				...mutation,
+				input: { ...mutation.input, name: "새 이름", color: "blue" },
+			},
 			source,
 		);
 		assert.equal(optimistic.project(source).uncategorizedScheduleColor, "blue");
+		assert.equal(
+			optimistic.project(source).uncategorizedScheduleName,
+			"새 이름",
+		);
 		optimistic.finish({ requestId: "second", mutation, phase: "failure" });
 		assert.equal(optimistic.project(source).uncategorizedScheduleColor, "pink");
+		assert.equal(
+			optimistic.project(source).uncategorizedScheduleName,
+			"기본 일정",
+		);
 		await saveScheduleCategory(mutation.input);
 		closeOrbitDatabases();
 		const saved = await getOrbitSnapshot();
+		assert.equal(saved.uncategorizedScheduleName, "기본 일정");
 		assert.equal(saved.uncategorizedScheduleColor, "pink");
 		assert.deepEqual(saved.scheduleCategories, DEFAULT_SCHEDULE_CATEGORIES);
 		assert.equal((await getOrbitItem(item.id))?.category, undefined);
@@ -341,14 +358,31 @@ test("uncategorized color persists independently of item membership, transfers, 
 		await assert.rejects(
 			saveScheduleCategory({
 				id: "uncategorized",
-				name: "Renamed",
+				name: "  ",
 				color: "red",
 			}),
 		);
 		await assert.rejects(
-			saveScheduleCategory({ id: "other", name: "미분류", color: "red" }),
+			saveScheduleCategory({ id: "other", name: "기본 일정", color: "red" }),
+		);
+		await assert.rejects(
+			saveScheduleCategory({
+				...mutation.input,
+				name: DEFAULT_SCHEDULE_CATEGORIES[0].name,
+			}),
+		);
+		// A refresh with the right color but an old name must keep the pending name.
+		optimistic.reconcile({ ...saved, uncategorizedScheduleName: "미분류" });
+		assert.equal(
+			optimistic.project(source).uncategorizedScheduleName,
+			"기본 일정",
 		);
 		optimistic.reconcile(saved);
+		assert.equal(
+			optimistic.project({ ...saved, uncategorizedScheduleName: "다른 기기" })
+				.uncategorizedScheduleName,
+			"다른 기기",
+		);
 		assert.equal(
 			optimistic.project({ ...saved, uncategorizedScheduleColor: "cyan" })
 				.uncategorizedScheduleColor,
@@ -358,10 +392,24 @@ test("uncategorized color persists independently of item membership, transfers, 
 		await exportOrbitDirectory(exported);
 		process.env.ORBIT_VAULT_DIR = path.join(parent, "imported");
 		await importOrbitDirectory(exported);
+		assert.equal(
+			(await getOrbitSnapshot()).uncategorizedScheduleName,
+			"기본 일정",
+		);
 		assert.equal((await getOrbitSnapshot()).uncategorizedScheduleColor, "pink");
-		await saveScheduleCategory({ ...mutation.input, color: "cyan" });
+		await saveScheduleCategory({
+			...mutation.input,
+			name: "내 기본 일정",
+			color: "cyan",
+		});
 		await importOrbitDirectory(exported);
 		assert.equal((await getOrbitSnapshot()).uncategorizedScheduleColor, "cyan");
+		assert.equal(
+			(await getOrbitSnapshot()).uncategorizedScheduleName,
+			"내 기본 일정",
+		);
+		// The original label becomes available once the default calendar is renamed.
+		await saveScheduleCategory({ id: "other", name: "미분류", color: "red" });
 	} finally {
 		closeOrbitDatabases();
 		if (previous === undefined) delete process.env.ORBIT_VAULT_DIR;

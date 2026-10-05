@@ -59,7 +59,7 @@ function useUncategorizedCategory(): ScheduleCategory {
 	const snapshot = useOrbitSnapshot();
 	return {
 		id: "uncategorized",
-		name: "미분류",
+		name: snapshot.uncategorizedScheduleName ?? "미분류",
 		color: snapshot.uncategorizedScheduleColor ?? "slate",
 	};
 }
@@ -119,7 +119,7 @@ export function ScheduleCategorySelect({
 							)}
 						/>
 						<span className="truncate">
-							{selected?.name ?? value ?? "미분류"}
+							{selected?.name ?? value ?? uncategorized.name}
 						</span>
 					</SelectValue>
 				</SelectTrigger>
@@ -131,7 +131,7 @@ export function ScheduleCategorySelect({
 					<SelectGroup>
 						<SelectItem
 							value="uncategorized"
-							textValue="미분류"
+							textValue={uncategorized.name}
 							className="py-2 [&>span:last-child]:min-w-0"
 						>
 							<span
@@ -141,7 +141,7 @@ export function ScheduleCategorySelect({
 									folderColor(uncategorized.color).dot,
 								)}
 							/>
-							<span className="truncate">미분류</span>
+							<span className="truncate">{uncategorized.name}</span>
 						</SelectItem>
 						{categories.map((category) => (
 							<SelectItem
@@ -443,6 +443,11 @@ function ScheduleCategoryManager() {
 							<span className="min-w-0 flex-1 truncate text-left">
 								{category.name}
 							</span>
+							{category.id === "uncategorized" ? (
+								<span className="shrink-0 text-xs text-muted-foreground">
+									uncategorized
+								</span>
+							) : null}
 							{editing?.id === category.id ? <Check /> : null}
 						</Button>
 					))}
@@ -470,7 +475,7 @@ function ScheduleCategoryManager() {
 							placeholder="캘린더 이름"
 							value={editing.name}
 							maxLength={80}
-							disabled={saving || editing.id === "uncategorized"}
+							disabled={saving}
 							onChange={(event) => {
 								setEditing({ ...editing, name: event.target.value });
 								setError(null);
