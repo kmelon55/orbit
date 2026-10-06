@@ -354,17 +354,9 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 								날짜를 정하면 Today와 Calendar에도 함께 표시됩니다.
 							</p>
 						</div>
-						<div className="flex items-center gap-1">
-							<Button
-								variant="outline"
-								onClick={() => setEditor({ open: true, kind: "event" })}
-							>
-								<Plus /> 일정
-							</Button>
-							<Button onClick={() => void createTask()}>
-								<Plus /> 할 일
-							</Button>
-						</div>
+						<Button onClick={() => void createTask()}>
+							<Plus /> 추가
+						</Button>
 					</header>
 
 					<div className="mb-4 flex flex-wrap items-center gap-2 sm:mb-6">

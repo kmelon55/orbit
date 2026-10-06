@@ -552,6 +552,7 @@ export function TimePicker({
 	label,
 	placeholder = "시간 선택",
 	allowEmpty = false,
+	disabled = false,
 	className,
 }: {
 	value: string;
@@ -559,6 +560,7 @@ export function TimePicker({
 	label: string;
 	placeholder?: string;
 	allowEmpty?: boolean;
+	disabled?: boolean;
 	className?: string;
 }) {
 	const [open, setOpen] = useState(false);
@@ -578,6 +580,7 @@ export function TimePicker({
 					type="button"
 					variant="outline"
 					aria-label={label}
+					disabled={disabled}
 					className={cn(
 						"w-[9.5rem] min-w-0 shrink-0 justify-start gap-2 font-normal tabular-nums",
 						!value && "text-muted-foreground",

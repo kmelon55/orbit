@@ -92,17 +92,9 @@ function TodayPage() {
 							Today
 						</h2>
 					</div>
-					<div className="hidden items-center gap-2 sm:flex">
-						<Button
-							variant="outline"
-							onClick={() => setEditor({ open: true, kind: "task" })}
-						>
-							<Plus /> 할 일
-						</Button>
-						<Button onClick={() => setEditor({ open: true, kind: "event" })}>
-							<Plus /> 일정
-						</Button>
-					</div>
+					<Button onClick={() => setEditor({ open: true, kind: "task" })}>
+						<Plus /> 추가
+					</Button>
 				</header>
 
 				<div className="mb-5 sm:mb-8">

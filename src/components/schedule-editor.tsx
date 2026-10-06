@@ -5,10 +5,17 @@ import {
 	ListTodo,
 	Trash2,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+	lazy,
+	type ReactNode,
+	Suspense,
+	useEffect,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from "react";
 import { toast } from "sonner";
 import { mutateOrbit } from "#/lib/orbit/functions";
-import { itemColor } from "#/lib/orbit/item-colors";
 import { isPendingItemId } from "#/lib/orbit/optimistic-mutations";
 import { formatDayKey } from "#/lib/orbit/para";
 import {
@@ -16,6 +23,7 @@ import {
 	type OrbitMutation,
 	orbitItemSchema,
 } from "#/lib/orbit/schema";
+import type { NoteEditorHandle } from "@/components/note-editor";
 import { ScheduleCategorySelect } from "@/components/schedule-categories";
 import { DatePicker, TimePicker } from "@/components/schedule-controls";
 import { ScheduleRangeCalendar } from "@/components/schedule-range-calendar";
@@ -38,7 +46,40 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+
+const MemoEditor = lazy(() =>
+	import("@/components/note-editor").then(({ NoteEditor }) => ({
+		default: NoteEditor,
+	})),
+);
+
+function ScheduleEditorBody({ children }: { children: ReactNode }) {
+	const contentRef = useRef<HTMLDivElement>(null);
+	const [height, setHeight] = useState<number>();
+	useLayoutEffect(() => {
+		const content = contentRef.current;
+		if (content) setHeight(content.getBoundingClientRect().height);
+	});
+	useLayoutEffect(() => {
+		const content = contentRef.current;
+		if (!content) return;
+		const measure = () => setHeight(content.getBoundingClientRect().height);
+		const observer = new ResizeObserver(measure);
+		observer.observe(content);
+		return () => observer.disconnect();
+	}, []);
+	return (
+		<div
+			data-slot="schedule-editor-body"
+			className="min-h-0 shrink overflow-y-auto overscroll-contain transition-[height] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+			style={{ height }}
+		>
+			<div ref={contentRef} className="grid gap-4 px-5 py-4">
+				{children}
+			</div>
+		</div>
+	);
+}
 
 type ScheduleKind = "event" | "task";
 
@@ -64,7 +105,7 @@ function nextDay(value: string) {
 export function ScheduleEditor({
 	open,
 	onOpenChange,
-	kind,
+	kind: initialKind,
 	item,
 	initialDate,
 	initialTime = "09:00",
@@ -79,7 +120,9 @@ export function ScheduleEditor({
 	onSaved?: (item: OrbitItem) => void;
 }) {
 	const editRevision = useRef(0);
+	const memoEditorRef = useRef<NoteEditorHandle>(null);
 	const today = formatDayKey();
+	const [kind, setKind] = useState<ScheduleKind>(initialKind);
 	const [title, setTitle] = useState("");
 	const [body, setBody] = useState("");
 	const color = item?.color;
@@ -100,32 +143,63 @@ export function ScheduleEditor({
 		const baseDate = initialDate ?? today;
 		const resolvedStart = dayOf(item?.start ?? item?.due, baseDate);
 		const resolvedTime = timeOf(item?.start ?? item?.due, initialTime);
+		const resolvedKind =
+			item?.type === "event" || item?.type === "task" ? item.type : initialKind;
 		const defaultEndTime = addHour(resolvedTime);
 		const defaultEndDate =
-			!item?.end && defaultEndTime <= resolvedTime
+			!item?.end &&
+			(resolvedKind === "event" || item?.due?.includes("T")) &&
+			defaultEndTime <= resolvedTime
 				? nextDay(resolvedStart)
 				: resolvedStart;
+		setKind(resolvedKind);
 		setTitle(item?.title ?? "");
 		setCategory(item?.category);
 		setBody(item?.body ?? "");
-		setStartDate(resolvedStart);
+		setStartDate(item?.type === "task" && !item.due ? "" : resolvedStart);
 		setEndDate(dayOf(item?.end, defaultEndDate));
 		setStartTime(resolvedTime);
 		setEndTime(timeOf(item?.end, defaultEndTime));
 		setAllDay(
-			kind === "event" && Boolean(item?.start && !item.start.includes("T")),
+			resolvedKind === "event" &&
+				Boolean(item?.start && !item.start.includes("T")),
 		);
 		setTaskTime(
-			kind === "task" && item?.due?.includes("T") ? resolvedTime : "",
+			resolvedKind === "task" && item?.due?.includes("T") ? resolvedTime : "",
 		);
 		setError(null);
 		setDeleteOpen(false);
-	}, [initialDate, initialTime, item, kind, open, today]);
+	}, [initialDate, initialTime, item, initialKind, open, today]);
+
+	function changeKind(next: ScheduleKind) {
+		if (next === kind) return;
+		if (next === "task") {
+			setTaskTime(allDay ? "" : startTime);
+		} else {
+			const date = startDate || today;
+			const time = taskTime || startTime;
+			setStartDate(date);
+			setStartTime(time);
+			setAllDay(!taskTime);
+			if (
+				!startDate ||
+				endDate < date ||
+				(taskTime && endDate === date && endTime <= time)
+			) {
+				const end = addHour(time);
+				setEndTime(end);
+				setEndDate(taskTime && end <= time ? nextDay(date) : date);
+			}
+		}
+		setKind(next);
+		setError(null);
+	}
 
 	async function save() {
 		const trimmed = title.trim();
+		const memoBody = memoEditorRef.current?.getMarkdown() ?? body;
 		if (!trimmed) return;
-		if (trimmed.length > 160 || body.length > (item ? 100_000 : 20_000)) {
+		if (trimmed.length > 160 || memoBody.length > (item ? 100_000 : 20_000)) {
 			setError("제목이나 본문이 너무 깁니다.");
 			return;
 		}
@@ -150,15 +224,16 @@ export function ScheduleEditor({
 					: `${endDate}T${endTime}:00`
 				: undefined;
 		const due =
-			kind === "task"
+			kind === "task" && startDate
 				? taskTime
 					? `${startDate}T${taskTime}:00`
 					: startDate
 				: undefined;
 		if (
 			item &&
+			item.type === kind &&
 			item.title === trimmed &&
-			item.body === body.trim() &&
+			item.body === memoBody.trim() &&
 			item.start === start &&
 			item.end === end &&
 			item.due === due &&
@@ -174,7 +249,7 @@ export function ScheduleEditor({
 					id: item.id,
 					input: {
 						title: trimmed,
-						body,
+						body: memoBody,
 						type: kind,
 						color: color ?? null,
 						category: category ?? null,
@@ -195,7 +270,7 @@ export function ScheduleEditor({
 					action: "create-item",
 					input: {
 						title: trimmed,
-						body,
+						body: memoBody,
 						type: kind,
 						color,
 						category,
@@ -255,26 +330,40 @@ export function ScheduleEditor({
 	return (
 		<>
 			<Dialog open={open} onOpenChange={onOpenChange}>
-				<DialogContent className="gap-0 overflow-y-auto p-0 sm:max-w-xl">
+				<DialogContent className="top-[max(0.75rem,env(safe-area-inset-top))] flex max-h-[calc(100svh-1.5rem)] translate-y-0 gap-0 overflow-hidden p-0 sm:top-[6svh] sm:max-h-[88svh] sm:max-w-xl">
 					<form
+						className="flex min-h-0 w-full flex-col"
 						onSubmit={(event) => {
 							event.preventDefault();
 							void save();
 						}}
 					>
-						<DialogHeader className="border-b border-border/60 px-5 pt-5 pb-4">
-							<div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+						<DialogHeader className="shrink-0 border-b border-border/60 px-5 pt-5 pb-4">
+							<fieldset
+								aria-label="항목 종류"
+								className="relative grid w-full grid-cols-2 rounded-xl bg-muted/60 p-1"
+							>
 								<span
-									className={`size-2.5 rounded-full ${itemColor({ type: kind, color, category }).dot}`}
+									aria-hidden="true"
+									className={`pointer-events-none absolute inset-y-1 left-1 w-[calc(50%-0.25rem)] rounded-lg bg-background shadow-sm transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${kind === "event" ? "translate-x-full" : "translate-x-0"}`}
 								/>
-								{item
-									? kind === "event"
-										? "일정 편집"
-										: "할 일 편집"
-									: kind === "event"
-										? "새 일정"
-										: "새 할 일"}
-							</div>
+								{(["task", "event"] as const).map((value) => {
+									const Icon = value === "task" ? ListTodo : CalendarDays;
+									return (
+										<Button
+											key={value}
+											type="button"
+											variant="ghost"
+											size="sm"
+											aria-pressed={kind === value}
+											onClick={() => changeKind(value)}
+											className={`relative h-9 w-full rounded-lg hover:bg-transparent ${kind === value ? "text-foreground" : "text-muted-foreground"}`}
+										>
+											<Icon /> {value === "task" ? "할 일" : "일정"}
+										</Button>
+									);
+								})}
+							</fieldset>
 							<DialogTitle className="sr-only">
 								{item
 									? kind === "task"
@@ -296,7 +385,7 @@ export function ScheduleEditor({
 							/>
 						</DialogHeader>
 
-						<div className="grid gap-4 px-5 py-4">
+						<ScheduleEditorBody>
 							<ScheduleCategorySelect value={category} onChange={setCategory} />
 							{kind === "event" ? (
 								<div className="grid gap-3">
@@ -390,6 +479,8 @@ export function ScheduleEditor({
 										<DatePicker
 											value={startDate}
 											onChange={setStartDate}
+											allowClear
+											placeholder="날짜 없음"
 											label="마감 날짜"
 											className="w-full"
 										/>
@@ -399,6 +490,7 @@ export function ScheduleEditor({
 											label="할 일 시간"
 											placeholder="시간 없음"
 											allowEmpty
+											disabled={!startDate}
 											className="w-full"
 										/>
 									</div>
@@ -407,6 +499,7 @@ export function ScheduleEditor({
 										value={startDate}
 										onChange={setStartDate}
 										label="할 일 날짜 달력"
+										allowClear
 										className="col-span-2"
 									/>
 								</div>
@@ -414,19 +507,36 @@ export function ScheduleEditor({
 
 							<div className="grid grid-cols-[1rem_minmax(0,1fr)] items-start gap-3">
 								<AlignLeft className="mt-2.5 size-4 text-muted-foreground" />
-								<Textarea
-									value={body}
-									onChange={(event) => setBody(event.target.value)}
-									placeholder="메모, 장소, 준비할 것"
-									className="min-h-24 resize-none"
-								/>
+								<div className="orbit-schedule-memo min-w-0 rounded-xl border bg-background">
+									<Suspense
+										fallback={
+											<div
+												className="min-h-24 px-3 py-2 text-sm text-muted-foreground"
+												aria-busy="true"
+											>
+												{body || "메모"}
+											</div>
+										}
+									>
+										<MemoEditor
+											ref={memoEditorRef}
+											key={`${item?.id ?? "new"}:${editRevision.current}`}
+											noteId={`schedule-memo:${item?.id ?? "new"}:${editRevision.current}`}
+											markdown={body}
+											onChange={setBody}
+											placeholder="메모, 장소, 준비할 것"
+											label="메모 (Markdown)"
+											compact
+										/>
+									</Suspense>
+								</div>
 							</div>
 							{error ? (
 								<p className="text-sm text-destructive">{error}</p>
 							) : null}
-						</div>
+						</ScheduleEditorBody>
 
-						<div className="flex items-center justify-between border-t border-border/60 bg-muted/25 px-5 py-3">
+						<div className="flex shrink-0 items-center justify-between border-t border-border/60 bg-muted/25 px-5 py-3">
 							{item ? (
 								<Button
 									type="button"

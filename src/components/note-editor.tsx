@@ -25,6 +25,7 @@ import {
 } from "@/lib/orbit/note-vim";
 
 export type NoteEditorHandle = {
+	getMarkdown: () => string | null;
 	insertLink: (label: string, href: string) => string | null;
 	insertCanvas: (title: string, path: string) => string | null;
 	openInsertMenu: () => boolean;
@@ -45,6 +46,8 @@ type NoteEditorProps = {
 	onRequestNoteLink?: (anchor: NoteEditorAnchor) => void;
 	onRequestCanvas?: () => void;
 	onReadyChange?: (ready: boolean) => void;
+	compact?: boolean;
+	label?: string;
 };
 
 const noteLinkIcon =
@@ -64,6 +67,8 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 			onRequestNoteLink,
 			onRequestCanvas,
 			onReadyChange,
+			compact = false,
+			label = "노트 본문",
 		},
 		ref,
 	) {
@@ -125,6 +130,11 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 		}, [vimEnabled, vimMode]);
 
 		useImperativeHandle(ref, () => ({
+			getMarkdown() {
+				return userInteractedRef.current
+					? (crepeRef.current?.getMarkdown() ?? null)
+					: bootMarkdownRef.current;
+			},
 			insertLink(label, href) {
 				const crepe = crepeRef.current;
 				if (!crepe || !label.trim()) return null;
@@ -251,6 +261,7 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 				features: {
 					[Crepe.Feature.Latex]: false,
 					[Crepe.Feature.AI]: false,
+					[Crepe.Feature.BlockEdit]: !compact,
 				},
 				featureConfigs: {
 					[Crepe.Feature.BlockEdit]: {
@@ -352,6 +363,12 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 					return;
 				}
 				crepeRef.current = crepe;
+				crepe.editor.action((ctx) => {
+					const view = ctx.get(editorViewCtx);
+					view.dom.setAttribute("role", "textbox");
+					view.dom.setAttribute("aria-label", label);
+					view.dom.setAttribute("aria-multiline", "true");
+				});
 				onReadyChangeRef.current?.(true);
 			});
 
@@ -373,7 +390,7 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 				void crepe.destroy();
 				root.replaceChildren();
 			};
-		}, [noteId, placeholder, changeVimMode]);
+		}, [noteId, placeholder, changeVimMode, compact, label]);
 
 		return (
 			<div className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col">

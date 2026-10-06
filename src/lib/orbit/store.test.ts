@@ -372,6 +372,80 @@ test("notes can be converted to tasks and events without losing content", async 
 	}
 });
 
+test("task and event conversions preserve identity and metadata and replace scheduling fields", async () => {
+	const previousVault = process.env.ORBIT_VAULT_DIR;
+	const vault = await mkdtemp(
+		path.join(os.tmpdir(), "orbit-schedule-conversion-"),
+	);
+	process.env.ORBIT_VAULT_DIR = vault;
+	try {
+		for (const due of ["2026-10-07", "2026-10-07T23:30:00"] as const) {
+			const task = await createOrbitItem({
+				title: "전환할 항목",
+				body: "메모와 준비물",
+				type: "task",
+				space: "inbox",
+				color: "violet",
+				category: "personal",
+				due,
+			});
+			assert.ok(task);
+			const tagged = await updateOrbitNote(task.id, {
+				title: task.title,
+				body: task.body,
+				tags: ["준비"],
+			});
+			assert.ok(tagged);
+			await toggleOrbitTask(task.id);
+			const end = due.includes("T") ? "2026-10-08T00:30:00" : "2026-10-07";
+			const event = await fileOrbitItem(task.id, {
+				type: "event",
+				space: "event",
+				start: due,
+				end,
+				due: null,
+			});
+			assert.ok(event);
+			assert.equal(event.id, task.id);
+			assert.equal(event.due, undefined);
+			assert.equal(event.status, undefined);
+			assert.equal(event.completedAt, undefined);
+			assert.equal(event.start, due);
+			assert.equal(event.end, end);
+			const restored = await fileOrbitItem(task.id, {
+				type: "task",
+				space: "inbox",
+				due: event.start,
+				start: null,
+				end: null,
+			});
+			assert.ok(restored);
+			assert.equal(restored.status, "open");
+			assert.equal(restored.due, due);
+			assert.equal(restored.start, undefined);
+			assert.equal(restored.end, undefined);
+			assert.equal(restored.created, task.created);
+			assert.equal(restored.color, "violet");
+			assert.equal(restored.category, "personal");
+			assert.equal(restored.body, tagged.body);
+			assert.deepEqual(restored.tags, ["준비"]);
+			const snapshot = await getOrbitSnapshot();
+			assert.equal(
+				snapshot.items.filter((item) => item.id === task.id).length,
+				1,
+			);
+			assert.deepEqual(
+				snapshot.items.find((item) => item.id === task.id),
+				restored,
+			);
+		}
+	} finally {
+		if (previousVault === undefined) delete process.env.ORBIT_VAULT_DIR;
+		else process.env.ORBIT_VAULT_DIR = previousVault;
+		await rm(vault, { recursive: true, force: true });
+	}
+});
+
 test("Excalidraw files are listed and saved without changing their path", async () => {
 	const previousVault = process.env.ORBIT_VAULT_DIR;
 	const vault = await mkdtemp(path.join(os.tmpdir(), "orbit-canvas-"));

@@ -47,13 +47,6 @@ import {
 import { ScheduleEditor } from "@/components/schedule-editor";
 import { TaskCheck, taskTitleClass } from "@/components/task-check";
 import { Button } from "@/components/ui/button";
-import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogTitle,
-	DialogTrigger,
-} from "@/components/ui/dialog";
 import { useKoreanHolidays } from "@/hooks/use-korean-holidays";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useTaskToggle } from "@/hooks/use-task-toggle";
@@ -158,48 +151,20 @@ function CalendarCreateButton({
 	onCreate: (date: string, time?: string, kind?: EditorState["kind"]) => void;
 	className?: string;
 }) {
-	const [open, setOpen] = useState(false);
-	function choose(kind: EditorState["kind"]) {
-		setOpen(false);
-		onCreate(date, undefined, kind);
-	}
 	return (
-		<Dialog open={open} onOpenChange={setOpen}>
-			<DialogTrigger asChild>
-				<Button
-					variant="ghost"
-					size="icon-xs"
-					className={className}
-					aria-label={`${date} 항목 추가`}
-					onClick={(event) => event.stopPropagation()}
-					onDoubleClick={(event) => event.stopPropagation()}
-				>
-					<Plus />
-				</Button>
-			</DialogTrigger>
-			<DialogContent className="max-w-sm gap-4 p-4 sm:p-5">
-				<DialogTitle>{shortDayLabel(date)}</DialogTitle>
-				<DialogDescription className="sr-only">
-					추가할 항목을 선택하세요.
-				</DialogDescription>
-				<div className="grid grid-cols-2 gap-3">
-					<Button
-						variant="outline"
-						className="h-28 flex-col gap-3 rounded-xl text-base"
-						onClick={() => choose("task")}
-					>
-						<ListTodo className="size-7" /> 할 일
-					</Button>
-					<Button
-						variant="outline"
-						className="h-28 flex-col gap-3 rounded-xl text-base"
-						onClick={() => choose("event")}
-					>
-						<CalendarDays className="size-7" /> 일정
-					</Button>
-				</div>
-			</DialogContent>
-		</Dialog>
+		<Button
+			variant="ghost"
+			size="icon-xs"
+			className={className}
+			aria-label={`${date} 항목 추가`}
+			onClick={(event) => {
+				event.stopPropagation();
+				onCreate(date);
+			}}
+			onDoubleClick={(event) => event.stopPropagation()}
+		>
+			<Plus />
+		</Button>
 	);
 }
 
@@ -1146,10 +1111,10 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 					<ScheduleDisplayMenu {...displayOptions} />
 					<Button
 						size="sm"
-						aria-label="일정 추가"
+						aria-label="추가"
 						onClick={() => openNew(selectedDate)}
 					>
-						<Plus /> <span className="hidden sm:inline">일정 추가</span>
+						<Plus /> <span className="hidden sm:inline">추가</span>
 					</Button>
 				</header>
 				<div className="grid shrink-0 grid-cols-3 gap-1 border-b border-border/60 bg-muted/20 p-1.5 sm:hidden">
@@ -1287,7 +1252,7 @@ function MobileAgenda({
 					compact ? "min-h-14" : "min-h-28",
 				)}
 			>
-				<Plus className="size-4" /> 이 날의 첫 일정 추가
+				<Plus className="size-4" /> 추가
 			</button>
 		);
 	}
