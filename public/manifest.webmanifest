@@ -45,9 +45,9 @@
       "icons": [{ "src": "/icons/orbit-192.png", "sizes": "192x192" }]
     },
     {
-      "name": "Inbox 열기",
-      "short_name": "Inbox",
-      "url": "/inbox?source=shortcut",
+      "name": "할 일 열기",
+      "short_name": "할 일",
+      "url": "/tasks?source=shortcut",
       "icons": [{ "src": "/icons/orbit-192.png", "sizes": "192x192" }]
     }
   ]

@@ -1,11 +1,10 @@
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import {
 	Archive,
 	BookOpen,
 	CalendarCheck,
 	CalendarDays,
 	FolderKanban,
-	Inbox,
 	Layers,
 	ListTodo,
 	LogOut,
@@ -14,8 +13,6 @@ import {
 import { useEffect } from "react";
 import { logoutOrbit } from "#/lib/orbit/auth";
 import { ARCHIVE_SPACE, PARA_SPACES } from "#/lib/orbit/para";
-import type { OrbitSnapshot, OrbitSpace } from "#/lib/orbit/schema";
-import { ItemContextMenu } from "@/components/item-context-menu";
 import { ModeToggle } from "@/components/mode-toggle";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { Button } from "@/components/ui/button";
@@ -27,7 +24,6 @@ import {
 	SidebarGroupLabel,
 	SidebarHeader,
 	SidebarMenu,
-	SidebarMenuBadge,
 	SidebarMenuButton,
 	SidebarMenuItem,
 	useSidebar,
@@ -43,9 +39,8 @@ function startsWithPath(pathname: string, href: string) {
 	return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function AppSidebar({ snapshot }: { snapshot: OrbitSnapshot }) {
+export function AppSidebar() {
 	const { setOpenMobile } = useSidebar();
-	const navigate = useNavigate();
 	const pathname = useRouterState({
 		select: (state) => state.location.pathname,
 	});
@@ -53,23 +48,6 @@ export function AppSidebar({ snapshot }: { snapshot: OrbitSnapshot }) {
 		if (!pathname) return;
 		setOpenMobile(false);
 	}, [pathname, setOpenMobile]);
-
-	async function createNote(space: OrbitSpace, folder?: string, href?: string) {
-		if (folder) {
-			const spaceMeta = PARA_SPACES.find((item) => item.space === space);
-			if (spaceMeta?.folderHref) {
-				await navigate({
-					to: spaceMeta.folderHref,
-					params: { folder },
-				});
-			}
-		} else if (href) await navigate({ to: href });
-		window.setTimeout(() => {
-			window.dispatchEvent(
-				new CustomEvent("orbit:create-note", { detail: { space, folder } }),
-			);
-		}, 0);
-	}
 
 	async function logout() {
 		if ("serviceWorker" in navigator) {
@@ -103,7 +81,7 @@ export function AppSidebar({ snapshot }: { snapshot: OrbitSnapshot }) {
 							tooltip="Orbit"
 							className="transition-colors duration-150"
 						>
-							<Link to="/inbox" preload="render">
+							<Link to="/" preload="render">
 								<div className="flex aspect-square size-8 items-center justify-center overflow-hidden rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
 									<img
 										src="/orbit.png"
@@ -127,47 +105,7 @@ export function AppSidebar({ snapshot }: { snapshot: OrbitSnapshot }) {
 
 			<SidebarContent>
 				<SidebarGroup>
-					<SidebarGroupLabel>Notes</SidebarGroupLabel>
-					<SidebarMenu>
-						<ItemContextMenu
-							createLabel="노트 추가"
-							onCreate={() => void createNote("inbox", undefined, "/inbox")}
-							onOpen={() => void navigate({ to: "/inbox" })}
-						>
-							<SidebarMenuItem>
-								<SidebarMenuButton
-									asChild
-									isActive={pathname === "/inbox"}
-									tooltip="Inbox"
-									className="font-medium"
-								>
-									<Link to="/inbox" preload="render">
-										<Inbox />
-										<span>Inbox</span>
-									</Link>
-								</SidebarMenuButton>
-								{snapshot.counts.inbox > 0 ? (
-									<SidebarMenuBadge>{snapshot.counts.inbox}</SidebarMenuBadge>
-								) : null}
-							</SidebarMenuItem>
-						</ItemContextMenu>
-						<SidebarMenuItem>
-							<SidebarMenuButton
-								asChild
-								isActive={pathname === "/mail"}
-								tooltip="Mail"
-							>
-								<Link to="/mail">
-									<Mail />
-									<span>Mail</span>
-								</Link>
-							</SidebarMenuButton>
-						</SidebarMenuItem>
-					</SidebarMenu>
-				</SidebarGroup>
-
-				<SidebarGroup>
-					<SidebarGroupLabel>Plan</SidebarGroupLabel>
+					<SidebarGroupLabel>Workspace</SidebarGroupLabel>
 					<SidebarMenu>
 						<SidebarMenuItem>
 							<SidebarMenuButton
@@ -202,6 +140,18 @@ export function AppSidebar({ snapshot }: { snapshot: OrbitSnapshot }) {
 								<Link to="/calendar" preload="render">
 									<CalendarDays />
 									<span>Calendar</span>
+								</Link>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+						<SidebarMenuItem>
+							<SidebarMenuButton
+								asChild
+								isActive={pathname === "/mail"}
+								tooltip="Mail"
+							>
+								<Link to="/mail">
+									<Mail />
+									<span>Mail</span>
 								</Link>
 							</SidebarMenuButton>
 						</SidebarMenuItem>

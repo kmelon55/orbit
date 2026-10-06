@@ -3,8 +3,8 @@ import {
 	CalendarDays,
 	CalendarRange,
 	FileText,
-	Inbox,
 	ListTodo,
+	Mail,
 	Plus,
 } from "lucide-react";
 import { type PointerEvent, useLayoutEffect, useRef, useState } from "react";
@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 
 const items = [
 	{ to: "/", label: "Today", icon: CalendarDays },
-	{ to: "/inbox", label: "Inbox", icon: Inbox },
+	{ to: "/mail", label: "Mail", icon: Mail },
 	{ to: "/tasks", label: "할 일", icon: ListTodo },
 	{ to: "/calendar", label: "캘린더", icon: CalendarRange },
 ] as const;
@@ -63,6 +63,11 @@ export function MobileNavigation() {
 	const pathname = useRouterState({
 		select: (state) => state.location.pathname,
 	});
+	const defaultKind = pathname.startsWith("/calendar")
+		? "event"
+		: pathname === "/tasks" || pathname === "/"
+			? "task"
+			: "note";
 	const [composerOpen, setComposerOpen] = useState(false);
 	const [composerViewport, setComposerViewport] = useState<{
 		top: number;
@@ -165,7 +170,7 @@ export function MobileNavigation() {
 			if (kind && kind !== "cancel") openComposer(kind);
 			return;
 		}
-		if (distance < 14) openComposer("note");
+		if (distance < 14) openComposer(defaultKind);
 	}
 
 	function NavLink({ to, label, icon: Icon }: (typeof items)[number]) {
@@ -269,10 +274,10 @@ export function MobileNavigation() {
 						onKeyDown={(event) => {
 							if (event.key === "Enter" || event.key === " ") {
 								event.preventDefault();
-								openComposer("note");
+								openComposer(defaultKind);
 							}
 						}}
-						aria-label="새 노트. 길게 누른 채 움직여 기록 종류 선택"
+						aria-label="새 항목. 길게 누른 채 움직여 기록 종류 선택"
 						aria-expanded={radialOpen}
 					>
 						<span

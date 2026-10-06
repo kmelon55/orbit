@@ -254,7 +254,7 @@ export function QuickCapture({
 								? "캘린더에 추가"
 								: kind === "task"
 									? "할 일 등록"
-									: "Inbox에 넣기"}
+									: "노트 저장"}
 						</span>
 					</Button>
 				</div>

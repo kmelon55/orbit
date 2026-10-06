@@ -51,7 +51,7 @@ export function AppShell({
 	return (
 		<TooltipProvider delayDuration={0}>
 			<SidebarProvider className="h-svh min-h-0 overflow-hidden bg-sidebar">
-				<AppSidebar snapshot={snapshot} />
+				<AppSidebar />
 				<SidebarInset className="min-h-0 overflow-hidden border-border/70 bg-background md:border md:shadow-sm">
 					<header className="orbit-mobile-header flex h-12 shrink-0 items-center gap-3 border-b border-border/60 bg-background/90 px-4 backdrop-blur-xl">
 						<SidebarTrigger className="-ml-1 text-muted-foreground" />

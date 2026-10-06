@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, Inbox } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { QuickCapture } from "@/components/quick-capture";
 import { Button } from "@/components/ui/button";
 
@@ -19,7 +19,7 @@ function CapturePage() {
 						빠른 기록
 					</h2>
 					<p className="mt-2 text-sm leading-6 text-muted-foreground">
-						지금 떠오른 것만 적으세요. 정리는 나중에 Inbox에서 하면 됩니다.
+						메모, 할 일, 일정을 바로 기록하세요.
 					</p>
 				</header>
 				<QuickCapture placeholder="메모, 할 일, 일정을 바로 기록하세요" />
@@ -27,11 +27,6 @@ function CapturePage() {
 					<Button variant="ghost" size="sm" asChild>
 						<Link to="/">
 							<ArrowLeft /> Today
-						</Link>
-					</Button>
-					<Button variant="outline" size="sm" asChild>
-						<Link to="/inbox">
-							<Inbox /> Inbox에서 정리
 						</Link>
 					</Button>
 				</div>

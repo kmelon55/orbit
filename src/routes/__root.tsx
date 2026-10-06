@@ -30,7 +30,7 @@ export const Route = createRootRoute({
 	loader: async ({ location }) => {
 		const auth = await getOrbitAuthStatus();
 		if (location.pathname === "/login") {
-			if (auth.authenticated) throw redirect({ to: "/inbox" });
+			if (auth.authenticated) throw redirect({ to: "/" });
 			return null;
 		}
 		if (!auth.authenticated) throw redirect({ to: "/login" });
