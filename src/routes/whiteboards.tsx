@@ -21,6 +21,7 @@ import { useI18n } from "@/components/locale-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { CanvasSkeleton } from "@/components/workspace-skeleton";
 import { cn } from "@/lib/utils";
 import { useOrbitSnapshot } from "./__root";
 import "@excalidraw/excalidraw/index.css";
@@ -245,12 +246,12 @@ function WhiteboardsPage() {
 										}
 									/>
 								) : (
-									<div className="grid h-full place-items-center text-sm text-muted-foreground">
-										{t("화이트보드 편집기를 불러오는 중…")}
-									</div>
+									<CanvasSkeleton />
 								)}
 							</div>
 						</div>
+					) : loading ? (
+						<CanvasSkeleton />
 					) : (
 						<div className="grid min-h-80 flex-1 place-items-center rounded-2xl border border-dashed border-border bg-background/55 p-8 text-center">
 							<div>

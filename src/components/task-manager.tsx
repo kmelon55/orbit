@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { resolveLocale, translate } from "#/lib/i18n";
+import { dateTimeFormatter, resolveLocale, translate } from "#/lib/i18n";
 import { moveCalendarItem, taskDatePatch } from "#/lib/orbit/calendar-schedule";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { itemColor } from "#/lib/orbit/item-colors";
@@ -82,7 +82,7 @@ function pointDueLabel(item: OrbitItem, today: string, locale = "ko-KR") {
 		return time ? `${todayLabel} ${time}` : todayLabel;
 	}
 	const date = new Date(`${day}T00:00:00`);
-	const label = new Intl.DateTimeFormat(locale, {
+	const label = dateTimeFormatter(locale, {
 		month: "short",
 		day: "numeric",
 		weekday: "short",

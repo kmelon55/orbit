@@ -1,3 +1,4 @@
+import { dateTimeFormatter } from "../i18n";
 import type { OrbitItem, OrbitItemType, OrbitSpace } from "./schema";
 
 export type ParaSpaceId = "project" | "area" | "resource";
@@ -163,7 +164,7 @@ const dateTimeOptions: Intl.DateTimeFormatOptions = {
 export function formatDateTime(value: string, locale = "ko-KR") {
 	const date = new Date(value);
 	if (Number.isNaN(date.getTime())) return formatUpdated(value);
-	return new Intl.DateTimeFormat(locale, dateTimeOptions).format(date);
+	return dateTimeFormatter(locale, dateTimeOptions).format(date);
 }
 
 export function formatDayKey(date = new Date()) {

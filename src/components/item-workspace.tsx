@@ -16,8 +16,10 @@ import {
 	Search,
 } from "lucide-react";
 import {
+	lazy,
 	type ReactElement,
 	type ReactNode,
+	Suspense,
 	startTransition,
 	useCallback,
 	useEffect,
@@ -52,7 +54,6 @@ import type {
 	NoteEditorAnchor,
 	NoteEditorHandle,
 } from "@/components/note-editor";
-import { NoteEditor } from "@/components/note-editor";
 import { NoteLinkPicker } from "@/components/note-link-picker";
 import { NoteMetadataEditor } from "@/components/note-metadata-editor";
 import { NoteOrganizeTray } from "@/components/note-organize-tray";
@@ -77,9 +78,16 @@ import {
 	ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { EditorSkeleton } from "@/components/workspace-skeleton";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useTaskToggle } from "@/hooks/use-task-toggle";
 import { cn } from "@/lib/utils";
+
+const NoteEditor = lazy(() =>
+	import("@/components/note-editor").then(({ NoteEditor }) => ({
+		default: NoteEditor,
+	})),
+);
 
 type NoteDraft = {
 	title: string;
@@ -1621,15 +1629,17 @@ export function ItemWorkspace({
 					</div>
 				</div>
 				<div className="mx-auto flex w-full max-w-[52rem] min-w-0 flex-1 flex-col px-4 sm:pr-6 sm:pl-16">
-					<NoteEditor
-						ref={editorRef}
-						noteId={selected.id}
-						markdown={draft.body}
-						onChange={updateDraftBody}
-						onOpenNote={(id) => void openLinkedNote(id)}
-						onRequestNoteLink={setLinkPickerAnchor}
-						onRequestCanvas={() => void openOrCreateCanvas()}
-					/>
+					<Suspense fallback={<EditorSkeleton />}>
+						<NoteEditor
+							ref={editorRef}
+							noteId={selected.id}
+							markdown={draft.body}
+							onChange={updateDraftBody}
+							onOpenNote={(id) => void openLinkedNote(id)}
+							onRequestNoteLink={setLinkPickerAnchor}
+							onRequestCanvas={() => void openOrCreateCanvas()}
+						/>
+					</Suspense>
 				</div>
 			</div>
 		</div>

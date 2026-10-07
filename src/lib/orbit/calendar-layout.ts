@@ -46,17 +46,19 @@ export function buildMonthLayout(
 ) {
 	const dayKeys = days.map((day) => formatDayKey(day));
 	const uniqueItems = new Map<string, OrbitItem>();
-	for (const key of dayKeys) {
-		for (const item of byDay.get(key) ?? []) uniqueItems.set(item.id, item);
+	const itemIndices = new Map<string, number[]>();
+	for (const [index, key] of dayKeys.entries()) {
+		for (const item of byDay.get(key) ?? []) {
+			uniqueItems.set(item.id, item);
+			const indices = itemIndices.get(item.id) ?? [];
+			if (indices.at(-1) !== index) indices.push(index);
+			itemIndices.set(item.id, indices);
+		}
 	}
 
 	const segments: MonthSegment[] = [];
 	for (const item of uniqueItems.values()) {
-		const indices = dayKeys.flatMap((key, index) =>
-			(byDay.get(key) ?? []).some((entry) => entry.id === item.id)
-				? [index]
-				: [],
-		);
+		const indices = itemIndices.get(item.id) ?? [];
 		if (indices.length === 0) continue;
 		let index = Math.min(...indices);
 		const lastIndex = Math.max(...indices);

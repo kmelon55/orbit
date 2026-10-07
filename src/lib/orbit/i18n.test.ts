@@ -4,7 +4,9 @@ import { join } from "node:path";
 import test from "node:test";
 import ts from "typescript";
 import {
+	dateTimeFormatter,
 	intlLocale,
+	resolveBrowserLocale,
 	resolveLocale,
 	translate,
 	translateError,
@@ -27,6 +29,45 @@ test("saved locale wins and browser preference respects supported languages and 
 	assert.equal(resolveLocale(null, "KO-kr;q=0,en-GB;q=0.5"), "en");
 	assert.equal(resolveLocale(null, "fr,ko;q=bad,en;q=2"), "ko");
 	assert.equal(resolveLocale(), "ko");
+});
+
+test("navigation reads the current locale locally without sharing another session's preference", () => {
+	assert.equal(
+		resolveBrowserLocale("other=1; orbit-ui-locale=en", "ko-KR"),
+		"en",
+	);
+	assert.equal(
+		resolveBrowserLocale("orbit-ui-locale=ko; other=en", "en-US"),
+		"ko",
+	);
+	assert.equal(resolveBrowserLocale("other-orbit-ui-locale=en", "ko-KR"), "ko");
+	assert.equal(
+		resolveBrowserLocale("orbit-ui-locale=invalid", "en-US,ko"),
+		"en",
+	);
+	assert.equal(resolveBrowserLocale("", "en-US"), "en");
+	assert.equal(resolveBrowserLocale("orbit-ui-locale=en"), "en");
+	assert.equal(resolveBrowserLocale("orbit-ui-locale=ko"), "ko");
+});
+
+test("cached date formatters preserve locale, timezone and formatting options", () => {
+	const options = { weekday: "short", timeZone: "UTC" } as const;
+	const date = new Date("2026-10-07T00:00:00Z");
+	const korean = dateTimeFormatter("ko-KR", options);
+	assert.equal(dateTimeFormatter("ko-KR", { ...options }), korean);
+	assert.equal(
+		korean.format(date),
+		new Intl.DateTimeFormat("ko-KR", options).format(date),
+	);
+	assert.equal(dateTimeFormatter("en-US", options).format(date), "Wed");
+	assert.notEqual(
+		dateTimeFormatter("ko-KR", { ...options, weekday: "long" }),
+		korean,
+	);
+	assert.notEqual(
+		dateTimeFormatter("ko-KR", { ...options, timeZone: "Asia/Seoul" }),
+		korean,
+	);
 });
 
 test("interpolation preserves user values and concurrent requests cannot share a language", async () => {

@@ -23,6 +23,7 @@ import { useI18n } from "@/components/locale-provider";
 import { useTheme } from "@/components/theme-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CanvasSkeleton } from "@/components/workspace-skeleton";
 import { cn } from "@/lib/utils";
 import "@excalidraw/excalidraw/index.css";
 
@@ -350,10 +351,12 @@ export function NoteCanvasPanel({
 							theme={resolvedTheme}
 							onChange={scheduleSave}
 						/>
-					) : (
+					) : message === "화이트보드를 불러오지 못했습니다" ? (
 						<div className="grid h-full place-items-center text-sm text-muted-foreground">
 							{t(message)}
 						</div>
+					) : (
+						<CanvasSkeleton />
 					)}
 				</div>
 			</section>

@@ -159,7 +159,7 @@ export function AppSidebar() {
 								isActive={pathname === "/mail"}
 								tooltip={t("Mail")}
 							>
-								<Link to="/mail">
+								<Link to="/mail" preload="render">
 									<Mail />
 									<span>{t("Mail")}</span>
 								</Link>

@@ -34,6 +34,7 @@ import {
 	mailViews,
 	matchingAddresses,
 } from "#/lib/mail/identities";
+import { mailSessionFor } from "#/lib/mail/session-cache";
 import {
 	folderLabels,
 	type MailAction,
@@ -64,12 +65,15 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 	const navigate = useNavigate({ from: "/mail" });
 	const router = useRouter();
 	const api = useMemo(() => createMailClient(demo), [demo]);
+	const session = mailSessionFor(api);
 	const accountIds = location.accounts ?? null;
 	const folder = location.folder ?? "inbox";
 	const search = location.q ?? "";
 	const selected = location.message ?? "";
 	const [query, setQuery] = useState(search);
-	const [detail, setDetail] = useState<MailDetail | null>(null);
+	const [detail, setDetail] = useState<MailDetail | null>(
+		() => session.details.get(`${selected}:true`) ?? null,
+	);
 	const [settings, setSettings] = useState(false);
 	const [compose, setCompose] = useState<
 		"new" | "reply" | "all" | "forward" | null
@@ -131,19 +135,18 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 		},
 		[setMessages],
 	);
-	const [thread, setThread] = useState<MailMessage[]>([]);
+	const [thread, setThread] = useState<MailMessage[]>(
+		() => session.threads.get(selected)?.messages ?? [],
+	);
 	const [threadLoading, setThreadLoading] = useState(false);
 	const [threadError, setThreadError] = useState("");
-	const [threadIncomplete, setThreadIncomplete] = useState(false);
-	const [detailRetry, setDetailRetry] = useState(0);
-	const detailCache = useRef(new Map<string, MailDetail>());
-	const prefetched = useRef(new Set<string>());
-	const threadCache = useRef(
-		new Map<
-			string,
-			{ messages: MailMessage[]; incomplete: boolean; error?: string }
-		>(),
+	const [threadIncomplete, setThreadIncomplete] = useState(
+		() => session.threads.get(selected)?.incomplete ?? false,
 	);
+	const [detailRetry, setDetailRetry] = useState(0);
+	const detailCache = useRef(session.details);
+	const prefetched = useRef(new Set<string>());
+	const threadCache = useRef(session.threads);
 	const rows = useMemo(() => conversations(messages), [messages]);
 	useEffect(() => {
 		if (selected || loading || !rows.length) return;
@@ -204,11 +207,11 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 			return;
 		}
 		const controller = new AbortController();
-		setThreadLoading(true);
 		setThreadError("");
 		const cachedThread = detailRetry
 			? undefined
 			: threadCache.current.get(selected);
+		setThreadLoading(!cachedThread);
 		setThreadIncomplete(cachedThread?.incomplete ?? false);
 		setThread(
 			(previous) =>
@@ -270,7 +273,8 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 			controller.signal,
 		)
 			.then(async (d) => {
-				if (current !== detailGeneration.current) return;
+				if (current !== detailGeneration.current || controller.signal.aborted)
+					return;
 				detailCache.current.set(cacheKey, d);
 				if (detailCache.current.size > 30)
 					detailCache.current.delete(

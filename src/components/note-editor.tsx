@@ -12,6 +12,7 @@ import {
 	useState,
 } from "react";
 import { useI18n } from "@/components/locale-provider";
+import { EditorSkeleton } from "@/components/workspace-skeleton";
 import "@milkdown/crepe/theme/common/style.css";
 import {
 	orbitCanvasLocale,
@@ -87,6 +88,7 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 		const translatedPlaceholder = t(placeholder);
 		const translatedLabel = t(label);
 		const rootRef = useRef<HTMLDivElement>(null);
+		const [readyNoteId, setReadyNoteId] = useState<string | null>(null);
 		const crepeRef = useRef<Crepe | null>(null);
 		const { vimEnabled, exitSequence } = useNoteVimPreference();
 		const [vimMode, setVimMode] = useState<NoteVimMode>("insert");
@@ -235,6 +237,7 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 			const openedNoteId = noteId;
 			void openedNoteId;
 			root.replaceChildren();
+			setReadyNoteId(null);
 			userInteractedRef.current = false;
 			onReadyChangeRef.current?.(false);
 			const initial = bootMarkdownRef.current;
@@ -440,6 +443,7 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 					view.dom.setAttribute("aria-multiline", "true");
 				});
 				onReadyChangeRef.current?.(true);
+				setReadyNoteId(noteId);
 			});
 
 			return () => {
@@ -478,11 +482,19 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 		]);
 
 		return (
-			<div className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col">
+			<div
+				aria-busy={readyNoteId !== noteId}
+				className="relative flex min-h-24 w-full min-w-0 flex-1 flex-col"
+			>
+				{readyNoteId !== noteId ? (
+					<div className="absolute inset-x-0 top-0">
+						<EditorSkeleton compact={compact} />
+					</div>
+				) : null}
 				<div
 					ref={rootRef}
 					data-vim-mode={vimEnabled ? vimMode : "off"}
-					className="orbit-note-editor min-h-0 w-full min-w-0 flex-1"
+					className={`orbit-note-editor min-h-0 w-full min-w-0 flex-1 ${readyNoteId !== noteId ? "opacity-0" : ""}`}
 				/>
 				{vimEnabled ? (
 					<output

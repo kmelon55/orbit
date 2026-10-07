@@ -54,6 +54,7 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { EditorSkeleton } from "@/components/workspace-skeleton";
 
 const MemoEditor = lazy(() =>
 	import("@/components/note-editor").then(({ NoteEditor }) => ({
@@ -566,16 +567,7 @@ export function ScheduleEditor({
 										inert={saving}
 										className="orbit-schedule-memo min-w-0 rounded-xl border bg-background"
 									>
-										<Suspense
-											fallback={
-												<div
-													className="min-h-24 px-3 py-2 text-sm text-muted-foreground"
-													aria-busy="true"
-												>
-													{body || t("메모")}
-												</div>
-											}
-										>
+										<Suspense fallback={<EditorSkeleton compact />}>
 											<MemoEditor
 												ref={memoEditorRef}
 												key={`${item?.id ?? "new"}:${editRevision.current}`}

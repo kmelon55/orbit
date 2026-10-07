@@ -1,22 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { mailApi } from "#/lib/mail/client";
 import { mailScopes } from "#/lib/mail/identities";
+import { mailSessionFor } from "#/lib/mail/session-cache";
 import type { MailFolder, MailMessage, MailStatus } from "#/lib/mail/types";
 
-type SessionCache = {
-	status: MailStatus | null;
-	pages: Map<string, MailMessage[]>;
-	statusRequest?: Promise<MailStatus>;
-};
-const sessions = new WeakMap<typeof mailApi, SessionCache>();
-function sessionFor(api: typeof mailApi) {
-	let session = sessions.get(api);
-	if (!session) {
-		session = { status: null, pages: new Map() };
-		sessions.set(api, session);
-	}
-	return session;
-}
 type Page = { messages: MailMessage[]; cursor: string | null };
 export function useMailList(
 	accountIds: string[] | null,
@@ -24,10 +11,24 @@ export function useMailList(
 	search: string,
 	api: typeof mailApi = mailApi,
 ) {
-	const session = sessionFor(api);
+	const session = mailSessionFor(api);
 	const [status, setStatus] = useState<MailStatus | null>(session.status);
-	const [messages, setMessagesState] = useState<MailMessage[]>([]);
-	const [loading, setLoading] = useState(true);
+	const initialScope = JSON.stringify([
+		accountIds === null ? null : [...accountIds].sort(),
+		folder,
+		search,
+		session.status?.accounts.map((account) => [
+			account.id,
+			account.email,
+			account.aliases || [],
+		]),
+	]);
+	const [messages, setMessagesState] = useState<MailMessage[]>(
+		() => session.pages.get(initialScope) ?? [],
+	);
+	const [loading, setLoading] = useState(
+		() => !session.pages.has(initialScope),
+	);
 	const [syncing, setSyncing] = useState<string[]>([]);
 	const [errors, setErrors] = useState<Record<string, string>>({});
 	const [error, setError] = useState("");
@@ -225,7 +226,7 @@ export function useMailList(
 		setCursors({});
 		setSyncing([]);
 		setErrors({});
-		setLoading(true);
+		setLoading(!cached);
 		const current = generation.current;
 		void refreshRef.current(Boolean(cached)).then(() => {
 			if (cached) return;

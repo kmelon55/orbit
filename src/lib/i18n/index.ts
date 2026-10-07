@@ -6,6 +6,30 @@ export const LOCALE_COOKIE = "orbit-ui-locale";
 export const LOCALE_STORAGE = "orbit-ui-locale";
 export const intlLocale = (locale: Locale) =>
 	locale === "ko" ? "ko-KR" : "en-US";
+
+const dateFormatters = new Map<string, Intl.DateTimeFormat>();
+export function dateTimeFormatter(
+	locale: string,
+	options: Intl.DateTimeFormatOptions,
+) {
+	const key = JSON.stringify([locale, options]);
+	let formatter = dateFormatters.get(key);
+	if (!formatter) {
+		formatter = new Intl.DateTimeFormat(locale, options);
+		dateFormatters.set(key, formatter);
+		if (dateFormatters.size > 32)
+			dateFormatters.delete(dateFormatters.keys().next().value as string);
+	}
+	return formatter;
+}
+export function resolveBrowserLocale(cookie: string, preferred = ""): Locale {
+	const saved = cookie
+		.split(";")
+		.map((entry) => entry.trim())
+		.find((entry) => entry.startsWith(`${LOCALE_COOKIE}=`))
+		?.slice(LOCALE_COOKIE.length + 1);
+	return resolveLocale(saved, preferred);
+}
 export function resolveLocale(saved?: string | null, preferred = ""): Locale {
 	if (saved === "ko" || saved === "en") return saved;
 	const candidates = preferred
@@ -84,7 +108,7 @@ export function weekdayName(
 	locale: string,
 	style: "short" | "long" = "short",
 ) {
-	return new Intl.DateTimeFormat(locale, {
+	return dateTimeFormatter(locale, {
 		weekday: style,
 		timeZone: "UTC",
 	}).format(new Date(Date.UTC(2023, 0, 1 + day)));

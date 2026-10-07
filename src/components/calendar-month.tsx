@@ -20,7 +20,7 @@ import {
 	useRef,
 	useState,
 } from "react";
-import { weekdayName } from "#/lib/i18n";
+import { dateTimeFormatter, weekdayName } from "#/lib/i18n";
 import {
 	buildMonthLayout,
 	buildWeekLayout,
@@ -245,7 +245,7 @@ function dragPayload(dataTransfer: DataTransfer) {
 }
 
 function monthLabel(date: Date, locale = "ko-KR") {
-	return new Intl.DateTimeFormat(locale, {
+	return dateTimeFormatter(locale, {
 		year: "numeric",
 		month: "long",
 	}).format(date);
@@ -254,15 +254,15 @@ function monthLabel(date: Date, locale = "ko-KR") {
 function weekLabel(date: Date, rolling = false, locale = "ko-KR") {
 	const start = rolling ? date : startOfWeek(date);
 	const end = addDays(start, 6);
-	const formatter = new Intl.DateTimeFormat(locale, {
+	const formatter = dateTimeFormatter(locale, {
 		month: "short",
 		day: "numeric",
 	});
-	return `${new Intl.DateTimeFormat(locale, { year: "numeric" }).format(start)} ${formatter.format(start)} – ${formatter.format(end)}`;
+	return `${dateTimeFormatter(locale, { year: "numeric" }).format(start)} ${formatter.format(start)} – ${formatter.format(end)}`;
 }
 
 function dayLabel(date: Date, locale = "ko-KR") {
-	return new Intl.DateTimeFormat(locale, {
+	return dateTimeFormatter(locale, {
 		year: "numeric",
 		month: "long",
 		day: "numeric",
@@ -276,7 +276,7 @@ function parseDayKey(value: string) {
 }
 
 function shortDayLabel(value: string, locale = "ko-KR") {
-	return new Intl.DateTimeFormat(locale, {
+	return dateTimeFormatter(locale, {
 		month: "long",
 		day: "numeric",
 		weekday: "short",
@@ -682,13 +682,15 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 			for (const day of visibleDayKeys(item)) {
 				const items = map.get(day) ?? [];
 				items.push(item);
-				items.sort((left, right) =>
-					(left.start ?? left.due ?? "").localeCompare(
-						right.start ?? right.due ?? "",
-					),
-				);
 				map.set(day, items);
 			}
+		}
+		for (const items of map.values()) {
+			items.sort((left, right) =>
+				(left.start ?? left.due ?? "").localeCompare(
+					right.start ?? right.due ?? "",
+				),
+			);
 		}
 		return map;
 	}, [dated]);
@@ -1699,7 +1701,7 @@ function WeekView({
 	const initialized = useRef(false);
 	const pendingPrepend = useRef<{ start: number; left: number } | null>(null);
 	const [viewportWidth, setViewportWidth] = useState(0);
-	const [range, setRange] = useState({ start: -14, end: 20 });
+	const [range, setRange] = useState({ start: -7, end: 13 });
 	const columnWidth =
 		dayCount === 1
 			? Math.max(284, viewportWidth - 56)
@@ -1746,12 +1748,21 @@ function WeekView({
 	}, []);
 	const start = dayCount === 1 ? new Date(cursor) : startOfWeek(cursor);
 	start.setHours(0, 0, 0, 0);
-	const days = Array.from(
-		{ length: dayCount === 1 ? 1 : range.end - range.start + 1 },
-		(_, index) => addDays(start, dayCount === 1 ? 0 : range.start + index),
+	const startTime = start.getTime();
+	const days = useMemo(
+		() =>
+			Array.from(
+				{ length: dayCount === 1 ? 1 : range.end - range.start + 1 },
+				(_, index) =>
+					addDays(
+						new Date(startTime),
+						dayCount === 1 ? 0 : range.start + index,
+					),
+			),
+		[startTime, dayCount, range.start, range.end],
 	);
 	const columns = days.length;
-	const weekLayout = buildWeekLayout(byDay, days);
+	const weekLayout = useMemo(() => buildWeekLayout(byDay, days), [byDay, days]);
 	const hours = Array.from(
 		{ length: HOUR_END - HOUR_START },
 		(_, index) => HOUR_START + index,
@@ -2288,7 +2299,7 @@ function MonthView(
 		top: number;
 	} | null>(null);
 	const [viewportHeight, setViewportHeight] = useState(0);
-	const [range, setRange] = useState({ start: -6, end: 11 });
+	const [range, setRange] = useState({ start: -3, end: 6 });
 	const firstWeek = startOfWeek(startOfMonth(cursor));
 
 	useLayoutEffect(() => {

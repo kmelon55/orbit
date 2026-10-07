@@ -1,9 +1,9 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createIsomorphicFn, createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { LOCALE_COOKIE, resolveLocale } from "./index";
+import { LOCALE_COOKIE, resolveBrowserLocale, resolveLocale } from "./index";
 
-export const getUiLocale = createServerFn({ method: "GET" }).handler(
-	async () => {
+export const getUiLocale = createIsomorphicFn()
+	.server(async () => {
 		const { getCookie, getRequestHeader } = await import(
 			"@tanstack/react-start/server"
 		);
@@ -11,8 +11,10 @@ export const getUiLocale = createServerFn({ method: "GET" }).handler(
 			getCookie(LOCALE_COOKIE),
 			getRequestHeader("accept-language"),
 		);
-	},
-);
+	})
+	.client(() =>
+		resolveBrowserLocale(document.cookie, navigator.languages.join(",")),
+	);
 export const saveUiLocale = createServerFn({ method: "POST" })
 	.validator((input: unknown) => z.enum(["ko", "en"]).parse(input))
 	.handler(async ({ data }) => {
