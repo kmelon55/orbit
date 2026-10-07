@@ -945,5 +945,7 @@
 	"This routine is not scheduled for that date.": "해당 날짜에 예정된 루틴이 아닙니다.",
 	"This routine cannot be started.": "진행할 수 있는 루틴이 아닙니다.",
 	"To note": "노트로",
-	"To link": "링크로"
+	"To link": "링크로",
+	"노트 편집": "노트 편집",
+	"노트 내용": "노트 내용"
 }

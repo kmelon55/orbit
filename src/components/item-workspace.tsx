@@ -29,6 +29,7 @@ import { mutateOrbit } from "#/lib/orbit/functions";
 import { moveItemLocally } from "#/lib/orbit/item-move";
 import { formatDateTime, ITEM_TYPE_LABEL, isInboxItem } from "#/lib/orbit/para";
 import type {
+	FileItemInput,
 	OrbitCanvas,
 	OrbitItem,
 	OrbitSnapshot,
@@ -36,10 +37,6 @@ import type {
 } from "#/lib/orbit/schema";
 import { orbitItemSchema } from "#/lib/orbit/schema";
 import { onItemUndone } from "#/lib/orbit/undo-events";
-import {
-	type EventConversion,
-	EventConversionDialog,
-} from "@/components/event-conversion-dialog";
 import { FileItemForm } from "@/components/file-item-form";
 import {
 	ConfirmItemDialog,
@@ -63,6 +60,7 @@ import {
 	type PendingCapture,
 	useOrbitWrites,
 } from "@/components/orbit-snapshot-provider";
+import { ScheduleEditor } from "@/components/schedule-editor";
 import { TaskCheck, taskTitleClass } from "@/components/task-check";
 import { Button } from "@/components/ui/button";
 import {
@@ -349,9 +347,10 @@ export function ItemWorkspace({
 	const [query, setQuery] = useState("");
 	const listQuery = create?.space === "inbox" ? "" : query;
 	const [filing, setFiling] = useState<OrbitItem | null>(null);
-	const [eventConversion, setEventConversion] = useState<OrbitItem | null>(
-		null,
-	);
+	const [conversion, setConversion] = useState<{
+		item: OrbitItem;
+		kind: ConvertibleType;
+	} | null>(null);
 	const convertingIds = useRef(new Set<string>());
 	const [convertingId, setConvertingId] = useState<string | null>(null);
 	const [organizeOpen, setOrganizeOpen] = useState(false);
@@ -630,7 +629,7 @@ export function ItemWorkspace({
 	}, []);
 
 	useEffect(() => {
-		if (!selectedKey) return;
+		if (!selectedKey || convertingId === selectedKey) return;
 		const lastSaved = lastSavedByIdRef.current[selectedKey];
 		if (lastSaved && draftsEqual(draft, lastSaved)) return;
 		const id = selectedKey;
@@ -639,7 +638,7 @@ export function ItemWorkspace({
 			void persistSnapshot(id, snapshot);
 		}, 700);
 		return () => window.clearTimeout(timer);
-	}, [draft, persistSnapshot, selectedKey]);
+	}, [convertingId, draft, persistSnapshot, selectedKey]);
 
 	const applyNote = useCallback(
 		(item: OrbitItem | undefined, id: string) => {
@@ -1011,54 +1010,22 @@ export function ItemWorkspace({
 			throw new Error("Move failed");
 	}
 
-	async function convertItem(
-		item: OrbitItem,
-		kind: ConvertibleType,
-		schedule?: EventConversion,
-	) {
-		if (item.type === kind || convertingIds.current.has(item.id)) return;
-		if (kind === "event" && !schedule)
-			throw new Error(t("일정 날짜를 선택해 주세요."));
+	async function convertItem(item: OrbitItem, input: FileItemInput) {
+		if (convertingIds.current.has(item.id)) return;
 		convertingIds.current.add(item.id);
 		setConvertingId(item.id);
 		try {
 			await runWithSavedItems([item.id], async () => {
-				const scheduleValue = item.start ?? item.due;
 				const saved = orbitItemSchema.parse(
 					await mutateOrbit({
-						data: {
-							action: "file-item",
-							id: item.id,
-							input: {
-								type: kind,
-								space:
-									kind === "event"
-										? "event"
-										: item.space === "event"
-											? "inbox"
-											: item.space,
-								folder:
-									kind === "event" || item.space === "event"
-										? undefined
-										: item.folder,
-								status: kind === "task" ? item.status : undefined,
-								due: kind === "task" ? scheduleValue : null,
-								start:
-									kind === "event"
-										? schedule?.start
-										: kind === "task"
-											? (item.start ?? null)
-											: null,
-								end:
-									kind === "event"
-										? schedule?.end
-										: kind === "task"
-											? (item.end ?? null)
-											: null,
-							},
-						},
+						data: { action: "file-item", id: item.id, input },
 					}),
 				);
+				acknowledge(saved);
+				const savedDraft = noteDraft(saved);
+				localDraftsRef.current[item.id] = savedDraft;
+				lastSavedByIdRef.current[item.id] = savedDraft;
+				setSavedById((current) => ({ ...current, [item.id]: savedDraft }));
 				const leavesList =
 					saved.space !== (create?.space ?? item.space) ||
 					(create?.space === "inbox" && !isInboxItem(saved));
@@ -1069,8 +1036,10 @@ export function ItemWorkspace({
 					);
 					selectAfterRemoval(item.id);
 				} else {
-					cachedSelectedRef.current = saved;
-					applyNote(saved, saved.id);
+					setLocalItems((current) =>
+						current.map((entry) => (entry.id === item.id ? saved : entry)),
+					);
+					if (selectedKeyRef.current === item.id) applyNote(saved, saved.id);
 				}
 			});
 		} finally {
@@ -1080,16 +1049,24 @@ export function ItemWorkspace({
 	}
 
 	function requestConversion(item: OrbitItem, kind: ConvertibleType) {
-		if (kind === "event") {
-			setEventConversion(
-				item.id === selectedKeyRef.current
-					? { ...item, title: draftRef.current.title || item.title }
-					: item,
-			);
-			return;
-		}
-		void convertItem(item, kind).catch(() => {
-			setActionError(t("종류를 바꾸지 못했습니다. 다시 시도해 주세요."));
+		if (item.type === kind || convertingIds.current.has(item.id)) return;
+		const draft =
+			item.id === selectedKeyRef.current
+				? {
+						...draftRef.current,
+						body: editorRef.current?.getMarkdown() ?? draftRef.current.body,
+					}
+				: localDraftsRef.current[item.id];
+		setConversion({
+			kind,
+			item: draft
+				? {
+						...item,
+						title: draft.title || item.title,
+						body: draft.body,
+						tags: parseTags(draft.tags),
+					}
+				: item,
 		});
 	}
 
@@ -1348,14 +1325,16 @@ export function ItemWorkspace({
 
 	const dialogs = (
 		<>
-			{eventConversion && (
-				<EventConversionDialog
-					key={eventConversion.id}
-					item={eventConversion}
-					onClose={() => setEventConversion(null)}
-					onConvert={(schedule) =>
-						convertItem(eventConversion, "event", schedule)
-					}
+			{conversion && (
+				<ScheduleEditor
+					key={`${conversion.item.id}:${conversion.kind}`}
+					open
+					kind={conversion.kind}
+					item={conversion.item}
+					onOpenChange={(open) => {
+						if (!open) setConversion(null);
+					}}
+					onConvert={(input) => convertItem(conversion.item, input)}
 				/>
 			)}
 			<Dialog

@@ -15,6 +15,7 @@ import { resolveLocale, translate } from "#/lib/i18n";
 import { moveCalendarItem, taskDatePatch } from "#/lib/orbit/calendar-schedule";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { itemColor } from "#/lib/orbit/item-colors";
+import type { EditableItemType } from "#/lib/orbit/item-editor";
 import { isPendingItemId } from "#/lib/orbit/optimistic-mutations";
 import { folderOf, formatDayKey } from "#/lib/orbit/para";
 import type { OrbitItem, OrbitSnapshot, OrbitSpace } from "#/lib/orbit/schema";
@@ -132,7 +133,8 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 	const [editor, setEditor] = useState<{
 		open: boolean;
 		item?: OrbitItem;
-		kind?: "task" | "event";
+		kind?: EditableItemType;
+		conversion?: boolean;
 	}>({
 		open: false,
 	});
@@ -495,6 +497,9 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 										onDragStart={startRescheduleDrag}
 										onDragEnd={finishRescheduleDrag}
 										onOpen={(item) => setEditor({ open: true, item })}
+										onConvert={(item, kind) =>
+											setEditor({ open: true, item, kind, conversion: true })
+										}
 										onCreate={() => void createTask()}
 										onArchive={(item) => setConfirm({ kind: "archive", item })}
 										onDelete={(item) => setConfirm({ kind: "delete", item })}
@@ -519,6 +524,9 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 								onDragStart={startRescheduleDrag}
 								onDragEnd={finishRescheduleDrag}
 								onOpen={(item) => setEditor({ open: true, item })}
+								onConvert={(item, kind) =>
+									setEditor({ open: true, item, kind, conversion: true })
+								}
 								onCreate={() => void createTask()}
 								onArchive={(item) => setConfirm({ kind: "archive", item })}
 								onDelete={(item) => setConfirm({ kind: "delete", item })}
@@ -588,8 +596,18 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 			<ScheduleEditor
 				open={editor.open}
 				onOpenChange={(open) => setEditor((current) => ({ ...current, open }))}
-				kind={editor.item?.type === "event" ? "event" : (editor.kind ?? "task")}
+				kind={editor.kind ?? (editor.item?.type === "event" ? "event" : "task")}
 				item={editor.item}
+				onConvert={
+					editor.conversion && editor.item
+						? async (input) => {
+								if (!editor.item) return;
+								await mutateOrbit({
+									data: { action: "file-item", id: editor.item.id, input },
+								});
+							}
+						: undefined
+				}
 			/>
 			<ConfirmItemDialog
 				action={confirm}
@@ -623,6 +641,7 @@ function TaskRows({
 	onDragStart,
 	onDragEnd,
 	onOpen,
+	onConvert,
 	onCreate,
 	onArchive,
 	onDelete,
@@ -641,6 +660,7 @@ function TaskRows({
 	onDragStart: (event: React.DragEvent, item: OrbitItem) => void;
 	onDragEnd: () => void;
 	onOpen: (item: OrbitItem) => void;
+	onConvert: (item: OrbitItem, kind: EditableItemType) => void;
 	onCreate: () => void;
 	onArchive: (item: OrbitItem) => void;
 	onDelete: (item: OrbitItem) => void;
@@ -698,6 +718,7 @@ function TaskRows({
 							createLabel="할 일 추가"
 							onCreate={onCreate}
 							onOpen={() => onOpen(item)}
+							onConvert={(kind) => onConvert(item, kind)}
 							onArchive={() => onArchive(item)}
 							onDelete={() => onDelete(item)}
 							onToggleTask={
