@@ -3,12 +3,13 @@ import {
 	CalendarDays,
 	CalendarRange,
 	FileText,
+	Inbox,
 	ListTodo,
-	Mail,
 	Plus,
 } from "lucide-react";
 import { type PointerEvent, useLayoutEffect, useRef, useState } from "react";
 import type { OrbitItemType } from "#/lib/orbit/schema";
+import { useI18n } from "@/components/locale-provider";
 import { QuickCapture } from "@/components/quick-capture";
 import {
 	Sheet,
@@ -21,7 +22,7 @@ import { cn } from "@/lib/utils";
 
 const items = [
 	{ to: "/", label: "Today", icon: CalendarDays },
-	{ to: "/mail", label: "Mail", icon: Mail },
+	{ to: "/inbox", label: "Inbox", icon: Inbox },
 	{ to: "/tasks", label: "할 일", icon: ListTodo },
 	{ to: "/calendar", label: "캘린더", icon: CalendarRange },
 ] as const;
@@ -60,6 +61,8 @@ const QUICK_KINDS: {
 ];
 
 export function MobileNavigation() {
+	const { t } = useI18n();
+
 	const pathname = useRouterState({
 		select: (state) => state.location.pathname,
 	});
@@ -196,7 +199,7 @@ export function MobileNavigation() {
 				>
 					<Icon className="size-[1.15rem]" />
 				</span>
-				<span>{label}</span>
+				<span>{t(label)}</span>
 			</Link>
 		);
 	}
@@ -241,7 +244,7 @@ export function MobileNavigation() {
 										selectedKind === type && "font-semibold",
 									)}
 								>
-									{label}
+									{t(label)}
 								</span>
 							</div>
 						))}
@@ -250,7 +253,7 @@ export function MobileNavigation() {
 			) : null}
 
 			<nav
-				aria-label="모바일 주요 메뉴"
+				aria-label={t("모바일 주요 메뉴")}
 				className={cn(
 					"orbit-mobile-nav relative shrink-0 border-t border-border/70 bg-background/95 px-2 pt-1.5 backdrop-blur-xl md:hidden",
 					radialOpen ? "z-[70]" : "z-40",
@@ -277,7 +280,7 @@ export function MobileNavigation() {
 								openComposer(defaultKind);
 							}
 						}}
-						aria-label="새 항목. 길게 누른 채 움직여 기록 종류 선택"
+						aria-label={t("새 항목. 길게 누른 채 움직여 기록 종류 선택")}
 						aria-expanded={radialOpen}
 					>
 						<span
@@ -294,7 +297,7 @@ export function MobileNavigation() {
 								)}
 							/>
 						</span>
-						<span>{radialOpen ? "취소" : "새로 만들기"}</span>
+						<span>{radialOpen ? t("취소") : t("새로 만들기")}</span>
 					</button>
 
 					<NavLink {...items[2]} />
@@ -314,13 +317,13 @@ export function MobileNavigation() {
 					<SheetHeader className="px-1 pt-1 pb-0">
 						<SheetTitle>
 							{composerKind === "note"
-								? "새 노트"
+								? t("새 노트")
 								: composerKind === "task"
-									? "새 할 일"
-									: "새 일정"}
+									? t("새 할 일")
+									: t("새 일정")}
 						</SheetTitle>
-						<SheetDescription>
-							바로 입력하거나 마이크를 눌러 말하세요.
+						<SheetDescription className="sr-only">
+							{t("빠른 기록")}
 						</SheetDescription>
 					</SheetHeader>
 					<QuickCapture
@@ -329,10 +332,10 @@ export function MobileNavigation() {
 						autoFocus
 						placeholder={
 							composerKind === "note"
-								? "무엇을 기억할까요?"
+								? t("무엇을 기억할까요?")
 								: composerKind === "task"
-									? "무엇을 해야 하나요?"
-									: "무슨 일정인가요?"
+									? t("무엇을 해야 하나요?")
+									: t("무슨 일정인가요?")
 						}
 						className="border-0 bg-transparent p-0 shadow-none"
 						onSubmitted={() => {

@@ -1,3 +1,4 @@
+import { type Locale, translate } from "../i18n";
 import type { OrbitItem, ScheduleCategory } from "./schema";
 
 export const DEFAULT_SCHEDULE_CATEGORIES: ScheduleCategory[] = [
@@ -22,4 +23,19 @@ export function visibleScheduleCategory(
 		(item.type !== "event" && item.type !== "task") ||
 		!hidden.includes(item.category ?? "uncategorized")
 	);
+}
+
+// Only built-in names on reserved IDs are UI labels. Renamed/custom names stay intact.
+export function scheduleCategoryLabel(
+	category: Pick<ScheduleCategory, "id" | "name">,
+	locale: Locale,
+) {
+	const builtIn =
+		category.id === "uncategorized"
+			? "미분류"
+			: DEFAULT_SCHEDULE_CATEGORIES.find((entry) => entry.id === category.id)
+					?.name;
+	return category.name === builtIn
+		? translate(locale, category.name)
+		: category.name;
 }

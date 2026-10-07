@@ -152,18 +152,18 @@ export function formatUpdated(value: string) {
 	return value.replace("T", " ").slice(0, 16).replaceAll("-", ".");
 }
 
-const dateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
+const dateTimeOptions: Intl.DateTimeFormatOptions = {
 	year: "numeric",
 	month: "2-digit",
 	day: "2-digit",
 	hour: "2-digit",
 	minute: "2-digit",
-});
+};
 
-export function formatDateTime(value: string) {
+export function formatDateTime(value: string, locale = "ko-KR") {
 	const date = new Date(value);
 	if (Number.isNaN(date.getTime())) return formatUpdated(value);
-	return dateTimeFormatter.format(date);
+	return new Intl.DateTimeFormat(locale, dateTimeOptions).format(date);
 }
 
 export function formatDayKey(date = new Date()) {

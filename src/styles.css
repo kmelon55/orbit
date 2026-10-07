@@ -207,6 +207,38 @@
 	}
 }
 
+/* Move the text on the compositor; changing margins during scroll relayouts it. */
+@supports (animation-timeline: --calendar-week-x) {
+	[data-calendar-week-scroll] {
+		scroll-timeline: --calendar-week-x x;
+	}
+
+	.calendar-header-content {
+		animation: orbit-calendar-scroll-content 1s linear both;
+		animation-timeline: --calendar-week-x;
+		will-change: transform;
+	}
+}
+
+@supports not (animation-timeline: --calendar-week-x) {
+	.calendar-header-content {
+		margin-left: clamp(
+			0px,
+			calc(var(--calendar-scroll-left, 0px) - var(--calendar-content-start)),
+			calc(100% - 80px)
+		);
+	}
+}
+
+@keyframes orbit-calendar-scroll-content {
+	from {
+		transform: translateX(0);
+	}
+	to {
+		transform: translateX(var(--calendar-content-travel));
+	}
+}
+
 @keyframes orbit-task-check-draw {
 	to {
 		stroke-dashoffset: 0;

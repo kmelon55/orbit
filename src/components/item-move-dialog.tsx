@@ -4,6 +4,7 @@ import { useState } from "react";
 import { folderColor } from "#/lib/orbit/folder-colors";
 import { folderOf, spaceConfig } from "#/lib/orbit/para";
 import type { OrbitItem, OrbitSnapshot, OrbitSpace } from "#/lib/orbit/schema";
+import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -33,6 +34,8 @@ export function ItemMoveDialog({
 	onOpenChange: (open: boolean) => void;
 	onMove: MoveDestination;
 }) {
+	const { t } = useI18n();
+
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent
@@ -40,14 +43,14 @@ export function ItemMoveDialog({
 				onOpenAutoFocus={(event) => {
 					event.preventDefault();
 					(event.target as HTMLElement)
-						.querySelector<HTMLInputElement>('input[aria-label="폴더 검색"]')
+						.querySelector<HTMLInputElement>("input[data-folder-search]")
 						?.focus();
 				}}
 			>
 				<DialogHeader className="flex-row items-center border-b px-4 py-3">
 					<div className="min-w-0 flex-1">
 						<DialogTitle>
-							{item.type === "task" ? "소속 변경" : "옮기기"}
+							{item.type === "task" ? t("소속 변경") : t("옮기기")}
 						</DialogTitle>
 						<DialogDescription className="truncate">
 							{item.title}
@@ -56,7 +59,7 @@ export function ItemMoveDialog({
 					<Button
 						variant="ghost"
 						size="icon-sm"
-						aria-label="옮기기 닫기"
+						aria-label={t("옮기기 닫기")}
 						onClick={() => onOpenChange(false)}
 					>
 						<X />
@@ -84,6 +87,8 @@ export function ItemLocation({
 	snapshot: OrbitSnapshot;
 	onMove: MoveDestination;
 }) {
+	const { t } = useI18n();
+
 	const [open, setOpen] = useState(false);
 	const folder = folderOf(item);
 	const config = spaceConfig(item.space);
@@ -103,11 +108,11 @@ export function ItemLocation({
 		>
 			<button
 				type="button"
-				aria-label={`${item.title} 소속 변경`}
+				aria-label={t("{0} 소속 변경", [item.title])}
 				title={
 					assigned
 						? `${config?.korean ?? ""}${folder ? ` / ${folder}` : ""}`
-						: "프로젝트·영역에 연결"
+						: t("프로젝트·영역에 연결")
 				}
 				className={cn(
 					"flex min-h-7 min-w-0 items-center gap-1 rounded px-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring",
@@ -126,7 +131,7 @@ export function ItemLocation({
 				<span className="truncate">
 					{assigned
 						? (folder?.split("/").at(-1) ?? config?.korean)
-						: "프로젝트·영역"}
+						: t("프로젝트·영역")}
 				</span>
 				{assigned ? <ChevronDown className="size-3 shrink-0" /> : null}
 			</button>
@@ -136,7 +141,7 @@ export function ItemLocation({
 						to={config.folderHref}
 						params={{ folder }}
 						className="grid size-7 shrink-0 place-items-center rounded text-muted-foreground hover:bg-accent"
-						aria-label={`${folder} 폴더 열기`}
+						aria-label={t("{0} 폴더 열기", [folder])}
 					>
 						<ArrowUpRight className="size-3.5" />
 					</Link>
@@ -144,7 +149,7 @@ export function ItemLocation({
 					<Link
 						to={config.href}
 						className="grid size-7 shrink-0 place-items-center rounded text-muted-foreground hover:bg-accent"
-						aria-label={`${config.korean} 열기`}
+						aria-label={t("{0} 열기", [config.korean])}
 					>
 						<ArrowUpRight className="size-3.5" />
 					</Link>

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import type { OrbitSnapshot } from "#/lib/orbit/schema";
 import { AppSidebar } from "@/components/app-sidebar";
 import { GlobalSearch } from "@/components/global-search";
+import { useI18n } from "@/components/locale-provider";
 import { MobileNavigation } from "@/components/mobile-navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,27 +14,28 @@ import {
 } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-function pageTitle(pathname: string) {
-	if (pathname === "/") return "Today";
-	if (pathname === "/inbox") return "Inbox";
-	if (pathname === "/mail") return "Mail";
-	if (pathname === "/capture") return "빠른 기록";
-	if (pathname === "/tasks") return "Tasks";
-	if (pathname.startsWith("/calendar")) return "Calendar";
-	if (pathname === "/archive") return "Archive";
-	if (pathname.startsWith("/whiteboards")) return "Whiteboards";
+function pageTitle(pathname: string, t: (message: string) => string) {
+	if (pathname === "/") return t("Today");
+	if (pathname === "/inbox") return t("Inbox");
+	if (pathname === "/mail") return t("Mail");
+	if (pathname === "/capture") return t("빠른 기록");
+	if (pathname === "/tasks") return t("Tasks");
+	if (pathname === "/routines") return t("Routines");
+	if (pathname.startsWith("/calendar")) return t("Calendar");
+	if (pathname === "/archive") return t("Archive");
+	if (pathname.startsWith("/whiteboards")) return t("Whiteboards");
 	if (pathname.startsWith("/projects/")) {
 		return decodeURIComponent(pathname.slice("/projects/".length));
 	}
-	if (pathname === "/projects") return "Projects";
+	if (pathname === "/projects") return t("Projects");
 	if (pathname.startsWith("/areas/")) {
 		return decodeURIComponent(pathname.slice("/areas/".length));
 	}
-	if (pathname === "/areas") return "Areas";
+	if (pathname === "/areas") return t("Areas");
 	if (pathname.startsWith("/resources/")) {
 		return decodeURIComponent(pathname.slice("/resources/".length));
 	}
-	if (pathname === "/resources") return "Resources";
+	if (pathname === "/resources") return t("Resources");
 	return "Orbit";
 }
 
@@ -44,6 +46,8 @@ export function AppShell({
 	children: ReactNode;
 	snapshot: OrbitSnapshot;
 }) {
+	const { t } = useI18n();
+
 	const pathname = useRouterState({
 		select: (state) => state.location.pathname,
 	});
@@ -61,10 +65,10 @@ export function AppShell({
 								Orbit
 							</span>
 							<span className="hidden text-muted-foreground md:inline">/</span>
-							<h1 className="truncate font-medium">{pageTitle(pathname)}</h1>
+							<h1 className="truncate font-medium">{pageTitle(pathname, t)}</h1>
 						</div>
 						<nav
-							aria-label="빠른 이동"
+							aria-label={t("빠른 이동")}
 							className="ml-auto flex shrink-0 items-center gap-1"
 						>
 							<GlobalSearch snapshot={snapshot} />
@@ -77,7 +81,7 @@ export function AppShell({
 									to="/mail"
 									aria-current={pathname === "/mail" ? "page" : undefined}
 								>
-									<Mail /> 메일
+									<Mail /> {t("메일")}
 								</Link>
 							</Button>
 							<Button
@@ -90,7 +94,7 @@ export function AppShell({
 									to="/tasks"
 									aria-current={pathname === "/tasks" ? "page" : undefined}
 								>
-									<ListTodo /> 할 일
+									<ListTodo /> {t("할 일")}
 								</Link>
 							</Button>
 						</nav>

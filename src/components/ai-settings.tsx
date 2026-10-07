@@ -5,6 +5,7 @@ import {
 	removeAiKey,
 	saveAiKey,
 } from "#/lib/orbit/ai-functions";
+import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import {
 	DialogDescription,
@@ -16,6 +17,8 @@ import { Input } from "@/components/ui/input";
 type Status = Awaited<ReturnType<typeof loadAiSettings>>;
 
 export function AiSettings() {
+	const { t, errorText } = useI18n();
+
 	const [status, setStatus] = useState<Status>();
 	const [key, setKey] = useState("");
 	const [busy, setBusy] = useState(false);
@@ -43,10 +46,10 @@ export function AiSettings() {
 		try {
 			setStatus(await saveAiKey({ data: { key: key.trim() } }));
 			setKey("");
-			setMessage("연결을 확인하고 키를 저장했습니다.");
+			setMessage(t("연결을 확인하고 키를 저장했습니다."));
 		} catch (cause) {
 			setError(
-				cause instanceof Error ? cause.message : "키를 저장하지 못했습니다.",
+				cause instanceof Error ? cause.message : t("키를 저장하지 못했습니다."),
 			);
 		} finally {
 			setBusy(false);
@@ -60,9 +63,9 @@ export function AiSettings() {
 		setMessage("");
 		try {
 			setStatus(await removeAiKey());
-			setMessage("저장된 키를 삭제했습니다.");
+			setMessage(t("저장된 키를 삭제했습니다."));
 		} catch {
-			setError("키를 삭제하지 못했습니다.");
+			setError(t("키를 삭제하지 못했습니다."));
 		} finally {
 			setBusy(false);
 		}
@@ -73,7 +76,9 @@ export function AiSettings() {
 			<DialogHeader className="pr-10">
 				<DialogTitle>AI</DialogTitle>
 				<DialogDescription>
-					Vercel AI Gateway 키를 연결하면 Orbit 자료에 질문할 수 있습니다.
+					{t(
+						"Vercel AI Gateway 키를 연결하면 Orbit 자료에 질문할 수 있습니다.",
+					)}
 				</DialogDescription>
 			</DialogHeader>
 			<div className="mt-7 grid gap-5">
@@ -85,12 +90,12 @@ export function AiSettings() {
 					)}
 					<span>
 						{!status
-							? "설정 확인 중…"
+							? t("설정 확인 중…")
 							: status.saved
-								? "Gateway 키가 저장되어 있습니다"
+								? t("Gateway 키가 저장되어 있습니다")
 								: status.configured
-									? "환경 변수로 연결되어 있습니다"
-									: "Gateway 키가 없습니다"}
+									? t("환경 변수로 연결되어 있습니다")
+									: t("Gateway 키가 없습니다")}
 					</span>
 				</div>
 				<form
@@ -101,7 +106,7 @@ export function AiSettings() {
 					className="grid gap-2"
 				>
 					<label htmlFor="orbit-ai-key" className="text-sm font-medium">
-						Gateway API 키
+						{t("Gateway API 키")}
 					</label>
 					<Input
 						id="orbit-ai-key"
@@ -109,16 +114,21 @@ export function AiSettings() {
 						autoComplete="off"
 						value={key}
 						onChange={(event) => setKey(event.target.value)}
-						placeholder={status?.saved ? "새 키로 교체" : "API 키 입력"}
+						placeholder={status?.saved ? t("새 키로 교체") : t("API 키 입력")}
 						className="h-10"
 					/>
 					<p className="text-xs leading-5 text-muted-foreground">
-						저장할 때 모델 목록으로 키를 확인합니다. 키는 서버의 암호화된
-						저장소에 보관하고 다시 표시하지 않습니다.
+						{t(
+							"저장할 때 모델 목록으로 키를 확인합니다. 키는 서버의 암호화된 저장소에 보관하고 다시 표시하지 않습니다.",
+						)}
 					</p>
 					<div className="flex gap-2">
 						<Button type="submit" disabled={busy || key.trim().length < 10}>
-							{busy ? "확인 중…" : status?.saved ? "키 교체" : "키 저장"}
+							{busy
+								? t("확인 중…")
+								: status?.saved
+									? t("키 교체")
+									: t("키 저장")}
 						</Button>
 						{status?.saved ? (
 							<Button
@@ -127,18 +137,20 @@ export function AiSettings() {
 								disabled={busy}
 								onClick={() => void remove()}
 							>
-								키 삭제
+								{t("키 삭제")}
 							</Button>
 						) : null}
 					</div>
 				</form>
 				{error ? (
 					<p role="alert" className="text-sm text-destructive">
-						{error}
+						{errorText(error)}
 					</p>
 				) : null}
 				{message ? (
-					<output className="text-sm text-muted-foreground">{message}</output>
+					<output className="text-sm text-muted-foreground">
+						{t(message)}
+					</output>
 				) : null}
 			</div>
 		</>

@@ -1,5 +1,6 @@
 import { Check, ChevronsUpDown, RotateCw, Search } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -23,6 +24,8 @@ export function AiModelSelector({
 	loading: boolean;
 	onRefresh: () => void;
 }) {
+	const { t } = useI18n();
+
 	const [open, setOpen] = useState(false);
 	const [filter, setFilter] = useState("");
 	const filtered = useMemo(() => {
@@ -46,12 +49,12 @@ export function AiModelSelector({
 					variant="outline"
 					size="sm"
 					disabled={disabled}
-					aria-label="AI 모델 선택"
+					aria-label={t("AI 모델 선택")}
 					aria-expanded={open}
 					className="h-7 max-w-64 min-w-0 justify-between gap-2 px-2 text-xs font-normal"
 				>
 					<span className="truncate">
-						{value || (loading ? "모델 불러오는 중…" : "모델 선택")}
+						{value || (loading ? t("모델 불러오는 중…") : t("모델 선택"))}
 					</span>
 					<ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
 				</Button>
@@ -59,7 +62,7 @@ export function AiModelSelector({
 			<PopoverContent
 				align="start"
 				className="w-72 max-w-[calc(100vw-2rem)] p-1"
-				aria-label="AI 모델 목록"
+				aria-label={t("AI 모델 목록")}
 			>
 				<div className="flex items-center gap-2 border-b px-2 pb-1">
 					<Search className="size-3.5 shrink-0 text-muted-foreground" />
@@ -67,16 +70,16 @@ export function AiModelSelector({
 						autoFocus
 						value={filter}
 						onChange={(event) => setFilter(event.target.value)}
-						placeholder="Gateway 모델 검색"
-						aria-label="AI 모델 검색"
+						placeholder={t("Gateway 모델 검색")}
+						aria-label={t("AI 모델 검색")}
 						className="h-8 min-w-0 flex-1 border-0 px-0 text-xs shadow-none focus-visible:ring-0"
 					/>
 					<button
 						type="button"
 						onClick={onRefresh}
 						disabled={loading}
-						aria-label="Gateway 모델 목록 새로고침"
-						title="Gateway 모델 목록 새로고침"
+						aria-label={t("Gateway 모델 목록 새로고침")}
+						title={t("Gateway 모델 목록 새로고침")}
 						className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent disabled:opacity-50"
 					>
 						<RotateCw
@@ -87,7 +90,7 @@ export function AiModelSelector({
 				<div
 					className="max-h-64 overflow-y-auto py-1"
 					role="listbox"
-					aria-label="AI 모델"
+					aria-label={t("AI 모델")}
 				>
 					{filtered.length ? (
 						filtered.map((model) => (
@@ -111,12 +114,13 @@ export function AiModelSelector({
 						))
 					) : (
 						<p className="px-2 py-4 text-center text-xs text-muted-foreground">
-							일치하는 모델이 없습니다.
+							{t("일치하는 모델이 없습니다.")}
 						</p>
 					)}
 				</div>
 				<div className="border-t px-2 py-1.5 text-[11px] text-muted-foreground">
-					Vercel AI Gateway · {filtered.length}개 모델
+					Vercel AI Gateway · {filtered.length}
+					{t("개 모델")}
 				</div>
 			</PopoverContent>
 		</Popover>

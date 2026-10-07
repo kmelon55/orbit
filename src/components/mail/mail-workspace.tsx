@@ -42,6 +42,7 @@ import {
 	type MailMessage,
 } from "#/lib/mail/types";
 import type { MailSearch } from "#/lib/orbit/navigation-search";
+import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -55,6 +56,10 @@ import { MailThreadMessage } from "./mail-thread-message";
 import { useMailList } from "./use-mail-list";
 
 export function MailWorkspace({ demo = false }: { demo?: boolean }) {
+	const { t, intlLocale, errorText } = useI18n();
+	const errorTextRef = useRef(errorText);
+	errorTextRef.current = errorText;
+
 	const location = useSearch({ from: "/mail" });
 	const navigate = useNavigate({ from: "/mail" });
 	const router = useRouter();
@@ -284,7 +289,9 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 						}
 					} catch (e) {
 						toast.error(
-							e instanceof Error ? e.message : "읽음 처리에 실패했습니다.",
+							errorTextRef.current(
+								e instanceof Error ? e.message : "읽음 처리에 실패했습니다.",
+							),
 						);
 					}
 				}
@@ -363,7 +370,9 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 				void refreshStatus().catch(() => {});
 			if (kind === "block")
 				toast.success(
-					"발신자를 차단했습니다. 앞으로 동기화되는 메일은 스팸함으로 이동합니다.",
+					t(
+						"발신자를 차단했습니다. 앞으로 동기화되는 메일은 스팸함으로 이동합니다.",
+					),
 				);
 		} catch (error) {
 			if (mailScopeRef.current === scope) {
@@ -383,7 +392,9 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 			if (selectedRef.current === target.id && originalDetail)
 				setDetail(originalDetail);
 			toast.error(
-				error instanceof Error ? error.message : "처리하지 못했습니다.",
+				error instanceof Error
+					? errorText(error.message)
+					: t("처리하지 못했습니다."),
 			);
 		} finally {
 			finish();
@@ -398,7 +409,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 		mode: "reply" | "all" | "forward",
 	) {
 		const generation = ++composeGeneration.current;
-		const notice = toast.loading("메일을 불러오는 중…");
+		const notice = toast.loading(t("메일을 불러오는 중…"));
 		try {
 			const original =
 				detail?.id === message.id
@@ -412,7 +423,9 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 			setCompose(mode);
 		} catch (error) {
 			toast.error(
-				error instanceof Error ? error.message : "메일을 불러오지 못했습니다.",
+				error instanceof Error
+					? errorText(error.message)
+					: t("메일을 불러오지 못했습니다."),
 			);
 		} finally {
 			toast.dismiss(notice);
@@ -425,10 +438,12 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 				address: message.from[0]?.address,
 			});
 			await refreshStatus();
-			toast.success("발신자 차단을 해제했습니다.");
+			toast.success(t("발신자 차단을 해제했습니다."));
 		} catch (error) {
 			toast.error(
-				error instanceof Error ? error.message : "차단을 해제하지 못했습니다.",
+				error instanceof Error
+					? errorText(error.message)
+					: t("차단을 해제하지 못했습니다."),
 			);
 		}
 	}
@@ -481,25 +496,32 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 		: 0;
 	const syncLabel = busy
 		? search
-			? "검색 중…"
-			: "최신화 중…"
+			? t("검색 중…")
+			: t("최신화 중…")
 		: syncFailed
-			? "연결 확인"
+			? t("연결 확인")
 			: "";
 	const syncDescription = busy
-		? `${syncLabel}${syncing.length ? ` ${syncing.length}개 계정` : ""}`
+		? `${syncLabel}${syncing.length ? t("{0}개 계정", [syncing.length]) : ""}`
 		: syncFailed
-			? "일부 계정을 최신화하지 못했습니다"
+			? t("일부 계정을 최신화하지 못했습니다")
 			: lastUpdated
-				? `${new Date(lastUpdated).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })} 최신화 · 새로고침`
-				: "메일 새로고침";
+				? t("{0} 최신화 · 새로고침", [
+						new Date(lastUpdated).toLocaleTimeString(intlLocale, {
+							hour: "2-digit",
+							minute: "2-digit",
+						}),
+					])
+				: t("메일 새로고침");
 
 	return (
 		<div className="flex h-full min-h-0 flex-col">
 			{demo && (
 				<div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/40 px-4 py-1.5 text-xs text-muted-foreground">
-					<span className="font-medium text-foreground">데모 메일함</span>
-					<span className="flex-1">실제로 발송되지 않습니다</span>
+					<span className="font-medium text-foreground">
+						{t("데모 메일함")}
+					</span>
+					<span className="flex-1">{t("실제로 발송되지 않습니다")}</span>
 					<Button
 						size="sm"
 						variant="ghost"
@@ -508,10 +530,10 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 							window.location.href = "/mail?demo=1";
 						}}
 					>
-						초기화
+						{t("초기화")}
 					</Button>
 					<a className="underline underline-offset-4" href="/mail">
-						데모 닫기
+						{t("데모 닫기")}
 					</a>
 				</div>
 			)}
@@ -540,9 +562,9 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 				<div className="relative order-last w-full min-w-0 flex-[1_0_100%] sm:order-none sm:w-auto sm:flex-1">
 					<Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
 					<Input
-						aria-label="메일 검색"
+						aria-label={t("메일 검색")}
 						className="pl-8 pr-9"
-						placeholder="이 메일함에서 검색"
+						placeholder={t("이 메일함에서 검색")}
 						maxLength={200}
 						onCompositionStart={() => {
 							composing.current = true;
@@ -585,7 +607,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 						<Button
 							variant="ghost"
 							size="icon"
-							aria-label="검색 지우기"
+							aria-label={t("검색 지우기")}
 							className="absolute right-0 top-0 size-9"
 							onClick={() => {
 								if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -625,14 +647,14 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 				<Button
 					variant="ghost"
 					size="icon"
-					aria-label="메일 설정"
+					aria-label={t("메일 설정")}
 					onClick={() => setSettings(true)}
 				>
 					<Settings className="size-4" />
 				</Button>
 				<Button
 					size="sm"
-					aria-label="메일 쓰기"
+					aria-label={t("메일 쓰기")}
 					disabled={!status?.accounts.length}
 					onClick={() => {
 						composeGeneration.current++;
@@ -641,7 +663,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 					}}
 				>
 					<Pencil className="size-4" />
-					<span className="hidden sm:inline">메일 쓰기</span>
+					<span className="hidden sm:inline">{t("메일 쓰기")}</span>
 				</Button>
 			</div>
 			<div
@@ -659,7 +681,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 							updateLocation({ folder: f, message: undefined });
 						}}
 					>
-						{folderLabels[f]}
+						{t(folderLabels[f])}
 					</Button>
 				))}
 			</div>
@@ -669,14 +691,15 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 					role="alert"
 					className="border-b bg-destructive/5 px-4 py-2 text-xs text-destructive"
 				>
-					{status?.accounts.find((a) => a.id === id)?.email}: {message}{" "}
+					{status?.accounts.find((a) => a.id === id)?.email}:{" "}
+					{errorText(message)}{" "}
 					<Button
 						variant="ghost"
 						size="sm"
 						disabled={busy}
 						onClick={() => void refresh()}
 					>
-						다시 시도
+						{t("다시 시도")}
 					</Button>
 				</div>
 			))}
@@ -685,7 +708,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 					role="alert"
 					className="border-b bg-destructive/5 px-4 py-2 text-sm text-destructive"
 				>
-					{error}
+					{errorText(error)}
 				</div>
 			)}
 			{noAccounts ? (
@@ -694,18 +717,17 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 						<Mail className="size-8 text-muted-foreground" />
 					</div>
 					<div>
-						<h2 className="font-semibold">메일도 Orbit에서</h2>
-						<p className="mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
-							Gmail, iCloud, 네이버 메일을 한곳에서 읽고 답장하세요.
-						</p>
+						<h2 className="font-semibold">{t("연결된 메일 계정 없음")}</h2>
 					</div>
 					<div className="flex items-center gap-3">
-						<Button onClick={() => setSettings(true)}>메일 계정 연결</Button>
+						<Button onClick={() => setSettings(true)}>
+							{t("메일 계정 연결")}
+						</Button>
 						<a
 							href="/mail?demo=1"
 							className="text-sm text-muted-foreground underline underline-offset-4"
 						>
-							데모 둘러보기
+							{t("데모 둘러보기")}
 						</a>
 					</div>
 				</div>
@@ -720,7 +742,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 						{messages.length === 0 && busy ? (
 							<output
 								className="block space-y-5 p-4"
-								aria-label="메일 목록 불러오는 중"
+								aria-label={t("메일 목록 불러오는 중")}
 							>
 								{[1, 2, 3, 4, 5].map((i) => (
 									<div key={i} className="space-y-2">
@@ -734,12 +756,12 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 							messages.length === 0 && (
 								<p className="p-8 text-center text-sm text-muted-foreground">
 									{busy
-										? "메일을 불러오는 중…"
+										? t("메일을 불러오는 중…")
 										: activeAccounts.length === 0
-											? "표시할 메일 계정을 선택해 주세요."
+											? t("선택된 메일 계정 없음")
 											: search
-												? "검색 결과가 없습니다."
-												: "메일이 없습니다."}
+												? t("검색 결과가 없습니다.")
+												: t("메일이 없습니다.")}
 								</p>
 							)
 						)}
@@ -768,16 +790,16 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 											)}
 										>
 											{m.from.map((a) => a.name || a.address).join(", ") ||
-												"보낸 사람 없음"}
+												t("보낸 사람 없음")}
 										</span>
 										{unread && (
 											<span
 												className="size-1.5 shrink-0 rounded-full bg-primary"
-												title="읽지 않음"
+												title={t("읽지 않음")}
 											/>
 										)}
 										<span className="shrink-0 text-[11px] text-muted-foreground">
-											{new Date(m.date).toLocaleDateString("ko-KR", {
+											{new Date(m.date).toLocaleDateString(intlLocale, {
 												month: "numeric",
 												day: "numeric",
 											})}
@@ -809,7 +831,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 												);
 												return a
 													? matchingAddresses(m, a).join(", ") ||
-															`${a.email} · 수신 주소 미확인`
+															t("{0} · 수신 주소 미확인", [a.email])
 													: "";
 											})()}
 										</span>
@@ -825,7 +847,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 								className="m-3"
 								onClick={() => void refresh(true, true)}
 							>
-								이전 메일 더 보기
+								{t("이전 메일 더 보기")}
 							</Button>
 						)}
 					</div>
@@ -840,7 +862,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 								<Button
 									variant="ghost"
 									size="icon"
-									aria-label="메일 목록으로"
+									aria-label={t("메일 목록으로")}
 									className="md:hidden"
 									onClick={closeMessage}
 								>
@@ -857,13 +879,13 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 									}}
 								>
 									<Reply className="size-4" />
-									답장
+									{t("답장")}
 								</Button>
 								<Button
 									variant="ghost"
 									size="sm"
 									disabled={!detail || mutating}
-									aria-label="전체 답장"
+									aria-label={t("전체 답장")}
 									onClick={() => {
 										composeGeneration.current++;
 										setComposeOriginal(null);
@@ -871,13 +893,13 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 									}}
 								>
 									<ReplyAll className="size-4" />
-									<span className="hidden sm:inline">전체 답장</span>
+									<span className="hidden sm:inline">{t("전체 답장")}</span>
 								</Button>
 								<Button
 									variant="ghost"
 									size="sm"
 									disabled={!detail || mutating}
-									aria-label="전달"
+									aria-label={t("전달")}
 									onClick={() => {
 										composeGeneration.current++;
 										setComposeOriginal(null);
@@ -885,7 +907,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 									}}
 								>
 									<Forward className="size-4" />
-									<span className="hidden sm:inline">전달</span>
+									<span className="hidden sm:inline">{t("전달")}</span>
 								</Button>
 								<div className="flex-1" />
 								{detail &&
@@ -894,7 +916,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 										<Button
 											variant="ghost"
 											size="icon"
-											aria-label="메일 더 보기"
+											aria-label={t("메일 더 보기")}
 										>
 											<MoreHorizontal className="size-4" />
 										</Button>,
@@ -904,7 +926,9 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 									variant="ghost"
 									size="icon"
 									aria-label={
-										detail?.unread ? "읽음으로 표시" : "읽지 않음으로 표시"
+										detail?.unread
+											? t("읽음으로 표시")
+											: t("읽지 않음으로 표시")
 									}
 									disabled={!detail || mutating}
 									onClick={() =>
@@ -916,7 +940,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 								<Button
 									variant="ghost"
 									size="icon"
-									aria-label="메일 보관"
+									aria-label={t("메일 보관")}
 									disabled={!detail || mutating || detail.folder === "archive"}
 									onClick={() => void action("archive")}
 								>
@@ -925,7 +949,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 								<Button
 									variant="ghost"
 									size="icon"
-									aria-label="휴지통으로 이동"
+									aria-label={t("휴지통으로 이동")}
 									disabled={!detail || mutating || detail.folder === "trash"}
 									onClick={() => void action("trash")}
 								>
@@ -937,23 +961,26 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 							<div className="shrink-0 border-b bg-muted/15 p-3">
 								<div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
 									<MessagesSquare className="size-3.5" />
-									대화 {thread.length > 1 ? `· ${thread.length}개 메일` : ""}
+									{t("대화")}
+									{thread.length > 1 ? t("· {0}개 메일", [thread.length]) : ""}
 									{threadLoading && (
 										<span className="flex items-center gap-1">
 											<RefreshCw className="size-3 animate-spin" />
-											이전 대화 확인 중…
+											{t("이전 대화 확인 중…")}
 										</span>
 									)}
 								</div>
 
 								{threadError ? (
 									<p className="text-xs text-destructive">
-										이전 대화를 모두 확인하지 못했습니다. {threadError}
+										{t("이전 대화를 모두 확인하지 못했습니다.")}
+										{errorText(threadError)}
 									</p>
 								) : threadIncomplete ? (
 									<p className="text-xs text-muted-foreground">
-										불러온 메일 범위의 대화입니다. 이전 메일이 더 있을 수
-										있습니다.
+										{t(
+											"불러온 메일 범위의 대화입니다. 이전 메일이 더 있을 수 있습니다.",
+										)}
 									</p>
 								) : null}
 							</div>
@@ -962,7 +989,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 							<section
 								key={selected}
 								className="min-h-0 flex-1 overflow-y-auto bg-muted/25"
-								aria-label="대화 전체"
+								aria-label={t("대화 전체")}
 							>
 								<div className="border-b bg-background px-5 py-4">
 									<h2 className="text-lg font-semibold">
@@ -972,7 +999,9 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 										)}
 									</h2>
 									<p className="mt-1 text-xs text-muted-foreground">
-										오래된 메일부터 · {activeThread.length}개 메일
+										{t("오래된 메일부터 ·")}
+										{activeThread.length}
+										{t("개 메일")}
 									</p>
 								</div>
 								<div className="mx-auto max-w-5xl space-y-6 px-3 py-5 sm:px-6 sm:py-6">
@@ -1015,7 +1044,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 								</p>
 								<output className="flex items-center gap-2 text-xs text-muted-foreground">
 									<RefreshCw className="size-3 animate-spin" />
-									본문을 불러오는 중…
+									{t("본문을 불러오는 중…")}
 								</output>
 								<Skeleton className="h-4 w-4/5" />
 								<Skeleton className="h-4 w-full" />
@@ -1024,14 +1053,14 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 						) : detailError ? (
 							<div className="p-8">
 								<p role="alert" className="text-sm text-destructive">
-									{detailError}
+									{errorText(detailError)}
 								</p>
 								<Button
 									variant="outline"
 									className="mt-3"
 									onClick={() => setDetailRetry((v) => v + 1)}
 								>
-									다시 열기
+									{t("다시 열기")}
 								</Button>
 							</div>
 						) : detail ? (
@@ -1045,7 +1074,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 							</div>
 						) : (
 							<div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-								메일을 선택하세요.
+								{t("선택된 메일 없음")}
 							</div>
 						)}
 					</div>

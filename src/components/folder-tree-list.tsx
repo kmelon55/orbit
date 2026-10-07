@@ -26,6 +26,7 @@ import {
 	treeMoveEntries,
 } from "#/lib/orbit/tree-move";
 import { cn } from "#/lib/utils";
+import { useI18n } from "@/components/locale-provider";
 
 const ROW_HEIGHT = 34;
 
@@ -50,6 +51,8 @@ export function FolderTreeList({
 	renderFolder: (row: FolderRow) => ReactNode;
 	renderNote: (item: OrbitItem, depth: number) => ReactNode;
 }) {
+	const { t, errorText } = useI18n();
+
 	const [dragKey, setDragKey] = useState<string>();
 	const dragIntent = useTreeDragIntent();
 	const suppressClick = useRef(false);
@@ -141,7 +144,7 @@ export function FolderTreeList({
 			await onMove(input);
 		} catch (error) {
 			setMoveError(
-				error instanceof Error ? error.message : "이동하지 못했습니다.",
+				error instanceof Error ? error.message : t("이동하지 못했습니다."),
 			);
 		} finally {
 			setPreview(undefined);
@@ -198,7 +201,9 @@ export function FolderTreeList({
 	return (
 		<div className="relative flex min-h-0 flex-1 flex-col">
 			{moveError ? (
-				<output className="px-3 text-xs text-destructive">{moveError}</output>
+				<output className="px-3 text-xs text-destructive">
+					{errorText(moveError)}
+				</output>
 			) : null}
 			{dragKey ? (
 				<button
@@ -210,12 +215,12 @@ export function FolderTreeList({
 					onDragOver={(event) => dragOver(event)}
 					onDrop={(event) => void drop(event)}
 				>
-					최상위로 이동
+					{t("최상위로 이동")}
 				</button>
 			) : null}
 			<div
 				role="tree"
-				aria-label="폴더와 노트"
+				aria-label={t("폴더와 노트")}
 				aria-busy={Boolean(preview)}
 				onClickCapture={(event) => {
 					if (suppressClick.current && event.detail !== 0) {
@@ -366,8 +371,8 @@ export function FolderTreeList({
 				) : (
 					<div className="px-3 py-10 text-center text-sm leading-6 text-muted-foreground">
 						{query.trim()
-							? "검색 결과가 없습니다."
-							: "폴더나 노트를 만들어 시작하세요."}
+							? t("검색 결과가 없습니다.")
+							: t("폴더와 노트가 없습니다.")}
 					</div>
 				)}
 			</div>

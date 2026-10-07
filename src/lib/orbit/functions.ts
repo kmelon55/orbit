@@ -18,6 +18,17 @@ const mutateOrbitRequest = createServerFn({ method: "POST" })
 	.middleware([orbitAuthMiddleware])
 	.validator((input: unknown) => orbitMutationSchema.parse(input))
 	.handler(async ({ data }) => {
+		if (
+			data.action === "save-routine" ||
+			data.action === "set-routine-enabled" ||
+			data.action === "set-routine-status" ||
+			data.action === "delete-routine" ||
+			data.action === "move-routine" ||
+			data.action === "routine-timer"
+		) {
+			const { mutateRoutine } = await import("./routines.server");
+			return { result: await mutateRoutine(data), undo: null };
+		}
 		const {
 			withItemUndo,
 			saveScheduleCategory,

@@ -18,6 +18,8 @@ import { Dialog as DialogPrimitive, Switch as SwitchPrimitive } from "radix-ui";
 import { useState } from "react";
 import { AccountSettings } from "@/components/account-settings";
 import { AiSettings } from "@/components/ai-settings";
+import { LanguageSelect } from "@/components/language-select";
+import { useI18n } from "@/components/locale-provider";
 import { useTheme } from "@/components/theme-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +30,7 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "@/components/ui/dialog";
+
 import {
 	type NoteVimExitSequence,
 	useNoteVimPreference,
@@ -55,6 +58,8 @@ const exitSequences: Array<{
 ];
 
 function InstallSettings() {
+	const { t } = useI18n();
+
 	const { ready, installed, platform, canInstall, install } = usePwaInstall();
 	const [installing, setInstalling] = useState(false);
 	const [message, setMessage] = useState<string>();
@@ -66,12 +71,12 @@ function InstallSettings() {
 		try {
 			const outcome = await install();
 			if (outcome === "dismissed") {
-				setMessage("설치를 취소했습니다. 원할 때 다시 시도할 수 있습니다.");
+				setMessage(t("설치를 취소했습니다. 원할 때 다시 시도할 수 있습니다."));
 			} else if (outcome === "unavailable") {
-				setMessage("브라우저 메뉴에서 앱 설치를 선택해 주세요.");
+				setMessage(t("브라우저 메뉴에서 앱 설치를 선택해 주세요."));
 			}
 		} catch {
-			setMessage("설치창을 열지 못했습니다. 브라우저 메뉴를 이용해 주세요.");
+			setMessage(t("설치창을 열지 못했습니다. 브라우저 메뉴를 이용해 주세요."));
 		} finally {
 			setInstalling(false);
 		}
@@ -80,9 +85,9 @@ function InstallSettings() {
 	return (
 		<>
 			<DialogHeader className="pr-10">
-				<DialogTitle>앱 설치</DialogTitle>
-				<DialogDescription>
-					Orbit을 홈 화면에 추가하면 브라우저 주소창 없이 앱처럼 열 수 있습니다.
+				<DialogTitle>{t("앱 설치")}</DialogTitle>
+				<DialogDescription className="sr-only">
+					{t("앱 설치 설정")}
 				</DialogDescription>
 			</DialogHeader>
 
@@ -92,10 +97,10 @@ function InstallSettings() {
 						<BadgeCheck className="mt-0.5 size-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
 						<div>
 							<h2 className="text-sm font-medium">
-								이 기기에 설치되어 있습니다
+								{t("이 기기에 설치되어 있습니다")}
 							</h2>
 							<p className="mt-1 text-xs leading-5 text-muted-foreground">
-								홈 화면이나 앱 목록에서 Orbit을 바로 열 수 있습니다.
+								{t("홈 화면이나 앱 목록에서 Orbit을 바로 열 수 있습니다.")}
 							</p>
 						</div>
 					</div>
@@ -104,9 +109,11 @@ function InstallSettings() {
 						<div className="flex items-start gap-3 rounded-xl border border-border/70 p-4">
 							<Smartphone className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
 							<div>
-								<h2 className="text-sm font-medium">iPhone 또는 iPad</h2>
+								<h2 className="text-sm font-medium">{t("iPhone 또는 iPad")}</h2>
 								<p className="mt-1 text-xs leading-5 text-muted-foreground">
-									iOS에서는 Safari 메뉴를 이용해 직접 홈 화면에 추가합니다.
+									{t(
+										"iOS에서는 Safari 메뉴를 이용해 직접 홈 화면에 추가합니다.",
+									)}
 								</p>
 							</div>
 						</div>
@@ -116,7 +123,8 @@ function InstallSettings() {
 									<Share className="size-4" />
 								</span>
 								<span>
-									Safari에서 <strong>공유</strong> 버튼을 누릅니다.
+									{t("Safari에서")}
+									<strong>{t("공유")}</strong> {t("버튼을 누릅니다.")}
 								</span>
 							</li>
 							<li className="flex items-center gap-3 rounded-xl bg-muted/55 p-3">
@@ -124,7 +132,8 @@ function InstallSettings() {
 									<SquarePlus className="size-4" />
 								</span>
 								<span>
-									<strong>홈 화면에 추가</strong>를 선택합니다.
+									<strong>{t("홈 화면에 추가")}</strong>
+									{t("를 선택합니다.")}
 								</span>
 							</li>
 							<li className="flex items-center gap-3 rounded-xl bg-muted/55 p-3">
@@ -132,7 +141,8 @@ function InstallSettings() {
 									3
 								</span>
 								<span>
-									<strong>웹 앱으로 열기</strong>를 켠 뒤 추가합니다.
+									<strong>{t("웹 앱으로 열기")}</strong>
+									{t("를 켠 뒤 추가합니다.")}
 								</span>
 							</li>
 						</ol>
@@ -144,12 +154,13 @@ function InstallSettings() {
 							<div>
 								<h2 className="text-sm font-medium">
 									{platform === "android"
-										? "Android 앱으로 설치"
-										: "이 기기에 설치"}
+										? t("Android 앱으로 설치")
+										: t("이 기기에 설치")}
 								</h2>
 								<p className="mt-1 text-xs leading-5 text-muted-foreground">
-									설치하면 홈 화면과 앱 목록에서 Orbit을 빠르게 실행할 수
-									있습니다.
+									{t(
+										"설치하면 홈 화면과 앱 목록에서 Orbit을 빠르게 실행할 수 있습니다.",
+									)}
 								</p>
 							</div>
 						</div>
@@ -160,13 +171,16 @@ function InstallSettings() {
 								disabled={installing}
 								onClick={() => void requestInstall()}
 							>
-								<Download /> {installing ? "설치창 여는 중" : "Orbit 설치"}
+								<Download />{" "}
+								{installing ? t("설치창 여는 중") : t("Orbit 설치")}
 							</Button>
 						) : (
 							<div className="rounded-xl bg-muted/55 p-4 text-xs leading-5 text-muted-foreground">
 								{ready
-									? "브라우저 메뉴에서 ‘앱 설치’ 또는 ‘홈 화면에 추가’를 선택해 주세요. 설치 조건이 충족되면 이곳에 설치 버튼이 나타납니다."
-									: "이 기기의 설치 가능 여부를 확인하고 있습니다."}
+									? t(
+											"브라우저 메뉴에서 ‘앱 설치’ 또는 ‘홈 화면에 추가’를 선택해 주세요. 설치 조건이 충족되면 이곳에 설치 버튼이 나타납니다.",
+										)
+									: t("이 기기의 설치 가능 여부를 확인하고 있습니다.")}
 							</div>
 						)}
 					</section>
@@ -174,7 +188,7 @@ function InstallSettings() {
 
 				{message ? (
 					<output className="block text-xs text-muted-foreground">
-						{message}
+						{t(message)}
 					</output>
 				) : null}
 			</div>
@@ -183,7 +197,9 @@ function InstallSettings() {
 }
 
 export function SettingsDialog() {
-	const [section, setSection] = useState<SettingsSection>("editor");
+	const { t } = useI18n();
+
+	const [section, setSection] = useState<SettingsSection>("appearance");
 	const { theme, setTheme } = useTheme();
 	const { vimEnabled, setVimEnabled, exitSequence, setExitSequence } =
 		useNoteVimPreference();
@@ -195,20 +211,20 @@ export function SettingsDialog() {
 					variant="ghost"
 					size="icon"
 					className="size-8 text-muted-foreground"
-					title="설정"
+					title={t("설정")}
 				>
 					<Settings className="size-4" />
-					<span className="sr-only">설정</span>
+					<span className="sr-only">{t("설정")}</span>
 				</Button>
 			</DialogTrigger>
 			<DialogContent className="overflow-y-auto p-0 sm:max-w-3xl">
 				<div className="grid min-h-[34rem] sm:grid-cols-[12rem_1fr]">
 					<aside className="border-b border-border/70 bg-muted/35 p-3 sm:border-r sm:border-b-0">
 						<div className="flex h-11 items-center px-2 text-sm font-semibold">
-							설정
+							{t("설정")}
 						</div>
 						<nav
-							aria-label="설정 메뉴"
+							aria-label={t("설정 메뉴")}
 							className="flex flex-wrap gap-1 sm:grid"
 						>
 							{navigation.map((item) => {
@@ -226,7 +242,7 @@ export function SettingsDialog() {
 										)}
 									>
 										<Icon className="size-4" />
-										{item.label}
+										{t(item.label)}
 									</button>
 								);
 							})}
@@ -239,7 +255,7 @@ export function SettingsDialog() {
 								variant="ghost"
 								size="icon"
 								className="absolute top-4 right-4 size-8 text-muted-foreground"
-								aria-label="설정 닫기"
+								aria-label={t("설정 닫기")}
 							>
 								<X className="size-4" />
 							</Button>
@@ -248,20 +264,31 @@ export function SettingsDialog() {
 						{section === "appearance" ? (
 							<>
 								<DialogHeader className="pr-10">
-									<DialogTitle>화면</DialogTitle>
-									<DialogDescription>
-										Orbit의 화면 테마를 선택합니다.
+									<DialogTitle>{t("화면")}</DialogTitle>
+									<DialogDescription className="sr-only">
+										{t("Orbit의 화면 테마를 선택합니다.")}
 									</DialogDescription>
 								</DialogHeader>
+								<div className="mt-7 grid gap-6">
+									<section className="grid gap-3">
+										<label
+											htmlFor="ui-language"
+											className="text-xs font-semibold text-muted-foreground"
+										>
+											{t("언어")}
+										</label>
+										<LanguageSelect />
+									</section>
+								</div>
 								<section className="mt-7 grid gap-3">
 									<h2 className="text-xs font-semibold text-muted-foreground">
-										테마
+										{t("테마")}
 									</h2>
 									<div className="grid grid-cols-3 gap-2">
 										{[
-											{ value: "light", label: "라이트", icon: Sun },
-											{ value: "dark", label: "다크", icon: Moon },
-											{ value: "system", label: "시스템", icon: Monitor },
+											{ value: "light", label: t("라이트"), icon: Sun },
+											{ value: "dark", label: t("다크"), icon: Moon },
+											{ value: "system", label: t("시스템"), icon: Monitor },
 										].map((option) => {
 											const Icon = option.icon;
 											return (
@@ -277,7 +304,7 @@ export function SettingsDialog() {
 													)}
 												>
 													<Icon className="size-5" />
-													{option.label}
+													{t(option.label)}
 												</button>
 											);
 										})}
@@ -287,15 +314,15 @@ export function SettingsDialog() {
 						) : section === "editor" ? (
 							<>
 								<DialogHeader className="pr-10">
-									<DialogTitle>에디터</DialogTitle>
-									<DialogDescription>
-										노트를 작성할 때 사용할 편집 방식을 설정합니다.
+									<DialogTitle>{t("에디터")}</DialogTitle>
+									<DialogDescription className="sr-only">
+										{t("노트를 작성할 때 사용할 편집 방식을 설정합니다.")}
 									</DialogDescription>
 								</DialogHeader>
 								<div className="mt-7 grid gap-6">
 									<section className="grid gap-3">
 										<h2 className="text-xs font-semibold text-muted-foreground">
-											모달 편집
+											{t("모달 편집")}
 										</h2>
 										<div className="flex items-start justify-between gap-5 rounded-xl border border-border/70 p-4">
 											<div className="grid gap-1">
@@ -303,10 +330,12 @@ export function SettingsDialog() {
 													htmlFor="note-vim-mode"
 													className="text-sm font-medium"
 												>
-													Vim 모드
+													{t("Vim 모드")}
 												</label>
 												<p className="text-xs leading-5 text-muted-foreground">
-													일반·입력·비주얼 모드와 Vim 이동 키를 사용합니다.
+													{t(
+														"일반·입력·비주얼 모드와 Vim 이동 키를 사용합니다.",
+													)}
 												</p>
 											</div>
 											<SwitchPrimitive.Root
@@ -322,11 +351,13 @@ export function SettingsDialog() {
 
 									<section className="grid gap-3">
 										<div>
-											<h2 className="text-sm font-medium">입력 모드 종료</h2>
+											<h2 className="text-sm font-medium">
+												{t("입력 모드 종료")}
+											</h2>
 											<p className="mt-1 text-xs leading-5 text-muted-foreground">
-												영문 입력 상태에서 jk를 빠르게 입력하면 일반 모드로
-												전환합니다. 한글 입력 중에는 Vim 명령을 해석하지
-												않습니다.
+												{t(
+													"영문 입력 상태에서 jk를 빠르게 입력하면 일반 모드로 전환합니다. 한글 입력 중에는 Vim 명령을 해석하지 않습니다.",
+												)}
 											</p>
 										</div>
 										<div className="grid grid-cols-2 gap-2">
@@ -344,10 +375,10 @@ export function SettingsDialog() {
 													)}
 												>
 													<kbd className="font-mono text-sm font-semibold">
-														{option.label}
+														{t(option.label)}
 													</kbd>
 													<span className="text-[0.68rem] text-muted-foreground">
-														{option.description}
+														{t(option.description)}
 													</span>
 												</button>
 											))}

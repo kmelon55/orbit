@@ -1,3 +1,4 @@
+import { spansMultipleDays } from "./calendar-schedule";
 import { formatDayKey } from "./para";
 import type { OrbitItem } from "./schema";
 
@@ -14,12 +15,7 @@ type MonthSegment = {
 export function isCalendarHeaderItem(item: OrbitItem) {
 	return (
 		!/(?:T\d{2}:\d{2})/.test(item.start ?? item.due ?? "") ||
-		(item.type === "event" &&
-			Boolean(
-				item.start &&
-					item.end &&
-					item.end.slice(0, 10) > item.start.slice(0, 10),
-			))
+		spansMultipleDays(item)
 	);
 }
 

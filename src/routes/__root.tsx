@@ -7,11 +7,13 @@ import {
 	useRouterState,
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { getUiLocale } from "#/lib/i18n/functions";
 import { getOrbitAuthStatus } from "#/lib/orbit/auth";
 import { loadOrbit } from "#/lib/orbit/functions";
 import { noteSearch } from "#/lib/orbit/navigation-search";
 import { ActionUndoProvider } from "@/components/action-undo-provider";
 import { AppShell } from "@/components/app-shell";
+import { LocaleProvider } from "@/components/locale-provider";
 import {
 	OrbitSnapshotProvider,
 	useOrbitSnapshot,
@@ -27,6 +29,7 @@ const themeScript = `(()=>{try{const t=localStorage.getItem("orbit-ui-theme")||"
 
 export const Route = createRootRoute({
 	validateSearch: noteSearch,
+	beforeLoad: async () => ({ locale: await getUiLocale() }),
 	loader: async ({ location }) => {
 		const auth = await getOrbitAuthStatus();
 		if (location.pathname === "/login") {
@@ -37,7 +40,7 @@ export const Route = createRootRoute({
 		return loadOrbit();
 	},
 	staleTime: Number.POSITIVE_INFINITY,
-	head: () => ({
+	head: ({ match }) => ({
 		meta: [
 			{ charSet: "utf-8" },
 			{
@@ -58,7 +61,12 @@ export const Route = createRootRoute({
 			},
 			{ name: "apple-mobile-web-app-title", content: "Orbit" },
 			{ name: "format-detection", content: "telephone=no" },
-			{ title: "Orbit · Personal workspace" },
+			{
+				title:
+					match.context.locale === "ko"
+						? "Orbit · 개인 작업 공간"
+						: "Orbit · Personal workspace",
+			},
 		],
 		links: [
 			{ rel: "stylesheet", href: appCss },
@@ -99,14 +107,17 @@ function WorkspaceLayout() {
 }
 
 function RootDocument({ children }: { children: ReactNode }) {
+	const { locale } = Route.useRouteContext();
 	return (
-		<html lang="ko" suppressHydrationWarning>
+		<html lang={locale} suppressHydrationWarning>
 			<head>
 				<script>{themeScript}</script>
 				<HeadContent />
 			</head>
 			<body>
-				<ThemeProvider>{children}</ThemeProvider>
+				<LocaleProvider initialLocale={locale}>
+					<ThemeProvider>{children}</ThemeProvider>
+				</LocaleProvider>
 				<ServiceWorkerRegister />
 				<Scripts />
 			</body>

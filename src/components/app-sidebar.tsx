@@ -5,15 +5,22 @@ import {
 	CalendarCheck,
 	CalendarDays,
 	FolderKanban,
+	Inbox,
 	Layers,
 	ListTodo,
 	LogOut,
 	Mail,
+	Repeat2,
 } from "lucide-react";
 import { useEffect } from "react";
 import { logoutOrbit } from "#/lib/orbit/auth";
 import { ARCHIVE_SPACE, PARA_SPACES } from "#/lib/orbit/para";
+import { useI18n } from "@/components/locale-provider";
 import { ModeToggle } from "@/components/mode-toggle";
+import {
+	useOrbitSnapshot,
+	useOrbitWrites,
+} from "@/components/orbit-snapshot-provider";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +31,7 @@ import {
 	SidebarGroupLabel,
 	SidebarHeader,
 	SidebarMenu,
+	SidebarMenuBadge,
 	SidebarMenuButton,
 	SidebarMenuItem,
 	useSidebar,
@@ -40,6 +48,17 @@ function startsWithPath(pathname: string, href: string) {
 }
 
 export function AppSidebar() {
+	const { t } = useI18n();
+
+	const snapshot = useOrbitSnapshot();
+	const { pending } = useOrbitWrites();
+	const inboxCount =
+		snapshot.counts.inbox +
+		pending.filter(
+			(entry) =>
+				entry.input.space === "inbox" &&
+				(entry.input.type === "note" || entry.input.type === "link"),
+		).length;
 	const { setOpenMobile } = useSidebar();
 	const pathname = useRouterState({
 		select: (state) => state.location.pathname,
@@ -94,7 +113,7 @@ export function AppSidebar() {
 								<div className="grid flex-1 text-left text-sm leading-tight">
 									<span className="truncate font-semibold">Orbit</span>
 									<span className="truncate text-xs text-muted-foreground">
-										Markdown notes
+										{t("Markdown notes")}
 									</span>
 								</div>
 							</Link>
@@ -105,17 +124,62 @@ export function AppSidebar() {
 
 			<SidebarContent>
 				<SidebarGroup>
-					<SidebarGroupLabel>Workspace</SidebarGroupLabel>
+					<SidebarGroupLabel>{t("Workspace")}</SidebarGroupLabel>
 					<SidebarMenu>
 						<SidebarMenuItem>
 							<SidebarMenuButton
 								asChild
 								isActive={pathname === "/"}
-								tooltip="Today"
+								tooltip={t("Today")}
 							>
 								<Link to="/" preload="render">
 									<CalendarCheck />
-									<span>Today</span>
+									<span>{t("Today")}</span>
+								</Link>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+						<SidebarMenuItem>
+							<SidebarMenuButton
+								asChild
+								isActive={pathname === "/inbox"}
+								tooltip={inboxCount ? `Inbox · ${inboxCount}` : t("Inbox")}
+							>
+								<Link to="/inbox" preload="render">
+									<Inbox />
+									<span>{t("Inbox")}</span>
+								</Link>
+							</SidebarMenuButton>
+							{inboxCount > 0 ? (
+								<SidebarMenuBadge>{inboxCount}</SidebarMenuBadge>
+							) : null}
+						</SidebarMenuItem>
+						<SidebarMenuItem>
+							<SidebarMenuButton
+								asChild
+								isActive={pathname === "/mail"}
+								tooltip={t("Mail")}
+							>
+								<Link to="/mail">
+									<Mail />
+									<span>{t("Mail")}</span>
+								</Link>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+					</SidebarMenu>
+				</SidebarGroup>
+
+				<SidebarGroup>
+					<SidebarGroupLabel>{t("Planning")}</SidebarGroupLabel>
+					<SidebarMenu>
+						<SidebarMenuItem>
+							<SidebarMenuButton
+								asChild
+								isActive={pathname === "/routines"}
+								tooltip={t("Routines")}
+							>
+								<Link to="/routines" preload="render">
+									<Repeat2 />
+									<span>{t("Routines")}</span>
 								</Link>
 							</SidebarMenuButton>
 						</SidebarMenuItem>
@@ -123,11 +187,11 @@ export function AppSidebar() {
 							<SidebarMenuButton
 								asChild
 								isActive={pathname === "/tasks"}
-								tooltip="Tasks"
+								tooltip={t("Tasks")}
 							>
 								<Link to="/tasks" preload="render">
 									<ListTodo />
-									<span>Tasks</span>
+									<span>{t("Tasks")}</span>
 								</Link>
 							</SidebarMenuButton>
 						</SidebarMenuItem>
@@ -135,23 +199,11 @@ export function AppSidebar() {
 							<SidebarMenuButton
 								asChild
 								isActive={startsWithPath(pathname, "/calendar")}
-								tooltip="Calendar"
+								tooltip={t("Calendar")}
 							>
 								<Link to="/calendar" preload="render">
 									<CalendarDays />
-									<span>Calendar</span>
-								</Link>
-							</SidebarMenuButton>
-						</SidebarMenuItem>
-						<SidebarMenuItem>
-							<SidebarMenuButton
-								asChild
-								isActive={pathname === "/mail"}
-								tooltip="Mail"
-							>
-								<Link to="/mail">
-									<Mail />
-									<span>Mail</span>
+									<span>{t("Calendar")}</span>
 								</Link>
 							</SidebarMenuButton>
 						</SidebarMenuItem>
@@ -168,11 +220,11 @@ export function AppSidebar() {
 									<SidebarMenuButton
 										asChild
 										isActive={startsWithPath(pathname, space.href)}
-										tooltip={space.label}
+										tooltip={t(space.label)}
 									>
 										<Link to={space.href} preload="render">
 											<Icon />
-											<span>{space.label}</span>
+											<span>{t(space.label)}</span>
 										</Link>
 									</SidebarMenuButton>
 								</SidebarMenuItem>
@@ -182,11 +234,11 @@ export function AppSidebar() {
 							<SidebarMenuButton
 								asChild
 								isActive={startsWithPath(pathname, "/archive")}
-								tooltip="Archive"
+								tooltip={t("Archive")}
 							>
 								<Link to="/archive" preload="render">
 									<Archive />
-									<span>{ARCHIVE_SPACE.label}</span>
+									<span>{t(ARCHIVE_SPACE.label)}</span>
 								</Link>
 							</SidebarMenuButton>
 						</SidebarMenuItem>
@@ -202,11 +254,11 @@ export function AppSidebar() {
 							variant="ghost"
 							size="icon"
 							className="size-8 text-muted-foreground"
-							title="로그아웃"
+							title={t("로그아웃")}
 							onClick={() => void logout()}
 						>
 							<LogOut className="size-4" />
-							<span className="sr-only">로그아웃</span>
+							<span className="sr-only">{t("로그아웃")}</span>
 						</Button>
 						<ModeToggle />
 					</div>

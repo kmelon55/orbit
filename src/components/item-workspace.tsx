@@ -6,10 +6,12 @@ import {
 } from "@tanstack/react-router";
 import {
 	Archive,
+	CalendarDays,
 	ChevronLeft,
 	FileText,
 	FolderInput,
 	GripVertical,
+	ListTodo,
 	Plus,
 	Search,
 } from "lucide-react";
@@ -48,6 +50,7 @@ import {
 	type ConvertibleType,
 	ItemTypeMenu,
 } from "@/components/item-type-menu";
+import { useI18n } from "@/components/locale-provider";
 import type {
 	NoteEditorAnchor,
 	NoteEditorHandle,
@@ -193,6 +196,7 @@ export function ItemWorkspace({
 	pendingCaptures = [],
 	heading,
 	description,
+	listEmptyMessage,
 	create,
 	initialSelectedId,
 	hideInboxTarget = false,
@@ -204,13 +208,13 @@ export function ItemWorkspace({
 	scopeKey,
 	disableCreate = false,
 	emptyTitle,
-	emptyDescription,
 }: {
 	snapshot: OrbitSnapshot;
 	items: OrbitItem[];
 	pendingCaptures?: PendingCapture[];
 	heading: string;
 	description?: string;
+	listEmptyMessage?: string;
 	create?: { space: OrbitSpace; folder?: string; type?: OrbitItem["type"] };
 	initialSelectedId?: string;
 	hideInboxTarget?: boolean;
@@ -224,8 +228,9 @@ export function ItemWorkspace({
 	scopeKey?: string;
 	disableCreate?: boolean;
 	emptyTitle?: string;
-	emptyDescription?: string;
 }) {
+	const { t, intlLocale } = useI18n();
+
 	const router = useRouter();
 	const { note: urlNote } = useSearch({ from: "__root__" });
 	const navigate = useNavigate();
@@ -342,6 +347,7 @@ export function ItemWorkspace({
 		),
 	}));
 	const [query, setQuery] = useState("");
+	const listQuery = create?.space === "inbox" ? "" : query;
 	const [filing, setFiling] = useState<OrbitItem | null>(null);
 	const [eventConversion, setEventConversion] = useState<OrbitItem | null>(
 		null,
@@ -445,7 +451,7 @@ export function ItemWorkspace({
 	);
 
 	const filtered = useMemo(() => {
-		const needle = query.trim().toLocaleLowerCase();
+		const needle = listQuery.trim().toLocaleLowerCase();
 		if (!needle) return visibleItems;
 		return visibleItems.filter((item) =>
 			[item.title, item.body, item.tags.join(" "), item.folder ?? ""]
@@ -453,7 +459,7 @@ export function ItemWorkspace({
 				.toLocaleLowerCase()
 				.includes(needle),
 		);
-	}, [query, visibleItems]);
+	}, [listQuery, visibleItems]);
 
 	const persistSnapshot = useCallback(
 		(id: string, next: NoteDraft) => {
@@ -525,7 +531,7 @@ export function ItemWorkspace({
 			const unsaved = hasUnsavedDrafts();
 			if (unsaved) {
 				setActionError(
-					"노트를 저장하지 못했습니다. 저장을 다시 시도한 뒤 이동해 주세요.",
+					t("노트를 저장하지 못했습니다. 저장을 다시 시도한 뒤 이동해 주세요."),
 				);
 				return true;
 			}
@@ -741,7 +747,7 @@ export function ItemWorkspace({
 		const result = await mutateOrbit({
 			data: {
 				action: "create-canvas",
-				title: `${draftRef.current.title.trim() || "노트"} 보드`,
+				title: t("{0} 보드", [draftRef.current.title.trim() || t("노트")]),
 			},
 		});
 		if (!result || !("canvas" in result)) return;
@@ -778,7 +784,7 @@ export function ItemWorkspace({
 		const optimisticId = `${OPTIMISTIC_ITEM_PREFIX}${crypto.randomUUID()}`;
 		const optimistic: OrbitItem = {
 			id: optimisticId,
-			title: "새 노트",
+			title: t("새 노트"),
 			type: create?.type ?? "note",
 			space: create?.space ?? "inbox",
 			status: create?.type === "task" ? "open" : undefined,
@@ -798,7 +804,7 @@ export function ItemWorkspace({
 						? {
 								action: "create-item",
 								input: {
-									title: "새 노트",
+									title: t("새 노트"),
 									type: create.type ?? "note",
 									body: "",
 									space: create.space,
@@ -807,7 +813,7 @@ export function ItemWorkspace({
 							}
 						: {
 								action: "capture",
-								input: { title: "새 노트", type: "note", body: "" },
+								input: { title: t("새 노트"), type: "note", body: "" },
 							},
 				});
 				if (created && "type" in created && "space" in created) {
@@ -830,7 +836,9 @@ export function ItemWorkspace({
 							});
 						} catch {
 							setActionError(
-								`“${latestDraft.title || created.title}” 노트를 삭제하지 못했습니다.`,
+								t("“{0}” 노트를 삭제하지 못했습니다.", [
+									latestDraft.title || created.title,
+								]),
 							);
 						}
 
@@ -924,7 +932,7 @@ export function ItemWorkspace({
 				next.delete(item.id);
 				return next;
 			});
-			setActionError(`“${item.title}” 노트를 삭제하지 못했습니다.`);
+			setActionError(t("“{0}” 노트를 삭제하지 못했습니다.", [item.title]));
 		}
 	}
 
@@ -985,7 +993,7 @@ export function ItemWorkspace({
 				return next;
 			});
 			setActionError(
-				`“${item.title}” 노트를 옮기지 못했습니다. 다시 시도해 주세요.`,
+				t("“{0}” 노트를 옮기지 못했습니다. 다시 시도해 주세요.", [item.title]),
 			);
 			return false;
 		} finally {
@@ -1010,7 +1018,7 @@ export function ItemWorkspace({
 	) {
 		if (item.type === kind || convertingIds.current.has(item.id)) return;
 		if (kind === "event" && !schedule)
-			throw new Error("일정 날짜를 선택해 주세요.");
+			throw new Error(t("일정 날짜를 선택해 주세요."));
 		convertingIds.current.add(item.id);
 		setConvertingId(item.id);
 		try {
@@ -1035,8 +1043,18 @@ export function ItemWorkspace({
 										: item.folder,
 								status: kind === "task" ? item.status : undefined,
 								due: kind === "task" ? scheduleValue : null,
-								start: kind === "event" ? schedule?.start : null,
-								end: kind === "event" ? schedule?.end : null,
+								start:
+									kind === "event"
+										? schedule?.start
+										: kind === "task"
+											? (item.start ?? null)
+											: null,
+								end:
+									kind === "event"
+										? schedule?.end
+										: kind === "task"
+											? (item.end ?? null)
+											: null,
 							},
 						},
 					}),
@@ -1071,7 +1089,7 @@ export function ItemWorkspace({
 			return;
 		}
 		void convertItem(item, kind).catch(() => {
-			setActionError("종류를 바꾸지 못했습니다. 다시 시도해 주세요.");
+			setActionError(t("종류를 바꾸지 못했습니다. 다시 시도해 주세요."));
 		});
 	}
 
@@ -1117,7 +1135,7 @@ export function ItemWorkspace({
 					draft &&
 					!draftsEqual(draft, lastSavedByIdRef.current[id] ?? noteDraft())
 				)
-					throw new Error("노트 저장 후 다시 이동해 주세요.");
+					throw new Error(t("노트 저장 후 다시 이동해 주세요."));
 			}
 			await action();
 		});
@@ -1157,7 +1175,7 @@ export function ItemWorkspace({
 							variant="ghost"
 							size="icon-sm"
 							onClick={onShowNavigator}
-							aria-label="폴더 목록"
+							aria-label={t("폴더 목록")}
 						>
 							<ChevronLeft />
 						</Button>
@@ -1166,11 +1184,11 @@ export function ItemWorkspace({
 						<p className="truncate text-sm font-medium">{heading}</p>
 						{createError || actionError ? (
 							<output className="block truncate text-xs text-destructive">
-								{actionError ?? "새 노트를 만들지 못했습니다."}
+								{actionError ?? t("새 노트를 만들지 못했습니다.")}
 							</output>
 						) : (
 							<p className="truncate text-xs text-muted-foreground">
-								{description ?? `${items.length}개`}
+								{description ?? t("{0}개", [items.length])}
 							</p>
 						)}
 					</div>
@@ -1179,24 +1197,26 @@ export function ItemWorkspace({
 							<Button
 								size="icon-sm"
 								onClick={() => void createItem()}
-								aria-label="새 노트"
+								aria-label={t("새 노트")}
 							>
 								<Plus />
 							</Button>
 						)}
 					</div>
 				</div>
-				<div className="px-3 pb-3">
-					<div className="relative">
-						<Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-						<Input
-							value={query}
-							onChange={(event) => setQuery(event.target.value)}
-							placeholder="검색"
-							className="h-9 bg-background/80 pl-8 text-sm"
-						/>
+				{create?.space !== "inbox" && (
+					<div className="px-3 pb-3">
+						<div className="relative">
+							<Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+							<Input
+								value={query}
+								onChange={(event) => setQuery(event.target.value)}
+								placeholder={t("검색")}
+								className="h-9 bg-background/80 pl-8 text-sm"
+							/>
+						</div>
 					</div>
-				</div>
+				)}
 				<ScrollArea className="min-h-0 min-w-0 flex-1">
 					<ul className="w-full min-w-0 space-y-0.5 p-2">
 						{pendingCaptures.map((entry) => (
@@ -1217,11 +1237,11 @@ export function ItemWorkspace({
 										variant="ghost"
 										onClick={() => retry(entry.id)}
 									>
-										저장 실패 · 다시 시도
+										{t("저장 실패 · 다시 시도")}
 									</Button>
 								) : (
 									<span className="text-[10px] text-muted-foreground">
-										저장 중…
+										{t("저장 중…")}
 									</span>
 								)}
 							</li>
@@ -1266,7 +1286,7 @@ export function ItemWorkspace({
 												disabled={taskToggle.isBusy(item.id)}
 												className="ml-2"
 												onClick={() => void taskToggle.toggle(item)}
-												aria-label={`${item.title} 완료 전환`}
+												aria-label={t("{0} 완료 전환", [item.title])}
 											/>
 										) : null}
 										<button
@@ -1286,8 +1306,9 @@ export function ItemWorkspace({
 												{item.body || ITEM_TYPE_LABEL[item.type]}
 											</p>
 											<p className="mt-1 truncate text-[10px] text-muted-foreground/75">
-												수정 {formatDateTime(item.updated)} · 작성{" "}
-												{formatDateTime(item.created)}
+												{t("수정")}
+												{formatDateTime(item.updated, intlLocale)} {t("· 작성")}{" "}
+												{formatDateTime(item.created, intlLocale)}
 											</p>
 										</button>
 									</li>
@@ -1296,7 +1317,9 @@ export function ItemWorkspace({
 						})}
 						{filtered.length === 0 && pendingCaptures.length === 0 && (
 							<li className="px-3 py-10 text-center text-sm text-muted-foreground">
-								항목이 없습니다. 우클릭해서 노트를 추가하세요.
+								{listQuery.trim()
+									? t("검색 결과가 없습니다.")
+									: (listEmptyMessage ?? t("항목이 없습니다."))}
 							</li>
 						)}
 					</ul>
@@ -1343,9 +1366,9 @@ export function ItemWorkspace({
 			>
 				<DialogContent>
 					<DialogHeader>
-						<DialogTitle>세부 정리</DialogTitle>
+						<DialogTitle>{t("세부 정리")}</DialogTitle>
 						<DialogDescription>
-							필요할 때만 종류, 일정, 폴더까지 한 번에 다듬습니다.
+							{t("필요할 때만 종류, 일정, 폴더까지 한 번에 다듬습니다.")}
 						</DialogDescription>
 					</DialogHeader>
 					{filing ? (
@@ -1409,20 +1432,16 @@ export function ItemWorkspace({
 							<FileText className="size-5 text-muted-foreground" />
 						</div>
 						<h2 className="text-sm font-medium">
-							{emptyTitle ?? "아직 항목이 없습니다"}
+							{emptyTitle ?? t("아직 항목이 없습니다")}
 						</h2>
-						<p className="mt-1.5 text-sm text-muted-foreground">
-							{emptyDescription ??
-								"우클릭하거나 아래 버튼으로 새 노트를 만드세요."}
-						</p>
 						{createError || actionError ? (
 							<output className="mt-2 block text-sm text-destructive">
-								{actionError ?? "새 노트를 만들지 못했습니다."}
+								{actionError ?? t("새 노트를 만들지 못했습니다.")}
 							</output>
 						) : null}
 						{disableCreate ? null : (
 							<Button className="mt-4" onClick={() => void createItem()}>
-								<Plus /> 새 노트
+								<Plus /> {t("새 노트")}
 							</Button>
 						)}
 					</div>
@@ -1483,17 +1502,49 @@ export function ItemWorkspace({
 			);
 		}
 		return (
-			<>
-				{emptyPane}
+			<div className="relative h-full min-h-0 overflow-hidden">
+				{create?.space === "inbox" ? (
+					<ResizablePanelGroup
+						id="orbit-notes"
+						orientation="horizontal"
+						className="h-full"
+					>
+						<ResizablePanel
+							id="orbit-note-list"
+							defaultSize="28%"
+							minSize="18%"
+							maxSize="46%"
+							className="min-w-0 overflow-hidden"
+						>
+							{navigationPane}
+						</ResizablePanel>
+						<ResizableHandle withHandle />
+						<ResizablePanel
+							id="orbit-note-editor"
+							defaultSize="72%"
+							minSize="40%"
+							className="min-w-0 overflow-hidden"
+						>
+							{emptyPane}
+						</ResizablePanel>
+					</ResizablePanelGroup>
+				) : (
+					emptyPane
+				)}
 				{dialogs}
-			</>
+			</div>
 		);
 	}
 
 	const editorPane = (
 		<div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
 			<ItemContextMenu {...itemMenu(selected)}>
-				<header className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-border/50 bg-background/60 px-4 py-1.5 backdrop-blur-xl">
+				<header
+					className={cn(
+						"flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-border/50 bg-background/60 px-4 py-1.5 backdrop-blur-xl",
+						create?.space === "inbox" && "gap-1 px-2 md:gap-2 md:px-4",
+					)}
+				>
 					{isMobile ? (
 						<Button
 							variant="ghost"
@@ -1505,22 +1556,50 @@ export function ItemWorkspace({
 									router.history.back();
 								else setNoteLocation(undefined, true);
 							}}
-							aria-label="목록으로 돌아가기"
+							aria-label={t("목록으로 돌아가기")}
 						>
 							<ChevronLeft />
 						</Button>
 					) : null}
-					<p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+					<p
+						className={cn(
+							"min-w-0 flex-1 truncate text-xs text-muted-foreground",
+							create?.space === "inbox" && "hidden md:block",
+						)}
+					>
 						{selected.path}
 					</p>
-					<ItemTypeMenu
-						item={selected}
-						busy={convertingId === selected.id}
-						onConvert={(kind) => requestConversion(selected, kind)}
-					/>
+					{create?.space === "inbox" && isInboxItem(selected) ? (
+						<>
+							<Button
+								variant="ghost"
+								size="sm"
+								className="gap-1 px-2"
+								disabled={convertingId === selected.id}
+								onClick={() => requestConversion(selected, "task")}
+							>
+								<ListTodo /> {t("할 일로")}
+							</Button>
+							<Button
+								variant="ghost"
+								size="sm"
+								className="gap-1 px-2"
+								disabled={convertingId === selected.id}
+								onClick={() => requestConversion(selected, "event")}
+							>
+								<CalendarDays /> {t("일정으로")}
+							</Button>
+						</>
+					) : (
+						<ItemTypeMenu
+							item={selected}
+							busy={convertingId === selected.id}
+							onConvert={(kind) => requestConversion(selected, kind)}
+						/>
+					)}
 					{saveErrors[selected.id] ? (
 						<output className="shrink-0 text-xs text-destructive">
-							자동 저장 실패
+							{t("자동 저장 실패")}
 						</output>
 					) : null}
 					<Button
@@ -1528,13 +1607,13 @@ export function ItemWorkspace({
 						size="sm"
 						onClick={() => setOrganizeOpen((open) => !open)}
 					>
-						<FolderInput /> 정리
+						<FolderInput /> {t("정리")}
 					</Button>
 					{selected.space !== "archive" ? (
 						<Button
 							variant="ghost"
-							size="icon"
-							aria-label="보관"
+							size={create?.space === "inbox" ? "icon-sm" : "icon"}
+							aria-label={t("보관")}
 							onClick={() => setConfirm({ kind: "archive", item: selected })}
 						>
 							<Archive />
@@ -1552,8 +1631,14 @@ export function ItemWorkspace({
 						onTagsChange={updateDraftTags}
 					/>
 					<div className="mt-3 mb-5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-						<span>작성 {formatDateTime(selected.created)}</span>
-						<span>수정 {formatDateTime(selected.updated)}</span>
+						<span>
+							{t("작성")}
+							{formatDateTime(selected.created, intlLocale)}
+						</span>
+						<span>
+							{t("수정")}
+							{formatDateTime(selected.updated, intlLocale)}
+						</span>
 					</div>
 				</div>
 				<div className="mx-auto flex w-full max-w-[52rem] min-w-0 flex-1 flex-col px-4 sm:pr-6 sm:pl-16">

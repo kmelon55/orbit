@@ -19,6 +19,7 @@ import { indexFolderTree } from "#/lib/orbit/folder-tree";
 import { moveItemLocally } from "#/lib/orbit/item-move";
 import { folderOf } from "#/lib/orbit/para";
 import type { OrbitItem, OrbitSnapshot, OrbitSpace } from "#/lib/orbit/schema";
+import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -97,6 +98,8 @@ export function FolderDestinationPicker({
 	hideInbox?: boolean;
 	onMove: MoveItem;
 }) {
+	const { t, errorText } = useI18n();
+
 	const [query, setQuery] = useState("");
 	const [selection, setSelection] = useState<{
 		itemId: string;
@@ -164,13 +167,14 @@ export function FolderDestinationPicker({
 				(root) => item?.type !== "event" || root.space === "archive",
 			).map((root) => ({
 				...root,
+				label: t(root.label),
 				tree: indexFolderTree(
 					[],
 					snapshot.folders[root.space],
 					snapshot.treeOrder?.[root.space],
 				),
 			})),
-		[snapshot.folders, snapshot.treeOrder, item?.type],
+		[snapshot.folders, snapshot.treeOrder, item?.type, t],
 	);
 	const destinations = useMemo(
 		() =>
@@ -265,7 +269,7 @@ export function FolderDestinationPicker({
 				}
 			}
 		} catch {
-			setError("옮기지 못했습니다. 다시 시도해 주세요.");
+			setError(t("옮기지 못했습니다. 다시 시도해 주세요."));
 		} finally {
 			busyRef.current = false;
 			setBusy(false);
@@ -345,7 +349,7 @@ export function FolderDestinationPicker({
 				data-destination-key={key}
 				aria-expanded={target.hasChildren ? isOpen : undefined}
 				aria-pressed={Boolean(active)}
-				aria-label={`${target.parent ? `${target.parent} / ` : ""}${target.label}${target.hasChildren ? (isOpen ? " 접기" : " 펼치기") : " 폴더 선택"}`}
+				aria-label={`${target.parent ? `${target.parent} / ` : ""}${target.label}${target.hasChildren ? (isOpen ? t("접기") : t("펼치기")) : t("폴더 선택")}`}
 				title={[target.parent, target.label].filter(Boolean).join(" / ")}
 				className={cn(
 					"flex min-h-10 w-full min-w-0 items-center gap-2 rounded-md py-2 pr-3 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring",
@@ -424,7 +428,9 @@ export function FolderDestinationPicker({
 					) : null}
 				</span>
 				{over === key ? (
-					<span className="shrink-0 text-[11px] font-medium">여기에 놓기</span>
+					<span className="shrink-0 text-[11px] font-medium">
+						{t("여기에 놓기")}
+					</span>
 				) : current ? (
 					<Check className="size-3.5 shrink-0 text-muted-foreground" />
 				) : null}
@@ -450,14 +456,15 @@ export function FolderDestinationPicker({
 		folderOf(item) === selected.folder;
 	const selectionLabel = selected
 		? [selected.parent, selected.label].filter(Boolean).join(" / ")
-		: "폴더를 선택하세요";
+		: t("폴더를 선택하세요");
 	return (
 		<div className="flex min-h-0 flex-1 flex-col" aria-busy={busy}>
 			<div className="relative m-3 mb-2 shrink-0">
 				<Search className="pointer-events-none absolute top-2.5 left-3 size-4 text-muted-foreground" />
 				<Input
-					aria-label="폴더 검색"
-					placeholder="폴더 검색…"
+					data-folder-search
+					aria-label={t("폴더 검색")}
+					placeholder={t("폴더 검색…")}
 					value={query}
 					onChange={(event) => setQuery(event.target.value)}
 					onDrop={(event) => {
@@ -480,11 +487,11 @@ export function FolderDestinationPicker({
 			</div>
 			{error ? (
 				<p role="alert" className="px-4 pb-2 text-xs text-destructive">
-					{error}
+					{errorText(error)}
 				</p>
 			) : null}
 			<fieldset
-				aria-label="정리할 폴더"
+				aria-label={t("정리할 폴더")}
 				ref={scrollRef}
 				className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3 [overflow-anchor:none]"
 				onDragOver={dragOver}
@@ -515,10 +522,10 @@ export function FolderDestinationPicker({
 							space: item?.type === "event" ? "event" : "inbox",
 							label:
 								item?.type === "task"
-									? "소속 없음"
+									? t("소속 없음")
 									: item?.type === "event"
-										? "캘린더"
-										: "Inbox",
+										? t("캘린더")
+										: t("Inbox"),
 							depth: 0,
 							hasChildren: false,
 						})
@@ -526,13 +533,15 @@ export function FolderDestinationPicker({
 				{!query.trim() && recentRows.length ? (
 					<>
 						<p className="px-3 pt-3 pb-1 text-xs font-medium text-muted-foreground">
-							최근 사용
+							{t("최근 사용")}
 						</p>
 						{recentRows.map((target) => renderRow(target, true))}
 					</>
 				) : null}
 				<p className="px-3 pt-3 pb-1 text-xs font-medium text-muted-foreground">
-					{query.trim() ? `검색 결과 ${searchResults.length}` : "전체 폴더"}
+					{query.trim()
+						? t("검색 결과 {0}", [searchResults.length])
+						: t("전체 폴더")}
 				</p>
 				{query.trim()
 					? searchResults.map((target) => renderRow(target, true))
@@ -542,7 +551,7 @@ export function FolderDestinationPicker({
 						})}
 				{query.trim() && searchResults.length === 0 ? (
 					<p className="p-4 text-center text-sm text-muted-foreground">
-						일치하는 폴더가 없습니다.
+						{t("일치하는 폴더가 없습니다.")}
 					</p>
 				) : null}
 			</fieldset>
@@ -564,10 +573,10 @@ export function FolderDestinationPicker({
 				>
 					<FolderInput className="size-4" />
 					{busy
-						? "옮기는 중…"
+						? t("옮기는 중…")
 						: selectedCurrent
-							? "현재 위치입니다"
-							: "여기로 이동"}
+							? t("현재 위치입니다")
+							: t("여기로 이동")}
 				</Button>
 			</div>
 		</div>

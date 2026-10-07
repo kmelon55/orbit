@@ -5,6 +5,7 @@ import matter from "gray-matter";
 import LZString from "lz-string";
 import { databaseFor, getVaultRoot } from "./database";
 import { isInboxItem } from "./para";
+import { readRoutineData } from "./routines.server";
 import {
 	DEFAULT_SCHEDULE_CATEGORIES,
 	upsertScheduleCategory,
@@ -409,10 +410,13 @@ export async function getOrbitSnapshot(): Promise<OrbitSnapshot> {
 				item.type === "task" &&
 				item.status !== "done" &&
 				item.status !== "cancelled" &&
-				(!item.due || item.due.slice(0, 10) <= today),
+				(!(item.start ?? item.due) ||
+					(item.start ?? item.due ?? "").slice(0, 10) <= today),
 		)
 		.sort((left, right) =>
-			(left.due ?? "9999").localeCompare(right.due ?? "9999"),
+			(left.start ?? left.due ?? "9999").localeCompare(
+				right.start ?? right.due ?? "9999",
+			),
 		);
 	const events = items
 		.filter(
@@ -427,6 +431,7 @@ export async function getOrbitSnapshot(): Promise<OrbitSnapshot> {
 	]);
 	return {
 		items,
+		routineData: readRoutineData(),
 		uncategorizedScheduleName:
 			scheduleCategorySchema.shape.name.safeParse(
 				metadata.uncategorizedScheduleName,

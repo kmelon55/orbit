@@ -1,3 +1,4 @@
+import { visibleEndDayKey } from "./calendar-schedule";
 import { formatDayKey } from "./para";
 import type { OrbitItem } from "./schema";
 
@@ -12,7 +13,11 @@ export function completedOnDay(item: OrbitItem, day: string) {
 
 export function taskListDay(item: OrbitItem, today: string) {
 	if (item.type === "task") {
-		return item.due?.slice(0, 10);
+		const start = (item.start ?? item.due)?.slice(0, 10);
+		const end = item.start && item.end ? visibleEndDayKey(item) : undefined;
+		if (!start || !end) return start;
+		// Group an active period under today, regardless of its completion state.
+		return today < start ? start : today > end ? end : today;
 	}
 	const start = item.start?.slice(0, 10);
 	const end = item.end?.slice(0, 10) ?? start;

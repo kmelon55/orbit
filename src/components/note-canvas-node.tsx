@@ -4,12 +4,21 @@ import type {
 	NodeView,
 	NodeViewConstructor,
 } from "@milkdown/kit/prose/view";
-import { $nodeSchema, $remark, $view } from "@milkdown/kit/utils";
+import { $ctx, $nodeSchema, $remark, $view } from "@milkdown/kit/utils";
 import { useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import {
+	LocaleContextBridge,
+	type LocaleContextValue,
+	useI18n,
+} from "@/components/locale-provider";
 import { NoteCanvasPanel } from "@/components/note-canvas-panel";
 import { ThemeProvider } from "@/components/theme-provider";
 
+export const orbitCanvasLocale = $ctx<
+	LocaleContextValue | null,
+	"orbitCanvasLocale"
+>(null, "orbitCanvasLocale");
 const CANVAS_PREFIX = "#/canvas/";
 
 function decodeCanvasPath(url: string) {
@@ -126,6 +135,7 @@ function CanvasNodeContent({
 	onRename: (canvas: { path: string; title: string }) => void;
 	onTitleChange: (title: string) => void;
 }) {
+	const { t } = useI18n();
 	const [expanded, setExpanded] = useState(true);
 	if (!expanded) {
 		return (
@@ -134,7 +144,7 @@ function CanvasNodeContent({
 				className="my-1 flex w-full items-center rounded-lg border border-border bg-muted/60 px-3 py-2 text-left text-sm font-medium hover:bg-muted"
 				onClick={() => setExpanded(true)}
 			>
-				Whiteboard · {title}
+				{t("Whiteboards")} · {title}
 			</button>
 		);
 	}
@@ -154,12 +164,15 @@ class OrbitCanvasView implements NodeView {
 	#root: Root;
 	#view: EditorView;
 	#getPos: () => number | undefined;
+	#locale: LocaleContextValue;
 
 	constructor(
 		node: ProseNode,
 		view: EditorView,
 		getPos: () => number | undefined,
+		locale: LocaleContextValue,
 	) {
+		this.#locale = locale;
 		this.#node = node;
 		this.#view = view;
 		this.#getPos = getPos;
@@ -173,14 +186,16 @@ class OrbitCanvasView implements NodeView {
 
 	render() {
 		this.#root.render(
-			<ThemeProvider>
-				<CanvasNodeContent
-					path={String(this.#node.attrs.path)}
-					title={String(this.#node.attrs.title || "Whiteboard")}
-					onRename={(canvas) => this.rename(canvas)}
-					onTitleChange={(title) => this.updateTitle(title)}
-				/>
-			</ThemeProvider>,
+			<LocaleContextBridge value={this.#locale}>
+				<ThemeProvider>
+					<CanvasNodeContent
+						path={String(this.#node.attrs.path)}
+						title={String(this.#node.attrs.title || "Whiteboard")}
+						onRename={(canvas) => this.rename(canvas)}
+						onTitleChange={(title) => this.updateTitle(title)}
+					/>
+				</ThemeProvider>
+			</LocaleContextBridge>,
 		);
 	}
 
@@ -239,7 +254,13 @@ class OrbitCanvasView implements NodeView {
 
 export const orbitCanvasView = $view(
 	orbitCanvasSchema.node,
-	(): NodeViewConstructor =>
-		(node: ProseNode, view: EditorView, getPos: () => number | undefined) =>
-			new OrbitCanvasView(node, view, getPos),
+	(ctx): NodeViewConstructor => {
+		const locale = ctx.get(orbitCanvasLocale.key);
+		if (!locale) throw new Error("Canvas locale is not configured");
+		return (
+			node: ProseNode,
+			view: EditorView,
+			getPos: () => number | undefined,
+		) => new OrbitCanvasView(node, view, getPos, locale);
+	},
 );

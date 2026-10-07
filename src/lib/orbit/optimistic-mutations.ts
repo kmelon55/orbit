@@ -6,6 +6,14 @@ import {
 	projectFolderMutation,
 } from "./optimistic-folders";
 import {
+	applyRoutineMutation,
+	emptyRoutineData,
+	type RoutineData,
+	type RoutineMutation,
+	routineDataSchema,
+	routineMutationSchema,
+} from "./routines";
+import {
 	DEFAULT_SCHEDULE_CATEGORIES,
 	upsertScheduleCategory,
 } from "./schedule-categories";
@@ -17,6 +25,64 @@ import {
 	type ScheduleCategory,
 } from "./schema";
 import { mergeSnapshotItems } from "./snapshot-overlay";
+
+type RoutineWrite = {
+	mutation: RoutineMutation;
+	settled: boolean;
+	result?: RoutineData;
+	timerKeys?: string[];
+};
+function routineWriteKey(mutation: RoutineMutation) {
+	if (mutation.action === "routine-timer") return "routine-timers";
+	if (mutation.action === "move-routine") return "routine-order";
+	if (mutation.action === "set-routine-status")
+		return `${mutation.day}:${mutation.id}`;
+	return `routine:${mutation.action === "save-routine" ? mutation.input.id : mutation.id}`;
+}
+function projectRoutineWrite(
+	data: RoutineData,
+	entry: RoutineWrite,
+): RoutineData {
+	if (!entry.result) return applyRoutineMutation(data, entry.mutation);
+	const mutation = entry.mutation;
+	const id =
+		mutation.action === "save-routine" ? mutation.input.id : mutation.id;
+	const timers = { ...data.timers };
+	for (const key of entry.timerKeys ?? []) {
+		const saved = entry.result.timers[key];
+		if (saved) timers[key] = saved;
+		else delete timers[key];
+	}
+	if (mutation.action === "routine-timer") return { ...data, timers };
+	if (mutation.action === "move-routine") {
+		const byId = new Map(data.routines.map((routine) => [routine.id, routine]));
+		const order = entry.result.routines.map((routine) => routine.id);
+		return {
+			...data,
+			routines: [
+				...order.flatMap((id) => byId.get(id) ?? []),
+				...data.routines.filter((routine) => !order.includes(routine.id)),
+			],
+		};
+	}
+	if (mutation.action === "set-routine-status") {
+		const key = `${mutation.day}:${mutation.id}`,
+			records = { ...data.records };
+		const record = entry.result.records[key];
+		if (record) records[key] = record;
+		else delete records[key];
+		return { ...data, records, timers };
+	}
+	const saved = entry.result.routines.find((routine) => routine.id === id);
+	if (!saved) return data;
+	return {
+		...data,
+		timers,
+		routines: data.routines.some((routine) => routine.id === id)
+			? data.routines.map((routine) => (routine.id === id ? saved : routine))
+			: [...data.routines, saved],
+	};
+}
 
 export type MutationLifecycle = {
 	requestId: string;
@@ -92,6 +158,7 @@ function predict(
 // Confirmed writes and pending operations are separate. If a later queued write
 // fails, its rollback reveals the earlier success instead of the original snapshot.
 export class OptimisticItems {
+	private routineWrites = new Map<string, RoutineWrite>();
 	private pendingCategories = new Map<string, ScheduleCategory>();
 	private confirmedCategories = new Map<string, ScheduleCategory>();
 	private folders = new Map<
@@ -120,7 +187,13 @@ export class OptimisticItems {
 	}
 
 	start(requestId: string, mutation: OrbitMutation, snapshot: OrbitSnapshot) {
-		if (mutation.action === "save-schedule-category") {
+		const routine = routineMutationSchema.safeParse(mutation);
+		if (routine.success) {
+			this.routineWrites.set(requestId, {
+				mutation: routine.data,
+				settled: false,
+			});
+		} else if (mutation.action === "save-schedule-category") {
 			this.pendingCategories.set(requestId, mutation.input);
 		} else if (isFolderMutation(mutation)) {
 			this.folders.set(requestId, { mutation, settled: false });
@@ -161,6 +234,51 @@ export class OptimisticItems {
 	}
 
 	finish(event: MutationLifecycle) {
+		const routine = this.routineWrites.get(event.requestId);
+		if (routine) {
+			if (event.phase === "success") {
+				routine.settled = true;
+				routine.result = routineDataSchema.safeParse(event.result).data;
+				const mutation = routine.mutation;
+				routine.timerKeys = Object.entries(
+					routine.result?.timers ?? {},
+				).flatMap(([key, timer]) => {
+					if (mutation.action === "routine-timer") return [key];
+					if (
+						mutation.action === "set-routine-status" &&
+						key === `${mutation.day}:${mutation.id}`
+					)
+						return [key];
+					if (
+						(mutation.action === "save-routine" ||
+							mutation.action === "set-routine-enabled" ||
+							mutation.action === "delete-routine") &&
+						timer.routineId ===
+							(mutation.action === "save-routine"
+								? mutation.input.id
+								: mutation.id)
+					)
+						return [key];
+					return [];
+				});
+				// Later writes own overlapping timer fields independently of configuration/status patches.
+				for (const entry of this.routineWrites.values()) {
+					if (entry !== routine && entry.settled)
+						entry.timerKeys = entry.timerKeys?.filter(
+							(key) => !routine.timerKeys?.includes(key),
+						);
+				}
+				for (const [id, entry] of this.routineWrites) {
+					if (
+						id !== event.requestId &&
+						entry.settled &&
+						routineWriteKey(entry.mutation) ===
+							routineWriteKey(routine.mutation)
+					)
+						this.routineWrites.delete(id);
+				}
+			} else this.routineWrites.delete(event.requestId);
+		}
 		const category = this.pendingCategories.get(event.requestId);
 		if (category) {
 			this.pendingCategories.delete(event.requestId);
@@ -181,6 +299,20 @@ export class OptimisticItems {
 	}
 
 	reconcile(snapshot: OrbitSnapshot) {
+		// Only drop confirmed patches when the corresponding server values arrive.
+		const routineData = snapshot.routineData ?? emptyRoutineData();
+		for (const [requestId, entry] of this.routineWrites) {
+			if (!entry.settled) continue;
+			try {
+				if (
+					JSON.stringify(projectRoutineWrite(routineData, entry)) ===
+					JSON.stringify(routineData)
+				)
+					this.routineWrites.delete(requestId);
+			} catch {
+				/* Pending dependent writes can outlive a stale server snapshot. */
+			}
+		}
 		for (const [id, category] of this.confirmedCategories) {
 			if (
 				(id === "uncategorized" &&
@@ -219,6 +351,7 @@ export class OptimisticItems {
 
 	project(snapshot: OrbitSnapshot): OrbitSnapshot {
 		if (
+			!this.routineWrites.size &&
 			!this.confirmed.size &&
 			!this.pending.size &&
 			!this.folders.size &&
@@ -269,6 +402,17 @@ export class OptimisticItems {
 				else categories = upsertScheduleCategory(categories, category);
 			}
 			projected = { ...projected, scheduleCategories: categories };
+		}
+		if (this.routineWrites.size) {
+			let routineData = projected.routineData ?? emptyRoutineData();
+			for (const entry of this.routineWrites.values()) {
+				try {
+					routineData = projectRoutineWrite(routineData, entry);
+				} catch {
+					/* A failed dependency is rolled back by the mutation lifecycle. */
+				}
+			}
+			projected = { ...projected, routineData };
 		}
 		return projected;
 	}

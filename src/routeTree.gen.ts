@@ -19,6 +19,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as MailRouteImport } from './routes/mail'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as ResourcesRouteImport } from './routes/resources'
+import { Route as RoutinesRouteImport } from './routes/routines'
 import { Route as SearchRouteImport } from './routes/search'
 import { Route as TasksRouteImport } from './routes/tasks'
 import { Route as WhiteboardsRouteImport } from './routes/whiteboards'
@@ -78,6 +79,11 @@ const ProjectsRoute = ProjectsRouteImport.update({
 const ResourcesRoute = ResourcesRouteImport.update({
   id: '/resources',
   path: '/resources',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RoutinesRoute = RoutinesRouteImport.update({
+  id: '/routines',
+  path: '/routines',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SearchRoute = SearchRouteImport.update({
@@ -142,6 +148,7 @@ export interface FileRoutesByFullPath {
   '/mail': typeof MailRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/resources': typeof ResourcesRouteWithChildren
+  '/routines': typeof RoutinesRoute
   '/search': typeof SearchRoute
   '/tasks': typeof TasksRoute
   '/whiteboards': typeof WhiteboardsRoute
@@ -161,6 +168,7 @@ export interface FileRoutesByTo {
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
   '/mail': typeof MailRoute
+  '/routines': typeof RoutinesRoute
   '/search': typeof SearchRoute
   '/tasks': typeof TasksRoute
   '/whiteboards': typeof WhiteboardsRoute
@@ -184,6 +192,7 @@ export interface FileRoutesById {
   '/mail': typeof MailRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/resources': typeof ResourcesRouteWithChildren
+  '/routines': typeof RoutinesRoute
   '/search': typeof SearchRoute
   '/tasks': typeof TasksRoute
   '/whiteboards': typeof WhiteboardsRoute
@@ -208,6 +217,7 @@ export interface FileRouteTypes {
     | '/mail'
     | '/projects'
     | '/resources'
+    | '/routines'
     | '/search'
     | '/tasks'
     | '/whiteboards'
@@ -227,6 +237,7 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/login'
     | '/mail'
+    | '/routines'
     | '/search'
     | '/tasks'
     | '/whiteboards'
@@ -249,6 +260,7 @@ export interface FileRouteTypes {
     | '/mail'
     | '/projects'
     | '/resources'
+    | '/routines'
     | '/search'
     | '/tasks'
     | '/whiteboards'
@@ -272,6 +284,7 @@ export interface RootRouteChildren {
   MailRoute: typeof MailRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
   ResourcesRoute: typeof ResourcesRouteWithChildren
+  RoutinesRoute: typeof RoutinesRoute
   SearchRoute: typeof SearchRoute
   TasksRoute: typeof TasksRoute
   WhiteboardsRoute: typeof WhiteboardsRoute
@@ -348,6 +361,13 @@ declare module '@tanstack/react-router' {
       path: '/resources'
       fullPath: '/resources'
       preLoaderRoute: typeof ResourcesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/routines': {
+      id: '/routines'
+      path: '/routines'
+      fullPath: '/routines'
+      preLoaderRoute: typeof RoutinesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/search': {
@@ -474,6 +494,7 @@ const rootRouteChildren: RootRouteChildren = {
   MailRoute: MailRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
   ResourcesRoute: ResourcesRouteWithChildren,
+  RoutinesRoute: RoutinesRoute,
   SearchRoute: SearchRoute,
   TasksRoute: TasksRoute,
   WhiteboardsRoute: WhiteboardsRoute,

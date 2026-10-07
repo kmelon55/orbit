@@ -1,15 +1,17 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
+import { weekdayName } from "#/lib/i18n";
 import { formatDayKey } from "#/lib/orbit/para";
 import {
 	rangeFromMinutes,
 	type ScheduleRange,
 	scheduleMinute,
 } from "#/lib/orbit/schedule-range";
+import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
+const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
 const dateOf = (value: string) => new Date(`${value}T12:00:00`);
 
 export function ScheduleRangeCalendar({
@@ -21,6 +23,8 @@ export function ScheduleRangeCalendar({
 	onChange: (value: ScheduleRange) => void;
 	disabled?: boolean;
 }) {
+	const { t, intlLocale } = useI18n();
+
 	const { startDate, endDate } = value;
 	const [cursor, setCursor] = useState(startDate.slice(0, 7));
 	const [endpoint, setEndpoint] = useState<"start" | "end">("start");
@@ -42,7 +46,7 @@ export function ScheduleRangeCalendar({
 	return (
 		<section
 			className="rounded-xl border bg-background p-3"
-			aria-label="일정 범위 달력"
+			aria-label={t("일정 범위 달력")}
 		>
 			<div className="grid gap-3">
 				<div className="min-w-0">
@@ -52,7 +56,7 @@ export function ScheduleRangeCalendar({
 							variant="ghost"
 							size="icon-sm"
 							disabled={disabled}
-							aria-label="범위 달력 이전 달"
+							aria-label={t("범위 달력 이전 달")}
 							onClick={() =>
 								setCursor(
 									formatDayKey(
@@ -64,14 +68,17 @@ export function ScheduleRangeCalendar({
 							<ChevronLeft />
 						</Button>
 						<span className="text-sm font-medium">
-							{month.getFullYear()}년 {month.getMonth() + 1}월
+							{new Intl.DateTimeFormat(intlLocale, {
+								year: "numeric",
+								month: "long",
+							}).format(month)}
 						</span>
 						<Button
 							type="button"
 							variant="ghost"
 							size="icon-sm"
 							disabled={disabled}
-							aria-label="범위 달력 다음 달"
+							aria-label={t("범위 달력 다음 달")}
 							onClick={() =>
 								setCursor(
 									formatDayKey(
@@ -100,14 +107,14 @@ export function ScheduleRangeCalendar({
 									endpoint === part && "bg-background font-medium shadow-sm",
 								)}
 							>
-								{part === "start" ? "시작일 선택" : "종료일 선택"}
+								{part === "start" ? t("시작일") : t("종료일")}
 							</button>
 						))}
 					</div>
 					<div className="grid grid-cols-7 text-center text-[10px] text-muted-foreground">
 						{WEEKDAYS.map((weekday) => (
 							<span key={weekday} className="py-1">
-								{weekday}
+								{weekdayName(weekday, intlLocale)}
 							</span>
 						))}
 					</div>
@@ -123,7 +130,7 @@ export function ScheduleRangeCalendar({
 									disabled={
 										disabled || (endpoint === "end" && date < startDate)
 									}
-									aria-label={`${date}${isStart ? " 시작" : ""}${isEnd ? " 종료" : ""}`}
+									aria-label={`${date}${isStart ? t("시작") : ""}${isEnd ? t("종료") : ""}`}
 									aria-pressed={selected}
 									onClick={() => {
 										if (endpoint === "start") {
@@ -155,11 +162,11 @@ export function ScheduleRangeCalendar({
 									{Number(date.slice(8))}
 									<span className="h-2 text-[8px] leading-none">
 										{isStart && isEnd
-											? "시작·종료"
+											? t("시작·종료")
 											: isStart
-												? "시작"
+												? t("시작")
 												: isEnd
-													? "종료"
+													? t("종료")
 													: ""}
 									</span>
 								</button>

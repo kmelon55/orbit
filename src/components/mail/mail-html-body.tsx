@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { useI18n } from "@/components/locale-provider";
 
 export function MailHtmlBody({ html }: { html: string }) {
+	const { t } = useI18n();
+
 	const frame = useRef<HTMLIFrameElement>(null);
 	const [height, setHeight] = useState(420);
 	useEffect(() => {
@@ -21,7 +24,7 @@ export function MailHtmlBody({ html }: { html: string }) {
 	return (
 		<iframe
 			ref={frame}
-			title="메일 본문"
+			title={t("메일 본문")}
 			className="block w-full shrink-0 border-0 bg-white"
 			style={{ height }}
 			sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"

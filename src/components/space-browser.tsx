@@ -40,6 +40,7 @@ import {
 	ItemWorkspace,
 	type ItemWorkspaceNavigatorContext,
 } from "@/components/item-workspace";
+import { useI18n } from "@/components/locale-provider";
 import { useOrbitWrites } from "@/components/orbit-snapshot-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -79,10 +80,13 @@ function UnifiedFolderWorkspace({
 	space: FolderSpaceId;
 	initialFolder?: string;
 }) {
+	const { t, errorText } = useI18n();
+
 	const { refresh } = useOrbitWrites();
 	const meta = spaceConfig(space);
 	if (!meta) throw new Error(`Unknown folder space: ${space}`);
-	const { label: spaceLabel, korean: spaceName } = meta;
+	const spaceLabel = t(meta.label);
+	const spaceName = t(meta.korean);
 
 	const sourceFolders = snapshot.folders[space];
 	const [optimisticColors, setOptimisticColors] = useState<
@@ -115,13 +119,42 @@ function UnifiedFolderWorkspace({
 	);
 	const inputRef = useRef<HTMLInputElement>(null);
 	const colorQueuesRef = useRef(new Map<string, Promise<void>>());
-	const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+	const storageKey = `orbit:collapsed-folders:v1:${snapshot.vaultPath}:${space}`;
+	const [initialCollapsed] = useState<Set<string>>(() => {
 		if (!initialFolder) return new Set();
 		const open = new Set(folderAncestors(initialFolder));
 		return new Set(
 			folders.map((folder) => folder.slug).filter((slug) => !open.has(slug)),
 		);
 	});
+	const [collapsed, setCollapsed] = useState(initialCollapsed);
+	const [restored, setRestored] = useState(false);
+	useEffect(() => {
+		let saved = initialCollapsed;
+		try {
+			const value: unknown = JSON.parse(
+				window.localStorage.getItem(storageKey) ?? "null",
+			);
+			if (
+				Array.isArray(value) &&
+				value.every((slug) => typeof slug === "string")
+			) {
+				saved = new Set(value);
+			}
+		} catch {
+			// Keep the default when storage is unavailable or malformed.
+		}
+		setCollapsed(saved);
+		setRestored(true);
+	}, [initialCollapsed, storageKey]);
+	useEffect(() => {
+		if (!restored) return;
+		try {
+			window.localStorage.setItem(storageKey, JSON.stringify([...collapsed]));
+		} catch {
+			// Folder toggles still work when browser storage is unavailable.
+		}
+	}, [collapsed, restored, storageKey]);
 	const [query, setQuery] = useState("");
 	const [folderName, setFolderName] = useState("");
 	const [newFolderParent, setNewFolderParent] = useState<string>();
@@ -183,7 +216,7 @@ function UnifiedFolderWorkspace({
 			setNewFolderParent(undefined);
 		} catch {
 			setFolderName((current) => current || trimmed);
-			setError("폴더를 만들지 못했습니다.");
+			setError(t("폴더를 만들지 못했습니다."));
 		} finally {
 			setSaving(false);
 		}
@@ -218,7 +251,7 @@ function UnifiedFolderWorkspace({
 						if (current[folder.slug] !== color) return current;
 						return { ...current, [folder.slug]: previous };
 					});
-					setError("폴더 색상을 바꾸지 못했습니다.");
+					setError(t("폴더 색상을 바꾸지 못했습니다."));
 				}
 			});
 		colorQueuesRef.current.set(folder.slug, queued);
@@ -245,7 +278,7 @@ function UnifiedFolderWorkspace({
 			});
 			setEditingFolder(undefined);
 		} catch {
-			setError("같은 이름의 폴더가 있거나 이름을 바꿀 수 없습니다.");
+			setError(t("같은 이름의 폴더가 있거나 이름을 바꿀 수 없습니다."));
 		} finally {
 			setSaving(false);
 		}
@@ -265,7 +298,7 @@ function UnifiedFolderWorkspace({
 			});
 			setDeletingFolder(undefined);
 		} catch {
-			setError("비어 있는 폴더만 삭제할 수 있습니다.");
+			setError(t("비어 있는 폴더만 삭제할 수 있습니다."));
 		} finally {
 			setSaving(false);
 		}
@@ -312,15 +345,15 @@ function UnifiedFolderWorkspace({
 					</ContextMenuTrigger>
 					<ContextMenuContent className="w-52">
 						<ContextMenuItem onSelect={() => createNote(folder.slug, controls)}>
-							<FilePlus2 /> 노트 추가
+							<FilePlus2 /> {t("노트 추가")}
 						</ContextMenuItem>
 						<ContextMenuItem onSelect={() => prepareSubfolder(folder)}>
-							<FolderPlus /> 하위 폴더 만들기
+							<FolderPlus /> {t("하위 폴더 만들기")}
 						</ContextMenuItem>
 						<ContextMenuSeparator />
 						<ContextMenuSub>
 							<ContextMenuSubTrigger>
-								<Palette /> 색상
+								<Palette /> {t("색상")}
 							</ContextMenuSubTrigger>
 							<ContextMenuSubContent className="w-36">
 								{FOLDER_COLORS.map((entry) => (
@@ -329,8 +362,8 @@ function UnifiedFolderWorkspace({
 										onSelect={() => updateColor(folder, entry.id)}
 									>
 										<span className={cn("size-2.5 rounded-full", entry.dot)} />
-										{entry.label}
-										{folder.color === entry.id ? " · 선택됨" : ""}
+										{t(entry.label)}
+										{folder.color === entry.id ? t("· 선택됨") : ""}
 									</ContextMenuItem>
 								))}
 							</ContextMenuSubContent>
@@ -342,7 +375,7 @@ function UnifiedFolderWorkspace({
 								setError(undefined);
 							}}
 						>
-							<Pencil /> 이름 바꾸기
+							<Pencil /> {t("이름 바꾸기")}
 						</ContextMenuItem>
 						<ContextMenuSeparator />
 						<ContextMenuItem
@@ -353,7 +386,7 @@ function UnifiedFolderWorkspace({
 								setError(undefined);
 							}}
 						>
-							<Trash2 /> 빈 폴더 삭제
+							<Trash2 /> {t("빈 폴더 삭제")}
 						</ContextMenuItem>
 					</ContextMenuContent>
 				</ContextMenu>
@@ -398,9 +431,6 @@ function UnifiedFolderWorkspace({
 				<header className="shrink-0 border-b border-border/50 px-4 py-4">
 					<div className="flex items-start justify-between gap-3">
 						<div className="min-w-0">
-							<p className="text-xs font-semibold tracking-[0.16em] text-muted-foreground uppercase">
-								{spaceLabel}
-							</p>
 							<h2 className="mt-1 text-lg font-semibold tracking-tight">
 								{spaceName}
 							</h2>
@@ -408,14 +438,11 @@ function UnifiedFolderWorkspace({
 						<Button
 							size="icon-sm"
 							onClick={() => createNote(undefined, controls)}
-							aria-label="루트에 새 노트"
+							aria-label={t("루트에 새 노트")}
 						>
 							<FilePlus2 />
 						</Button>
 					</div>
-					<p className="mt-1 text-xs leading-5 text-muted-foreground">
-						드래그로 순서를 바꾸거나 폴더 안으로 옮기세요.
-					</p>
 				</header>
 
 				<div className="shrink-0 space-y-2 p-3">
@@ -424,7 +451,7 @@ function UnifiedFolderWorkspace({
 						<Input
 							value={query}
 							onChange={(event) => setQuery(event.target.value)}
-							placeholder="폴더와 노트 검색"
+							placeholder={t("폴더와 노트 검색")}
 							className="h-9 bg-background/80 pl-8 text-sm"
 						/>
 					</div>
@@ -436,7 +463,9 @@ function UnifiedFolderWorkspace({
 									ref={inputRef}
 									value={folderName}
 									onChange={(event) => setFolderName(event.target.value)}
-									placeholder={newFolderParent ? "새 하위 폴더" : "새 폴더"}
+									placeholder={
+										newFolderParent ? t("새 하위 폴더") : t("새 폴더")
+									}
 									className="h-9 bg-background/80 pl-8 text-sm"
 								/>
 							</div>
@@ -444,72 +473,72 @@ function UnifiedFolderWorkspace({
 								type="submit"
 								size="icon-sm"
 								disabled={!folderName.trim() || saving}
-								aria-label="폴더 만들기"
+								aria-label={t("폴더 만들기")}
 							>
 								<Plus />
 							</Button>
 						</div>
 						{newFolderParent ? (
 							<div className="flex items-center justify-between gap-2 px-1 text-[11px] text-muted-foreground">
-								<span className="truncate">{newFolderParent} 안에 생성</span>
+								<span className="truncate">
+									{newFolderParent} {t("안에 생성")}
+								</span>
 								<button
 									type="button"
 									onClick={() => setNewFolderParent(undefined)}
 									className="shrink-0 hover:text-foreground"
 								>
-									루트로 변경
+									{t("루트로 변경")}
 								</button>
 							</div>
 						) : null}
 					</form>
 					{error ? (
 						<output className="block px-1 text-xs text-destructive">
-							{error}
+							{errorText(error)}
 						</output>
 					) : null}
 				</div>
 
-				<FolderTreeList
-					space={space}
-					order={snapshot.treeOrder?.[space]}
-					onMove={async (input) => {
-						const sourceFolder = input.key.startsWith("folder:")
-							? input.key.slice(7)
-							: undefined;
-						const ids = controls.items
-							.filter(
-								(item) =>
-									input.key === `item:${item.id}` ||
-									(sourceFolder &&
-										(folderOf(item) === sourceFolder ||
-											folderOf(item)?.startsWith(`${sourceFolder}/`))),
-							)
-							.map((item) => item.id);
-						await controls.runWithSavedItems(ids, () =>
-							mutateOrbit({ data: { action: "move-tree-entry", input } }),
-						);
-						setCollapsed((current) => {
-							const next = new Set(current);
-							if (
-								input.position === "inside" &&
-								input.target?.startsWith("folder:")
-							)
-								next.delete(input.target.slice(7));
-							return next;
-						});
-						await refresh();
-					}}
-					items={controls.items}
-					folders={folders}
-					collapsed={collapsed}
-					query={query}
-					renderFolder={(row) => renderFolder(row, controls)}
-					renderNote={(item, depth) => renderNote(item, depth, controls)}
-				/>
-
-				<footer className="shrink-0 border-t border-border/50 px-4 py-2.5 text-[11px] text-muted-foreground">
-					폴더를 우클릭하면 하위 폴더·색상·이름을 관리할 수 있습니다.
-				</footer>
+				{restored && (
+					<FolderTreeList
+						space={space}
+						order={snapshot.treeOrder?.[space]}
+						onMove={async (input) => {
+							const sourceFolder = input.key.startsWith("folder:")
+								? input.key.slice(7)
+								: undefined;
+							const ids = controls.items
+								.filter(
+									(item) =>
+										input.key === `item:${item.id}` ||
+										(sourceFolder &&
+											(folderOf(item) === sourceFolder ||
+												folderOf(item)?.startsWith(`${sourceFolder}/`))),
+								)
+								.map((item) => item.id);
+							await controls.runWithSavedItems(ids, () =>
+								mutateOrbit({ data: { action: "move-tree-entry", input } }),
+							);
+							setCollapsed((current) => {
+								const next = new Set(current);
+								if (
+									input.position === "inside" &&
+									input.target?.startsWith("folder:")
+								)
+									next.delete(input.target.slice(7));
+								return next;
+							});
+							await refresh();
+						}}
+						items={controls.items}
+						folders={folders}
+						collapsed={collapsed}
+						query={query}
+						renderFolder={(row) => renderFolder(row, controls)}
+						renderNote={(item, depth) => renderNote(item, depth, controls)}
+					/>
+				)}
 			</div>
 		);
 	}
@@ -520,12 +549,11 @@ function UnifiedFolderWorkspace({
 				snapshot={snapshot}
 				items={items}
 				heading={spaceName}
-				description={`${spaceLabel} · ${items.length}개`}
+				description={t("{0} · {1}개", [spaceLabel, items.length])}
 				create={{ space }}
 				navigator={renderNavigator}
 				navigatorOnly
-				emptyTitle="노트를 선택하세요"
-				emptyDescription="왼쪽 폴더 트리에서 노트를 선택하면 여기에서 바로 편집할 수 있습니다."
+				emptyTitle={t("선택된 노트 없음")}
 				scopeKey={space}
 			/>
 
@@ -537,9 +565,9 @@ function UnifiedFolderWorkspace({
 			>
 				<DialogContent className="max-w-sm">
 					<DialogHeader>
-						<DialogTitle>폴더 이름 바꾸기</DialogTitle>
+						<DialogTitle>{t("폴더 이름 바꾸기")}</DialogTitle>
 						<DialogDescription>
-							폴더 안의 노트와 하위 폴더 경로도 함께 바뀝니다.
+							{t("폴더 안의 노트와 하위 폴더 경로도 함께 바뀝니다.")}
 						</DialogDescription>
 					</DialogHeader>
 					<form onSubmit={renameFolder} className="space-y-4">
@@ -547,11 +575,11 @@ function UnifiedFolderWorkspace({
 							autoFocus
 							value={editingName}
 							onChange={(event) => setEditingName(event.target.value)}
-							aria-label="새 폴더 이름"
+							aria-label={t("새 폴더 이름")}
 						/>
 						{error ? (
 							<output className="block text-sm text-destructive">
-								{error}
+								{errorText(error)}
 							</output>
 						) : null}
 						<div className="flex justify-end gap-2">
@@ -560,10 +588,10 @@ function UnifiedFolderWorkspace({
 								variant="outline"
 								onClick={() => setEditingFolder(undefined)}
 							>
-								취소
+								{t("취소")}
 							</Button>
 							<Button type="submit" disabled={!editingName.trim() || saving}>
-								변경
+								{t("변경")}
 							</Button>
 						</div>
 					</form>
@@ -578,28 +606,32 @@ function UnifiedFolderWorkspace({
 			>
 				<DialogContent className="max-w-sm">
 					<DialogHeader>
-						<DialogTitle>빈 폴더를 삭제할까요?</DialogTitle>
+						<DialogTitle>{t("빈 폴더를 삭제할까요?")}</DialogTitle>
 						<DialogDescription>
-							“{deletingFolder?.name}” 폴더만 삭제됩니다. 노트나 하위 폴더가
-							있으면 삭제되지 않습니다.
+							“{deletingFolder?.name}
+							{t(
+								"” 폴더만 삭제됩니다. 노트나 하위 폴더가 있으면 삭제되지 않습니다.",
+							)}
 						</DialogDescription>
 					</DialogHeader>
 					{error ? (
-						<output className="block text-sm text-destructive">{error}</output>
+						<output className="block text-sm text-destructive">
+							{errorText(error)}
+						</output>
 					) : null}
 					<div className="flex justify-end gap-2">
 						<Button
 							variant="outline"
 							onClick={() => setDeletingFolder(undefined)}
 						>
-							취소
+							{t("취소")}
 						</Button>
 						<Button
 							variant="destructive"
 							disabled={saving}
 							onClick={() => void deleteFolder()}
 						>
-							삭제
+							{t("삭제")}
 						</Button>
 					</div>
 				</DialogContent>
@@ -615,7 +647,13 @@ export function SpaceIndexPage({
 	snapshot: OrbitSnapshot;
 	space: Exclude<FolderSpaceId, "archive">;
 }) {
-	return <UnifiedFolderWorkspace snapshot={snapshot} space={space} />;
+	return (
+		<UnifiedFolderWorkspace
+			key={`${snapshot.vaultPath}:${space}`}
+			snapshot={snapshot}
+			space={space}
+		/>
+	);
 }
 
 export function SpaceFolderPage({
@@ -629,6 +667,7 @@ export function SpaceFolderPage({
 }) {
 	return (
 		<UnifiedFolderWorkspace
+			key={`${snapshot.vaultPath}:${space}`}
 			snapshot={snapshot}
 			space={space}
 			initialFolder={folder}
@@ -637,5 +676,11 @@ export function SpaceFolderPage({
 }
 
 export function ArchivePage({ snapshot }: { snapshot: OrbitSnapshot }) {
-	return <UnifiedFolderWorkspace snapshot={snapshot} space="archive" />;
+	return (
+		<UnifiedFolderWorkspace
+			key={`${snapshot.vaultPath}:archive`}
+			snapshot={snapshot}
+			space="archive"
+		/>
+	);
 }

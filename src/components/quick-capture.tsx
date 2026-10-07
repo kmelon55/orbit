@@ -9,6 +9,7 @@ import {
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { formatDayKey, ITEM_TYPE_LABEL } from "#/lib/orbit/para";
 import type { OrbitItemType } from "#/lib/orbit/schema";
+import { useI18n } from "@/components/locale-provider";
 import { useOrbitWrites } from "@/components/orbit-snapshot-provider";
 import { QuickCaptureEditor } from "@/components/quick-capture-editor";
 import { DatePicker, TimePicker } from "@/components/schedule-controls";
@@ -66,14 +67,18 @@ export function QuickCapture({
 	placeholder = "생각나는 것을 일단 적어두세요",
 	initialKind = "note",
 	autoFocus = false,
+	compact = false,
 	className,
 }: {
 	onSubmitted?: () => void;
 	placeholder?: string;
 	initialKind?: Extract<OrbitItemType, "note" | "task" | "event">;
 	autoFocus?: boolean;
+	compact?: boolean;
 	className?: string;
 }) {
+	const { t, intlLocale } = useI18n();
+
 	const { capture: saveCapture, pending, retry } = useOrbitWrites();
 	const [capture, setCapture] = useState("");
 	const titleBreak = capture.indexOf("\n");
@@ -107,11 +112,11 @@ export function QuickCapture({
 		}
 		const Recognition = getSpeechRecognition();
 		if (!Recognition) {
-			setMessage("이 브라우저에서는 음성 입력을 지원하지 않습니다.");
+			setMessage(t("이 브라우저에서는 음성 입력을 지원하지 않습니다."));
 			return;
 		}
 		const recognition = new Recognition();
-		recognition.lang = "ko-KR";
+		recognition.lang = intlLocale;
 		recognition.continuous = false;
 		recognition.interimResults = true;
 		speechBaseRef.current = capture.trim();
@@ -126,8 +131,8 @@ export function QuickCapture({
 			setListening(false);
 			setMessage(
 				event.error === "not-allowed"
-					? "음성 입력을 사용하려면 마이크 권한을 허용해 주세요."
-					: "음성을 인식하지 못했습니다. 다시 눌러 주세요.",
+					? t("음성 입력을 사용하려면 마이크 권한을 허용해 주세요.")
+					: t("음성을 인식하지 못했습니다. 다시 눌러 주세요."),
 			);
 		};
 		recognition.onend = () => setListening(false);
@@ -138,7 +143,7 @@ export function QuickCapture({
 			recognition.start();
 		} catch {
 			setListening(false);
-			setMessage("음성 입력을 시작하지 못했습니다. 다시 눌러 주세요.");
+			setMessage(t("음성 입력을 시작하지 못했습니다. 다시 눌러 주세요."));
 		}
 	}
 
@@ -148,14 +153,14 @@ export function QuickCapture({
 		const body = captureBody.trim();
 		if (!title) return;
 		if (title.length > 160 || body.length > 20_000) {
-			setMessage("첫 줄은 160자, 본문은 20,000자까지 적을 수 있습니다.");
+			setMessage(t("첫 줄은 160자, 본문은 20,000자까지 적을 수 있습니다."));
 			return;
 		}
 		if (
 			kind === "event" &&
 			(endDate < date || (endDate === date && endTime <= startTime))
 		) {
-			setMessage("종료는 시작보다 뒤여야 합니다.");
+			setMessage(t("종료는 시작보다 뒤여야 합니다."));
 			return;
 		}
 		const schedule =
@@ -205,7 +210,8 @@ export function QuickCapture({
 						className="mb-2 flex items-center gap-2 text-xs text-destructive"
 					>
 						<span className="min-w-0 flex-1 truncate">
-							“{entry.input.title}”을 저장하지 못했습니다.
+							“{entry.input.title}
+							{t("”을 저장하지 못했습니다.")}
 						</span>
 						<Button
 							type="button"
@@ -213,7 +219,7 @@ export function QuickCapture({
 							variant="ghost"
 							onClick={() => retry(entry.id)}
 						>
-							다시 시도
+							{t("다시 시도")}
 						</Button>
 					</div>
 				))}
@@ -221,8 +227,9 @@ export function QuickCapture({
 				<QuickCaptureEditor
 					value={capture}
 					onChange={setCapture}
-					placeholder={placeholder}
+					placeholder={t(placeholder)}
 					autoFocus={autoFocus}
+					compact={compact}
 				/>
 				<div className="flex items-center justify-end gap-2 px-1">
 					{voiceSupported ? (
@@ -232,7 +239,7 @@ export function QuickCapture({
 							variant={listening ? "secondary" : "ghost"}
 							onClick={toggleVoice}
 							aria-pressed={listening}
-							aria-label={listening ? "음성 입력 중지" : "음성으로 입력"}
+							aria-label={listening ? t("음성 입력 중지") : t("음성으로 입력")}
 							className={cn(
 								"size-11 shrink-0",
 								listening && "text-red-600 dark:text-red-400",
@@ -246,27 +253,27 @@ export function QuickCapture({
 						size="icon"
 						className="size-11 shrink-0"
 						disabled={!captureTitle.trim()}
-						title="저장 (⌘ / Ctrl + Enter)"
+						title={t("저장 (⌘ / Ctrl + Enter)")}
 					>
 						<ArrowUp />
 						<span className="sr-only">
 							{kind === "event"
-								? "캘린더에 추가"
+								? t("캘린더에 추가")
 								: kind === "task"
-									? "할 일 등록"
-									: "노트 저장"}
+									? t("할 일 등록")
+									: t("노트 저장")}
 						</span>
 					</Button>
 				</div>
 			</div>
-			<Separator className="my-2" />
+			{compact ? null : <Separator className="my-2" />}
 			{kind === "task" || kind === "event" ? (
 				<div className="grid gap-2 px-1 pb-2">
 					{kind === "event" ? (
 						<>
 							<div className="grid items-center gap-2 sm:grid-cols-[2.5rem_minmax(0,1fr)_minmax(0,0.8fr)]">
 								<span className="text-xs font-medium text-muted-foreground">
-									시작
+									{t("시작")}
 								</span>
 								<DatePicker
 									value={date}
@@ -274,7 +281,7 @@ export function QuickCapture({
 										setDate(value);
 										if (endDate < value) setEndDate(value);
 									}}
-									label="시작 날짜"
+									label={t("시작 날짜")}
 									className="h-8 w-full px-2.5 text-xs"
 								/>
 								<TimePicker
@@ -287,25 +294,25 @@ export function QuickCapture({
 											if (nextEndTime <= value) setEndDate(nextDay(date));
 										}
 									}}
-									label="시작 시간"
+									label={t("시작 시간")}
 									className="h-8 w-full px-2.5 text-xs"
 								/>
 							</div>
 							<div className="grid items-center gap-2 sm:grid-cols-[2.5rem_minmax(0,1fr)_minmax(0,0.8fr)]">
 								<span className="text-xs font-medium text-muted-foreground">
-									종료
+									{t("종료")}
 								</span>
 								<DatePicker
 									value={endDate}
 									min={date}
 									onChange={setEndDate}
-									label="종료 날짜"
+									label={t("종료 날짜")}
 									className="h-8 w-full px-2.5 text-xs"
 								/>
 								<TimePicker
 									value={endTime}
 									onChange={setEndTime}
-									label="종료 시간"
+									label={t("종료 시간")}
 									className="h-8 w-full px-2.5 text-xs"
 								/>
 							</div>
@@ -313,12 +320,12 @@ export function QuickCapture({
 					) : (
 						<div className="grid grid-cols-3 gap-1 rounded-xl bg-muted/50 p-1">
 							{[
-								{ label: "오늘", value: formatDayKey() },
-								{ label: "내일", value: nextDay(formatDayKey()) },
-								{ label: "미정", value: "" },
+								{ label: t("오늘"), value: formatDayKey() },
+								{ label: t("내일"), value: nextDay(formatDayKey()) },
+								{ label: t("미정"), value: "" },
 							].map((option) => (
 								<button
-									key={option.label}
+									key={t(option.label)}
 									type="button"
 									onClick={() => setDate(option.value)}
 									aria-pressed={date === option.value}
@@ -328,7 +335,7 @@ export function QuickCapture({
 											"bg-background text-foreground shadow-sm",
 									)}
 								>
-									{option.label}
+									{t(option.label)}
 								</button>
 							))}
 						</div>
@@ -336,7 +343,7 @@ export function QuickCapture({
 				</div>
 			) : null}
 			<div className="flex flex-wrap items-center justify-between gap-2 px-1">
-				<div className="flex flex-wrap gap-1">
+				<div className={cn("flex flex-wrap gap-1", compact && "hidden")}>
 					{KINDS.map(({ type, icon: Icon }) => (
 						<Button
 							key={type}
@@ -351,12 +358,14 @@ export function QuickCapture({
 								setMessage(null);
 							}}
 						>
-							<Icon /> {ITEM_TYPE_LABEL[type]}
+							<Icon /> {t(ITEM_TYPE_LABEL[type])}
 						</Button>
 					))}
 				</div>
 				{message && (
-					<output className="text-xs text-muted-foreground">{message}</output>
+					<output className="text-xs text-muted-foreground">
+						{t(message)}
+					</output>
 				)}
 			</div>
 		</form>

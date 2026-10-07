@@ -4,6 +4,7 @@ import { useState } from "react";
 import { FOLDER_COLORS } from "#/lib/orbit/folder-colors";
 import { paletteItemColor } from "#/lib/orbit/item-colors";
 import type { OrbitItem } from "#/lib/orbit/schema";
+import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +23,8 @@ export function ItemColorPicker({
 	compact?: boolean;
 	label?: string;
 }) {
+	const { t } = useI18n();
+
 	const [open, setOpen] = useState(false);
 	const selected = paletteItemColor({ type, color: value });
 	return (
@@ -32,15 +35,17 @@ export function ItemColorPicker({
 					variant="ghost"
 					size={compact ? "icon-sm" : "sm"}
 					disabled={disabled}
-					aria-label={label ?? `색상 선택: ${value ? selected.label : "기본"}`}
+					aria-label={
+						label ?? t("색상 선택: {0}", [t(value ? selected.label : "기본")])
+					}
 					title={label}
 				>
 					<span className={cn("size-3 shrink-0 rounded-full", selected.dot)} />
 					{compact ? null : (
 						<>
-							색상{" "}
+							{t("색상")}{" "}
 							<span className="text-muted-foreground">
-								{value ? selected.label : "기본"}
+								{value ? t(selected.label) : t("기본")}
 							</span>
 						</>
 					)}
@@ -50,17 +55,19 @@ export function ItemColorPicker({
 				<Popover.Content
 					align="start"
 					sideOffset={6}
-					aria-label="색상 선택"
+					aria-label={t("색상 선택")}
 					className="z-50 w-64 rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg outline-none"
 				>
-					<p className="mb-2 text-xs font-medium text-muted-foreground">색상</p>
+					<p className="mb-2 text-xs font-medium text-muted-foreground">
+						{t("색상")}
+					</p>
 					<div className="grid grid-cols-6 gap-1">
 						{FOLDER_COLORS.map((color) => (
 							<button
 								key={color.id}
 								type="button"
-								aria-label={color.label}
-								title={color.label}
+								aria-label={t(color.label)}
+								title={t(color.label)}
 								aria-pressed={value === color.id}
 								onClick={() => {
 									onChange(color.id);
@@ -104,7 +111,7 @@ export function ItemColorPicker({
 							setOpen(false);
 						}}
 					>
-						<RotateCcw /> 기본 색상
+						<RotateCcw /> {t("기본 색상")}
 					</Button>
 				</Popover.Content>
 			</Popover.Portal>

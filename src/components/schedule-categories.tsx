@@ -4,12 +4,16 @@ import { type ReactNode, useId, useState } from "react";
 import { toast } from "sonner";
 import { FOLDER_COLOR_VALUES, folderColor } from "#/lib/orbit/folder-colors";
 import { mutateOrbit } from "#/lib/orbit/functions";
-import { DEFAULT_SCHEDULE_CATEGORIES } from "#/lib/orbit/schedule-categories";
+import {
+	DEFAULT_SCHEDULE_CATEGORIES,
+	scheduleCategoryLabel,
+} from "#/lib/orbit/schedule-categories";
 import {
 	type ScheduleCategory,
 	scheduleCategorySettingsSchema,
 } from "#/lib/orbit/schema";
 import { ItemColorPicker } from "@/components/item-color-picker";
+import { useI18n } from "@/components/locale-provider";
 import { useOrbitSnapshot } from "@/components/orbit-snapshot-provider";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -33,6 +37,7 @@ import {
 import { cn } from "@/lib/utils";
 
 function useScheduleCategories() {
+	const { locale } = useI18n();
 	const snapshot = useOrbitSnapshot();
 	const categories = [
 		...(snapshot.scheduleCategories ?? DEFAULT_SCHEDULE_CATEGORIES),
@@ -52,14 +57,22 @@ function useScheduleCategories() {
 			known.add(item.category);
 		}
 	}
-	return categories;
+	return categories.map((category) => ({
+		...category,
+		displayName: scheduleCategoryLabel(category, locale),
+	}));
 }
 
-function useUncategorizedCategory(): ScheduleCategory {
+function useUncategorizedCategory(): ScheduleCategory & {
+	displayName: string;
+} {
+	const { locale } = useI18n();
 	const snapshot = useOrbitSnapshot();
+	const name = snapshot.uncategorizedScheduleName ?? "미분류";
 	return {
 		id: "uncategorized",
-		name: snapshot.uncategorizedScheduleName ?? "미분류",
+		name,
+		displayName: scheduleCategoryLabel({ id: "uncategorized", name }, locale),
 		color: snapshot.uncategorizedScheduleColor ?? "slate",
 	};
 }
@@ -88,6 +101,8 @@ export function ScheduleCategorySelect({
 	value?: string;
 	onChange: (value: string | undefined) => void;
 }) {
+	const { t } = useI18n();
+
 	const categories = useScheduleCategories();
 	const selected = categories.find((category) => category.id === value);
 	const uncategorized = useUncategorizedCategory();
@@ -98,7 +113,7 @@ export function ScheduleCategorySelect({
 				aria-hidden="true"
 				className="size-4 shrink-0 text-muted-foreground"
 			/>
-			<label htmlFor={triggerId}>캘린더</label>
+			<label htmlFor={triggerId}>{t("캘린더")}</label>
 			<Select
 				value={value ?? "uncategorized"}
 				onValueChange={(next) =>
@@ -107,7 +122,7 @@ export function ScheduleCategorySelect({
 			>
 				<SelectTrigger
 					id={triggerId}
-					aria-label="캘린더"
+					aria-label={t("캘린더")}
 					className="h-9 min-w-0 flex-1 bg-background px-3"
 				>
 					<SelectValue className="min-w-0 flex-1 text-left">
@@ -119,7 +134,7 @@ export function ScheduleCategorySelect({
 							)}
 						/>
 						<span className="truncate">
-							{selected?.name ?? value ?? uncategorized.name}
+							{selected?.displayName ?? value ?? uncategorized.displayName}
 						</span>
 					</SelectValue>
 				</SelectTrigger>
@@ -131,7 +146,7 @@ export function ScheduleCategorySelect({
 					<SelectGroup>
 						<SelectItem
 							value="uncategorized"
-							textValue={uncategorized.name}
+							textValue={uncategorized.displayName}
 							className="py-2 [&>span:last-child]:min-w-0"
 						>
 							<span
@@ -141,13 +156,13 @@ export function ScheduleCategorySelect({
 									folderColor(uncategorized.color).dot,
 								)}
 							/>
-							<span className="truncate">{uncategorized.name}</span>
+							<span className="truncate">{uncategorized.displayName}</span>
 						</SelectItem>
 						{categories.map((category) => (
 							<SelectItem
 								key={category.id}
 								value={category.id}
-								textValue={category.name}
+								textValue={category.displayName}
 								className="py-2 [&>span:last-child]:min-w-0"
 							>
 								<span
@@ -157,7 +172,7 @@ export function ScheduleCategorySelect({
 										folderColor(category.color).dot,
 									)}
 								/>
-								<span className="truncate">{category.name}</span>
+								<span className="truncate">{category.displayName}</span>
 							</SelectItem>
 						))}
 					</SelectGroup>
@@ -187,6 +202,8 @@ function CalendarDisplayRow({
 	icon?: ReactNode;
 	children?: ReactNode;
 }) {
+	const { t } = useI18n();
+
 	const checkboxId = useId();
 	return (
 		<div className="flex items-center gap-1 rounded-lg hover:bg-muted/70">
@@ -196,7 +213,7 @@ function CalendarDisplayRow({
 			>
 				<Checkbox
 					id={checkboxId}
-					aria-label={`${name} 표시`}
+					aria-label={t("{0} 표시", [name])}
 					checked={visible}
 					onCheckedChange={onToggle}
 					className="rounded-[5px]"
@@ -218,6 +235,8 @@ function CategoryDisplayRow({
 	visible: boolean;
 	onToggle: () => void;
 }) {
+	const { t, locale } = useI18n();
+
 	const [saving, setSaving] = useState(false);
 	async function changeColor(color: ScheduleCategory["color"] | undefined) {
 		if (saving) return;
@@ -234,14 +253,14 @@ function CategoryDisplayRow({
 				},
 			});
 		} catch {
-			toast.error("색상을 저장하지 못했습니다.");
+			toast.error(t("색상을 저장하지 못했습니다."));
 		} finally {
 			setSaving(false);
 		}
 	}
 	return (
 		<CalendarDisplayRow
-			name={category.name}
+			name={scheduleCategoryLabel(category, locale)}
 			visible={visible}
 			onToggle={onToggle}
 		>
@@ -249,7 +268,7 @@ function CategoryDisplayRow({
 				type="event"
 				value={category.color}
 				compact
-				label={`${category.name} 색상 변경`}
+				label={t("{0} 색상 변경", [scheduleCategoryLabel(category, locale)])}
 				disabled={saving}
 				onChange={(color) => void changeColor(color)}
 			/>
@@ -263,6 +282,8 @@ export function ScheduleDisplayOptions({
 	hidden,
 	onChangeHidden,
 }: CalendarDisplayOptions) {
+	const { t } = useI18n();
+
 	const categories = useScheduleCategories();
 	const uncategorized = useUncategorizedCategory();
 	function toggleCategory(id: string) {
@@ -273,13 +294,13 @@ export function ScheduleDisplayOptions({
 		);
 	}
 	return (
-		<fieldset className="min-w-0" aria-label="달력 표시">
+		<fieldset className="min-w-0" aria-label={t("달력 표시")}>
 			<div className="mb-1 px-1 text-[11px] font-semibold text-muted-foreground">
-				표시할 항목
+				{t("표시할 항목")}
 			</div>
 			<div className="grid grid-cols-2 gap-1">
 				{(["task", "event"] as const).map((kind) => {
-					const name = kind === "event" ? "일정" : "할 일";
+					const name = kind === "event" ? t("일정") : t("할 일");
 					const Icon = kind === "event" ? CalendarDays : ListTodo;
 					return (
 						<CalendarDisplayRow
@@ -297,7 +318,7 @@ export function ScheduleDisplayOptions({
 			<div className="mt-3 border-t pt-2">
 				<div className="mb-1 flex items-center justify-between gap-2 px-1">
 					<span className="text-[11px] font-semibold text-muted-foreground">
-						캘린더
+						{t("캘린더")}
 					</span>
 					<ScheduleCategoryManager />
 				</div>
@@ -322,6 +343,8 @@ export function ScheduleDisplayOptions({
 }
 
 export function ScheduleDisplayMenu(props: CalendarDisplayOptions) {
+	const { t } = useI18n();
+
 	return (
 		<Popover.Root>
 			<Popover.Trigger asChild>
@@ -330,7 +353,7 @@ export function ScheduleDisplayMenu(props: CalendarDisplayOptions) {
 					variant="ghost"
 					size="icon-sm"
 					className="xl:hidden"
-					aria-label="달력 표시와 색상"
+					aria-label={t("달력 표시와 색상")}
 				>
 					<Settings2 />
 				</Button>
@@ -349,6 +372,8 @@ export function ScheduleDisplayMenu(props: CalendarDisplayOptions) {
 }
 
 function ScheduleCategoryManager() {
+	const { t, errorText, locale } = useI18n();
+
 	const categories = useScheduleCategories();
 	const uncategorized = useUncategorizedCategory();
 	const settingsCategories = [...categories, uncategorized];
@@ -369,7 +394,7 @@ function ScheduleCategoryManager() {
 		if (!editing || saving) return;
 		const parsed = scheduleCategorySettingsSchema.safeParse(editing);
 		if (!parsed.success) {
-			setError("캘린더 이름을 입력하세요.");
+			setError(t("캘린더 이름을 입력하세요."));
 			return;
 		}
 		if (
@@ -378,7 +403,7 @@ function ScheduleCategoryManager() {
 					category.id !== editing.id && category.name === parsed.data.name,
 			)
 		) {
-			setError("같은 이름의 캘린더가 있습니다.");
+			setError(t("같은 이름의 캘린더가 있습니다."));
 			return;
 		}
 		setSaving(true);
@@ -392,7 +417,7 @@ function ScheduleCategoryManager() {
 			setError(
 				error instanceof Error
 					? error.message
-					: "캘린더를 저장하지 못했습니다.",
+					: t("캘린더를 저장하지 못했습니다."),
 			);
 		} finally {
 			setSaving(false);
@@ -412,16 +437,16 @@ function ScheduleCategoryManager() {
 					type="button"
 					variant="ghost"
 					size="icon-sm"
-					aria-label="캘린더 관리"
+					aria-label={t("캘린더 관리")}
 				>
 					<Settings2 />
 				</Button>
 			</DialogTrigger>
 			<DialogContent className="max-w-sm">
 				<DialogHeader>
-					<DialogTitle>캘린더</DialogTitle>
+					<DialogTitle>{t("캘린더")}</DialogTitle>
 					<DialogDescription className="sr-only">
-						캘린더를 추가하거나 이름을 변경하세요.
+						{t("캘린더를 추가하거나 이름을 변경하세요.")}
 					</DialogDescription>
 				</DialogHeader>
 				<div className="flex max-h-48 flex-col gap-1 overflow-y-auto">
@@ -441,7 +466,7 @@ function ScheduleCategoryManager() {
 								)}
 							/>
 							<span className="min-w-0 flex-1 truncate text-left">
-								{category.name}
+								{scheduleCategoryLabel(category, locale)}
 							</span>
 							{category.id === "uncategorized" ? (
 								<span className="shrink-0 text-xs text-muted-foreground">
@@ -460,7 +485,7 @@ function ScheduleCategoryManager() {
 						edit({ id: crypto.randomUUID(), name: "", color: "violet" })
 					}
 				>
-					<Plus /> 캘린더 추가
+					<Plus /> {t("캘린더 추가")}
 				</Button>
 				{editing ? (
 					<form
@@ -471,8 +496,8 @@ function ScheduleCategoryManager() {
 						}}
 					>
 						<Input
-							aria-label="캘린더 이름"
-							placeholder="캘린더 이름"
+							aria-label={t("캘린더 이름")}
+							placeholder={t("캘린더 이름")}
 							value={editing.name}
 							maxLength={80}
 							disabled={saving}
@@ -485,7 +510,7 @@ function ScheduleCategoryManager() {
 							<ItemColorPicker
 								type="event"
 								value={editing.color}
-								label={`${editing.name || "캘린더"} 색상 선택`}
+								label={t("{0} 색상 선택", [editing.name || t("캘린더")])}
 								disabled={saving}
 								onChange={(color) => {
 									setEditing({
@@ -501,14 +526,14 @@ function ScheduleCategoryManager() {
 								type="submit"
 								disabled={saving || !editing.name.trim() || !changed}
 							>
-								{saving ? "저장 중" : "저장"}
+								{saving ? t("저장 중") : t("저장")}
 							</Button>
 						</div>
 					</form>
 				) : null}
 				{error ? (
 					<p role="alert" className="text-sm text-destructive">
-						{error}
+						{errorText(error)}
 					</p>
 				) : null}
 			</DialogContent>

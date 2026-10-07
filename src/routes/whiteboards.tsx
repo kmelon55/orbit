@@ -17,6 +17,7 @@ import { useEffect, useRef, useState } from "react";
 import { loadOrbitCanvas, mutateOrbit } from "#/lib/orbit/functions";
 import { formatDateTime } from "#/lib/orbit/para";
 import type { OrbitCanvas } from "#/lib/orbit/schema";
+import { useI18n } from "@/components/locale-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -33,6 +34,8 @@ type SerializeAsJSON = typeof import("@excalidraw/excalidraw").serializeAsJSON;
 type CanvasChange = NonNullable<ExcalidrawProps["onChange"]>;
 
 function WhiteboardsPage() {
+	const { t, locale, intlLocale } = useI18n();
+
 	const snapshot = useOrbitSnapshot();
 	const [selectedPath, setSelectedPath] = useState<string | null>(
 		snapshot.canvases[0]?.path ?? null,
@@ -45,7 +48,7 @@ function WhiteboardsPage() {
 		useState<SerializeAsJSON | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [saving, setSaving] = useState(false);
-	const [message, setMessage] = useState("파일에 자동 저장됩니다");
+	const [message, setMessage] = useState(t("파일에 자동 저장됩니다"));
 	const saveTimer = useRef<number | undefined>(undefined);
 	const lastDocumentRef = useRef<string | null>(null);
 
@@ -96,7 +99,9 @@ function WhiteboardsPage() {
 	}, []);
 
 	async function createCanvas() {
-		const title = window.prompt("화이트보드 이름", "새 화이트보드")?.trim();
+		const title = window
+			.prompt(t("화이트보드 이름"), t("새 화이트보드"))
+			?.trim();
 		if (!title) return;
 		const result = await mutateOrbit({
 			data: { action: "create-canvas", title },
@@ -118,7 +123,7 @@ function WhiteboardsPage() {
 		if (lastDocumentRef.current === comparable) return;
 		lastDocumentRef.current = comparable;
 		setSaving(true);
-		setMessage("저장 준비 중…");
+		setMessage(t("저장 준비 중…"));
 		window.clearTimeout(saveTimer.current);
 		saveTimer.current = window.setTimeout(() => {
 			void mutateOrbit({
@@ -127,15 +132,17 @@ function WhiteboardsPage() {
 				.then(() => {
 					setSaving(false);
 					setMessage(
-						`저장됨 · ${new Intl.DateTimeFormat("ko-KR", {
-							hour: "2-digit",
-							minute: "2-digit",
-						}).format(new Date())}`,
+						t("저장됨 · {0}", [
+							new Intl.DateTimeFormat(intlLocale, {
+								hour: "2-digit",
+								minute: "2-digit",
+							}).format(new Date()),
+						]),
 					);
 				})
 				.catch(() => {
 					setSaving(false);
-					setMessage("저장하지 못했습니다");
+					setMessage(t("저장하지 못했습니다"));
 				});
 		}, 700);
 	}
@@ -152,14 +159,11 @@ function WhiteboardsPage() {
 						EXCALIDRAW
 					</p>
 					<h2 className="mt-1 text-xl font-semibold tracking-tight">
-						Whiteboards
+						{t("Whiteboards")}
 					</h2>
-					<p className="mt-1 text-sm text-muted-foreground">
-						`.excalidraw` 파일을 그대로 보존하고 Orbit 안에서 편집합니다.
-					</p>
 				</div>
 				<Button onClick={() => void createCanvas()}>
-					<Plus /> 새 화이트보드
+					<Plus /> {t("새 화이트보드")}
 				</Button>
 			</header>
 
@@ -168,7 +172,8 @@ function WhiteboardsPage() {
 					<div className="flex items-center justify-between px-4 py-3">
 						<div className="flex items-center gap-2 text-sm font-medium">
 							<PanelLeft className="size-4 text-muted-foreground" />
-							{snapshot.canvases.length}개 보드
+							{snapshot.canvases.length}
+							{t("개 보드")}
 						</div>
 					</div>
 					<ScrollArea className="max-h-52 lg:h-[calc(100vh-11rem)] lg:max-h-none">
@@ -192,7 +197,8 @@ function WhiteboardsPage() {
 												{canvas.title}
 											</span>
 											<span className="mt-1 block truncate text-xs text-muted-foreground">
-												수정 {formatDateTime(canvas.updated)}
+												{t("수정")}
+												{formatDateTime(canvas.updated, intlLocale)}
 											</span>
 										</span>
 									</div>
@@ -200,8 +206,7 @@ function WhiteboardsPage() {
 							))}
 							{snapshot.canvases.length === 0 ? (
 								<div className="px-3 py-8 text-sm leading-6 text-muted-foreground">
-									아직 화이트보드가 없습니다. 새로 만들거나 Obsidian의
-									`.excalidraw` 파일을 가져오면 여기에 나타납니다.
+									{t("화이트보드가 없습니다.")}
 								</div>
 							) : null}
 						</div>
@@ -218,7 +223,7 @@ function WhiteboardsPage() {
 									<Badge variant="outline">{selected.format}</Badge>
 								</div>
 								<div className="flex items-center gap-2 text-xs text-muted-foreground">
-									<span>{message}</span>
+									<span>{t(message)}</span>
 									{saving ? (
 										<LoaderCircle className="size-3.5 animate-spin" />
 									) : (
@@ -229,6 +234,7 @@ function WhiteboardsPage() {
 							<div className="min-h-0 flex-1">
 								{Editor ? (
 									<Editor
+										langCode={locale === "ko" ? "ko-KR" : "en"}
 										initialData={
 											JSON.parse(
 												canvasData.document,
@@ -240,7 +246,7 @@ function WhiteboardsPage() {
 									/>
 								) : (
 									<div className="grid h-full place-items-center text-sm text-muted-foreground">
-										화이트보드 편집기를 불러오는 중…
+										{t("화이트보드 편집기를 불러오는 중…")}
 									</div>
 								)}
 							</div>
@@ -253,12 +259,9 @@ function WhiteboardsPage() {
 								</div>
 								<h3 className="text-sm font-medium">
 									{loading
-										? "화이트보드 불러오는 중…"
-										: "화이트보드를 선택하세요"}
+										? t("화이트보드 불러오는 중…")
+										: t("선택된 화이트보드 없음")}
 								</h3>
-								<p className="mt-1.5 text-sm text-muted-foreground">
-									작성일과 마지막 수정일도 파일 기준으로 함께 표시됩니다.
-								</p>
 							</div>
 						</div>
 					)}

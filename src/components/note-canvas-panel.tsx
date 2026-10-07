@@ -14,7 +14,12 @@ import {
 	X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import {
+	BEFORE_LOCALE_CHANGE,
+	type LocaleWrites,
+} from "#/lib/i18n/locale-events";
 import { loadOrbitCanvas, mutateOrbit } from "#/lib/orbit/functions";
+import { useI18n } from "@/components/locale-provider";
 import { useTheme } from "@/components/theme-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +41,8 @@ export function NoteCanvasPanel({
 	onRename: (canvas: { path: string; title: string }) => void;
 	onTitleChange: (title: string) => void;
 }) {
+	const { t, locale } = useI18n();
+
 	const { resolvedTheme } = useTheme();
 	const [canvasData, setCanvasData] = useState<Awaited<
 		ReturnType<typeof loadOrbitCanvas>
@@ -47,7 +54,7 @@ export function NoteCanvasPanel({
 	const [fullscreen, setFullscreen] = useState(false);
 	const [editingTitle, setEditingTitle] = useState(false);
 	const [titleDraft, setTitleDraft] = useState(canvas.title);
-	const [message, setMessage] = useState("파일에 자동 저장됩니다");
+	const [message, setMessage] = useState(t("파일에 자동 저장됩니다"));
 	const saveTimer = useRef<number | undefined>(undefined);
 	const titleSaveTimer = useRef<number | undefined>(undefined);
 	const lastDocumentRef = useRef<string | null>(null);
@@ -57,6 +64,8 @@ export function NoteCanvasPanel({
 	const lastPersistedTitleRef = useRef(canvas.title);
 	const pendingTitleSaveRef = useRef<string | null>(null);
 	const titleSaveRunningRef = useRef(false);
+	const titleSaveRequestRef = useRef<Promise<void> | null>(null);
+	const beforeLocaleRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
 	useEffect(() => {
 		if (import.meta.env.SSR) return;
@@ -103,6 +112,29 @@ export function NoteCanvasPanel({
 		};
 	}, [canvas.path]);
 
+	useEffect(() => {
+		const flush = (event: Event) => {
+			const detail = (event as CustomEvent<LocaleWrites>).detail;
+			detail.pending.push(
+				(async () => {
+					await beforeLocaleRef.current();
+					await activeCanvasSaveRef.current;
+					const document = pendingDocumentRef.current;
+					if (document) {
+						window.clearTimeout(saveTimer.current);
+						await mutateOrbit({
+							data: { action: "save-canvas", path: canvas.path, document },
+						});
+						if (pendingDocumentRef.current === document)
+							pendingDocumentRef.current = null;
+					}
+				})(),
+			);
+		};
+		window.addEventListener(BEFORE_LOCALE_CHANGE, flush);
+		return () => window.removeEventListener(BEFORE_LOCALE_CHANGE, flush);
+	}, [canvas.path]);
+
 	function scheduleSave(
 		elements: Parameters<CanvasChange>[0],
 		appState: Parameters<CanvasChange>[1] & AppState,
@@ -114,13 +146,13 @@ export function NoteCanvasPanel({
 		if (lastDocumentRef.current === comparable) return;
 		lastDocumentRef.current = comparable;
 		pendingDocumentRef.current = document;
-		setMessage("변경됨");
+		setMessage(t("변경됨"));
 		window.clearTimeout(saveTimer.current);
 		saveTimer.current = window.setTimeout(() => {
 			if (pendingDocumentRef.current !== document) return;
 			pendingDocumentRef.current = null;
 			setSaving(true);
-			setMessage("저장 중…");
+			setMessage(t("저장 중…"));
 			const request = mutateOrbit({
 				data: { action: "save-canvas", path: canvas.path, document },
 			});
@@ -128,11 +160,11 @@ export function NoteCanvasPanel({
 			void request
 				.then(() => {
 					setSaving(false);
-					setMessage("저장됨");
+					setMessage(t("저장됨"));
 				})
 				.catch(() => {
 					setSaving(false);
-					setMessage("저장하지 못했습니다");
+					setMessage(t("저장하지 못했습니다"));
 				})
 				.finally(() => {
 					if (activeCanvasSaveRef.current === request)
@@ -141,7 +173,27 @@ export function NoteCanvasPanel({
 		}, 700);
 	}
 
-	async function flushTitleSave() {
+	function flushTitleSave(): Promise<void> {
+		if (titleSaveRequestRef.current) return titleSaveRequestRef.current;
+		const request = performTitleSave();
+		titleSaveRequestRef.current = request;
+		void request.finally(() => {
+			if (titleSaveRequestRef.current === request)
+				titleSaveRequestRef.current = null;
+			if (pendingTitleSaveRef.current) void flushTitleSave();
+		});
+		return request;
+	}
+	beforeLocaleRef.current = async () => {
+		window.clearTimeout(titleSaveTimer.current);
+		await flushTitleSave();
+		if (
+			titleDraftRef.current.trim() &&
+			titleDraftRef.current.trim() !== lastPersistedTitleRef.current
+		)
+			throw new Error("Canvas title has not been saved");
+	};
+	async function performTitleSave() {
 		if (titleSaveRunningRef.current) return;
 		titleSaveRunningRef.current = true;
 		try {
@@ -163,7 +215,7 @@ export function NoteCanvasPanel({
 					});
 				}
 				setSaving(true);
-				setMessage("저장 중…");
+				setMessage(t("저장 중…"));
 				const result = await mutateOrbit({
 					data: { action: "rename-canvas", path: canvas.path, title },
 				});
@@ -175,14 +227,13 @@ export function NoteCanvasPanel({
 					pendingTitleSaveRef.current === null
 				)
 					onRename(result.canvas);
-				setMessage("저장됨");
+				setMessage(t("저장됨"));
 			}
 		} catch {
-			setMessage("이름을 바꾸지 못했습니다");
+			setMessage(t("이름을 바꾸지 못했습니다"));
 		} finally {
 			setSaving(false);
 			titleSaveRunningRef.current = false;
-			if (pendingTitleSaveRef.current) void flushTitleSave();
 		}
 	}
 
@@ -193,7 +244,7 @@ export function NoteCanvasPanel({
 		const title = value.trim();
 		if (!title) return;
 		onTitleChange(title);
-		setMessage("변경됨");
+		setMessage(t("변경됨"));
 		titleSaveTimer.current = window.setTimeout(() => {
 			pendingTitleSaveRef.current = title;
 			void flushTitleSave();
@@ -237,7 +288,7 @@ export function NoteCanvasPanel({
 								onKeyDown={(event) => {
 									if (event.key === "Enter") event.currentTarget.blur();
 								}}
-								aria-label="화이트보드 이름"
+								aria-label={t("화이트보드 이름")}
 							/>
 						) : (
 							<button
@@ -249,7 +300,7 @@ export function NoteCanvasPanel({
 									lastPersistedTitleRef.current = canvas.title;
 									setEditingTitle(true);
 								}}
-								aria-label={`${canvas.title} 이름 수정`}
+								aria-label={t("{0} 이름 수정", [canvas.title])}
 							>
 								<span className="truncate text-sm font-semibold">
 									{canvas.title}
@@ -259,7 +310,7 @@ export function NoteCanvasPanel({
 						)}
 					</div>
 					<div className="flex min-w-0 shrink-0 items-center gap-1.5 text-xs text-muted-foreground sm:gap-2">
-						<span className="hidden sm:inline">{message}</span>
+						<span className="hidden sm:inline">{t(message)}</span>
 						{saving ? (
 							<LoaderCircle className="size-3.5 animate-spin" />
 						) : (
@@ -269,7 +320,7 @@ export function NoteCanvasPanel({
 							variant="ghost"
 							size="icon-sm"
 							onClick={() => setFullscreen((value) => !value)}
-							aria-label={fullscreen ? "원래 크기로" : "전체 화면"}
+							aria-label={fullscreen ? t("원래 크기로") : t("전체 화면")}
 						>
 							{fullscreen ? <Minimize2 /> : <Maximize2 />}
 						</Button>
@@ -277,7 +328,7 @@ export function NoteCanvasPanel({
 							variant="ghost"
 							size="icon-sm"
 							onClick={onClose}
-							aria-label="화이트보드 접기"
+							aria-label={t("화이트보드 접기")}
 						>
 							<X />
 						</Button>
@@ -291,6 +342,7 @@ export function NoteCanvasPanel({
 				>
 					{Editor && canvasData ? (
 						<Editor
+							langCode={locale === "ko" ? "ko-KR" : "en"}
 							key={canvas.path}
 							initialData={
 								JSON.parse(canvasData.document) as ExcalidrawInitialDataState
@@ -300,7 +352,7 @@ export function NoteCanvasPanel({
 						/>
 					) : (
 						<div className="grid h-full place-items-center text-sm text-muted-foreground">
-							{message}
+							{t(message)}
 						</div>
 					)}
 				</div>

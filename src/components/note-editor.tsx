@@ -11,8 +11,10 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { useI18n } from "@/components/locale-provider";
 import "@milkdown/crepe/theme/common/style.css";
 import {
+	orbitCanvasLocale,
 	orbitCanvasRemark,
 	orbitCanvasSchema,
 	orbitCanvasView,
@@ -72,6 +74,18 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 		},
 		ref,
 	) {
+		const i18n = useI18n();
+		const { t } = i18n;
+		const localeRef = useRef(i18n);
+		localeRef.current = i18n;
+
+		const selectionRef = useRef<{
+			noteId: string;
+			from: number;
+			to: number;
+		} | null>(null);
+		const translatedPlaceholder = t(placeholder);
+		const translatedLabel = t(label);
 		const rootRef = useRef<HTMLDivElement>(null);
 		const crepeRef = useRef<Crepe | null>(null);
 		const { vimEnabled, exitSequence } = useNoteVimPreference();
@@ -265,13 +279,38 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 				},
 				featureConfigs: {
 					[Crepe.Feature.BlockEdit]: {
+						textGroup: {
+							label: t("Text"),
+							text: { label: t("Paragraph") },
+							h1: { label: t("Heading 1") },
+							h2: { label: t("Heading 2") },
+							h3: { label: t("Heading 3") },
+							h4: { label: t("Heading 4") },
+							h5: { label: t("Heading 5") },
+							h6: { label: t("Heading 6") },
+							quote: { label: t("Quote") },
+							divider: { label: t("Divider") },
+						},
+						listGroup: {
+							label: t("List"),
+							bulletList: { label: t("Bullet list") },
+							orderedList: { label: t("Numbered list") },
+							taskList: { label: t("Task list") },
+						},
+						advancedGroup: {
+							label: t("Advanced"),
+							image: { label: t("Image") },
+							codeBlock: { label: t("Code block") },
+							table: { label: t("Table") },
+						},
+
 						blockHandle: {
 							getOffset: () => 8,
 						},
 						buildMenu: (builder) => {
 							const orbit = builder.addGroup("orbit", "Orbit");
 							orbit.addItem("note-link", {
-								label: "Note link · notelink · 노트 링크 · 노트링크",
+								label: t("Note link · notelink · 노트 링크 · 노트링크"),
 								icon: noteLinkIcon,
 								onRun: (ctx) => {
 									userInteractedRef.current = true;
@@ -285,7 +324,7 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 								},
 							});
 							orbit.addItem("whiteboard", {
-								label: "Whiteboard · 화이트보드",
+								label: t("Whiteboard · 화이트보드"),
 								icon: canvasIcon,
 								onRun: (ctx) => {
 									userInteractedRef.current = true;
@@ -295,13 +334,32 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 							});
 						},
 					},
+					[Crepe.Feature.LinkTooltip]: { inputPlaceholder: t("Paste link...") },
+					[Crepe.Feature.ImageBlock]: {
+						inlineUploadPlaceholderText: t("Image URL"),
+						blockUploadPlaceholderText: t("Image URL"),
+						blockCaptionPlaceholderText: t("Image caption"),
+						inlineUploadButton: t("Upload"),
+						blockUploadButton: t("Upload"),
+					},
+					[Crepe.Feature.CodeMirror]: {
+						searchPlaceholder: t("Search language"),
+						noResultText: t("No results"),
+						copyText: t("Copy"),
+						previewToggleText: (previewOnly) =>
+							previewOnly ? t("Edit") : t("Preview"),
+					},
 					[Crepe.Feature.Placeholder]: {
-						text: placeholder,
+						text: translatedPlaceholder,
 						mode: "doc",
 					},
 				},
 			});
+			crepe.editor.config((ctx) => {
+				ctx.set(orbitCanvasLocale.key, localeRef.current);
+			});
 			crepe.editor.use([
+				orbitCanvasLocale,
 				...orbitCanvasRemark,
 				...orbitCanvasSchema,
 				orbitCanvasView,
@@ -366,7 +424,19 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 				crepe.editor.action((ctx) => {
 					const view = ctx.get(editorViewCtx);
 					view.dom.setAttribute("role", "textbox");
-					view.dom.setAttribute("aria-label", label);
+					view.dom.setAttribute("aria-label", translatedLabel);
+					const selection = selectionRef.current;
+					if (selection?.noteId === noteId) {
+						const max = view.state.doc.content.size;
+						view.dispatch(
+							view.state.tr.setSelection(
+								TextSelection.between(
+									view.state.doc.resolve(Math.min(selection.from, max)),
+									view.state.doc.resolve(Math.min(selection.to, max)),
+								),
+							),
+						);
+					}
 					view.dom.setAttribute("aria-multiline", "true");
 				});
 				onReadyChangeRef.current?.(true);
@@ -374,6 +444,14 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 
 			return () => {
 				disposed = true;
+				if (crepeRef.current === crepe && noteIdRef.current === noteId) {
+					if (userInteractedRef.current)
+						bootMarkdownRef.current = crepe.getMarkdown();
+					crepe.editor.action((ctx) => {
+						const { from, to } = ctx.get(editorViewCtx).state.selection;
+						selectionRef.current = { noteId, from, to };
+					});
+				}
 				crepeRef.current = null;
 				onReadyChangeRef.current?.(false);
 				for (const eventName of interactionEvents) {
@@ -390,7 +468,14 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 				void crepe.destroy();
 				root.replaceChildren();
 			};
-		}, [noteId, placeholder, changeVimMode, compact, label]);
+		}, [
+			noteId,
+			translatedPlaceholder,
+			translatedLabel,
+			changeVimMode,
+			compact,
+			t,
+		]);
 
 		return (
 			<div className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col">
@@ -408,10 +493,10 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 						<span aria-hidden="true">·</span>
 						<span>
 							{vimMode === "normal"
-								? "일반"
+								? t("일반")
 								: vimMode === "visual"
-									? "비주얼"
-									: "입력"}
+									? t("비주얼")
+									: t("입력")}
 						</span>
 					</output>
 				) : null}

@@ -1,6 +1,7 @@
 import { ChevronDown } from "lucide-react";
 import { useId } from "react";
 import type { MailAccount } from "#/lib/mail/types";
+import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -25,6 +26,8 @@ export function MailAccountFilter({
 	errors: Record<string, string>;
 	updated: Record<string, number>;
 }) {
+	const { t } = useI18n();
+
 	const id = useId();
 	const checked = accounts.filter(
 		(a) => selected === null || selected.includes(a.id),
@@ -32,19 +35,19 @@ export function MailAccountFilter({
 	const all = checked.length === accounts.length && accounts.length > 0;
 	const label =
 		all || selected === null
-			? "모든 계정"
+			? t("모든 계정")
 			: checked.length === 1
 				? checked[0].email
 				: checked.length
-					? `${checked.length}개 계정 선택`
-					: "계정 선택";
+					? t("{0}개 계정 선택", [checked.length])
+					: t("계정 선택");
 	return (
 		<Popover>
 			<PopoverTrigger asChild>
 				<Button
 					variant="outline"
 					className="w-44 max-w-full justify-between font-normal sm:w-52"
-					aria-label={`메일 계정: ${label}`}
+					aria-label={t("메일 계정: {0}", [label])}
 				>
 					<span className="truncate">{label}</span>
 					<ChevronDown className="size-4 shrink-0 text-muted-foreground" />
@@ -52,7 +55,7 @@ export function MailAccountFilter({
 			</PopoverTrigger>
 			<PopoverContent
 				align="start"
-				aria-label="표시할 메일 계정"
+				aria-label={t("표시할 메일 계정")}
 				className="w-80 max-w-[calc(100vw-2rem)] p-1"
 			>
 				<label
@@ -65,7 +68,7 @@ export function MailAccountFilter({
 						checked={all ? true : checked.length ? "indeterminate" : false}
 						onCheckedChange={() => onChange(all ? [] : null)}
 					/>
-					모든 계정{" "}
+					{t("모든 계정")}{" "}
 					<span className="ml-auto text-xs text-muted-foreground">
 						{accounts.length}
 					</span>
@@ -98,7 +101,7 @@ export function MailAccountFilter({
 										? "iCloud"
 										: a.provider === "gmail"
 											? "Gmail"
-											: "네이버"}
+											: t("네이버")}
 								</span>
 							</span>
 							<span

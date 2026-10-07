@@ -1,7 +1,9 @@
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3 } from "lucide-react";
 import { Popover as PopoverPrimitive } from "radix-ui";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { resolveLocale, translate, weekdayName } from "#/lib/i18n";
 import { formatDayKey } from "#/lib/orbit/para";
+import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -22,14 +24,19 @@ function timeValue(hour: number, minute: number) {
 	return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
-function hourLabel(hour: number) {
-	return `${hour < 12 ? "오전" : "오후"} ${hour === 0 || hour === 12 ? hour : hour % 12}시`;
+function hourLabel(hour: number, locale = "ko-KR") {
+	return new Intl.DateTimeFormat(locale, { hour: "numeric" }).format(
+		new Date(2023, 0, 1, hour),
+	);
 }
 
-function timeLabel(value: string) {
+function timeLabel(value: string, locale = "ko-KR") {
 	if (!value) return "";
 	const { hour, minute } = parseTime(value);
-	return `${hour < 12 ? "오전" : "오후"} ${String(hour === 0 || hour === 12 ? hour : hour % 12).padStart(2, "0")}시 ${String(minute).padStart(2, "0")}분`;
+	return new Intl.DateTimeFormat(locale, {
+		hour: "numeric",
+		minute: "2-digit",
+	}).format(new Date(2023, 0, 1, hour, minute));
 }
 
 type WheelMotion = {
@@ -349,13 +356,17 @@ function addMonths(date: Date, amount: number) {
 	return new Date(date.getFullYear(), date.getMonth() + amount, 1);
 }
 
-function dateLabel(value: string, placeholder: string) {
+function dateLabel(value: string, placeholder: string, locale = "ko-KR") {
 	if (!value) return placeholder;
 	const today = formatDayKey();
 	const tomorrow = formatDayKey(addDays(new Date(), 1));
 	const prefix =
-		value === today ? "오늘 · " : value === tomorrow ? "내일 · " : "";
-	return `${prefix}${new Intl.DateTimeFormat("ko-KR", {
+		value === today
+			? `${translate(resolveLocale(null, locale), "오늘")} · `
+			: value === tomorrow
+				? `${translate(resolveLocale(null, locale), "내일")} · `
+				: "";
+	return `${prefix}${new Intl.DateTimeFormat(locale, {
 		month: "long",
 		day: "numeric",
 		weekday: "short",
@@ -366,7 +377,7 @@ export function DatePicker({
 	value,
 	onChange,
 	label,
-	placeholder = "날짜 선택",
+	placeholder = "날짜",
 	min,
 	allowClear = false,
 	className,
@@ -387,6 +398,8 @@ export function DatePicker({
 	triggerContent?: ReactNode;
 	variant?: "outline" | "ghost";
 }) {
+	const { t, intlLocale } = useI18n();
+
 	const [open, setOpen] = useState(false);
 	const [cursor, setCursor] = useState(() => parseDay(value));
 
@@ -409,12 +422,15 @@ export function DatePicker({
 					size="icon-sm"
 					onClick={() => setCursor((current) => addMonths(current, -1))}
 					disabled={disabled}
-					aria-label="이전 달"
+					aria-label={t("이전 달")}
 				>
 					<ChevronLeft />
 				</Button>
 				<p className="text-sm font-semibold">
-					{cursor.getFullYear()}년 {cursor.getMonth() + 1}월
+					{new Intl.DateTimeFormat(intlLocale, {
+						year: "numeric",
+						month: "long",
+					}).format(cursor)}
 				</p>
 				<Button
 					type="button"
@@ -422,13 +438,15 @@ export function DatePicker({
 					size="icon-sm"
 					onClick={() => setCursor((current) => addMonths(current, 1))}
 					disabled={disabled}
-					aria-label="다음 달"
+					aria-label={t("다음 달")}
 				>
 					<ChevronRight />
 				</Button>
 			</div>
 			<div className="mb-1 grid grid-cols-7 text-center text-[11px] font-medium text-muted-foreground">
-				{["일", "월", "화", "수", "목", "금", "토"].map((day) => (
+				{Array.from({ length: 7 }, (_, index) =>
+					weekdayName(index, intlLocale),
+				).map((day) => (
 					<span key={day} className="py-1">
 						{day}
 					</span>
@@ -483,7 +501,7 @@ export function DatePicker({
 							setOpen(false);
 						}}
 					>
-						날짜 없음
+						{t("날짜 없음")}
 					</Button>
 				) : (
 					<span />
@@ -498,7 +516,7 @@ export function DatePicker({
 						setOpen(false);
 					}}
 				>
-					오늘
+					{t("오늘")}
 				</Button>
 			</div>
 		</>
@@ -529,7 +547,7 @@ export function DatePicker({
 				>
 					<CalendarDays className="size-4" />
 					<span className="truncate">
-						{triggerContent ?? dateLabel(value, placeholder)}
+						{triggerContent ?? dateLabel(value, t(placeholder), intlLocale)}
 					</span>
 				</Button>
 			</PopoverPrimitive.Trigger>
@@ -563,6 +581,8 @@ export function TimePicker({
 	disabled?: boolean;
 	className?: string;
 }) {
+	const { t, intlLocale } = useI18n();
+
 	const [open, setOpen] = useState(false);
 	const { hour, minute } = parseTime(value);
 	const currentTime = useRef({ hour, minute });
@@ -589,7 +609,7 @@ export function TimePicker({
 				>
 					<Clock3 className="size-4" />
 					<span className="min-w-0 flex-1 truncate text-left">
-						{value ? timeLabel(value) : placeholder}
+						{value ? timeLabel(value, intlLocale) : t(placeholder)}
 					</span>
 				</Button>
 			</PopoverPrimitive.Trigger>
@@ -602,22 +622,22 @@ export function TimePicker({
 					<div className="mb-3 flex items-center justify-between gap-3">
 						<p className="text-xs font-medium text-muted-foreground">{label}</p>
 						<p className="w-32 shrink-0 text-right text-sm font-semibold tabular-nums">
-							{timeLabel(timeValue(hour, minute))}
+							{timeLabel(timeValue(hour, minute), intlLocale)}
 						</p>
 					</div>
 					<div className="grid grid-cols-[1.5fr_1fr] gap-2">
 						<TimeWheel
-							label="시"
+							label={t("시")}
 							values={HOURS}
 							selected={hour}
 							onSelect={(next) => {
 								currentTime.current.hour = next;
 								onChange(timeValue(next, currentTime.current.minute));
 							}}
-							format={hourLabel}
+							format={(value) => hourLabel(value, intlLocale)}
 						/>
 						<TimeWheel
-							label="분"
+							label={t("분")}
 							values={MINUTES}
 							selected={minute}
 							onSelect={(next) => {
@@ -625,7 +645,7 @@ export function TimePicker({
 								onChange(timeValue(currentTime.current.hour, next));
 							}}
 							format={(nextMinute) =>
-								`${String(nextMinute).padStart(2, "0")}분`
+								t("{0}분", [String(nextMinute).padStart(2, "0")])
 							}
 						/>
 					</div>
@@ -640,7 +660,7 @@ export function TimePicker({
 									setOpen(false);
 								}}
 							>
-								시간 없음
+								{t("시간 없음")}
 							</Button>
 						) : (
 							<span />
@@ -658,7 +678,7 @@ export function TimePicker({
 								setOpen(false);
 							}}
 						>
-							완료
+							{t("완료")}
 						</Button>
 					</div>
 				</PopoverPrimitive.Content>

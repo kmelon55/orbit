@@ -21,6 +21,7 @@ import {
 	parseItem,
 	withStableIdentity,
 } from "./documents";
+import { routineDataSchema } from "./routines";
 import type { OrbitCanvas, OrbitItem } from "./schema";
 
 export type DocumentRecord = {
@@ -553,6 +554,18 @@ export class OrbitDatabase {
 			);
 			report.hashes[".orbit/folders.json"] = sha256(metadataBytes);
 		}
+		const routinePath = path.join(this.root, ".orbit", "routines.json");
+		let routineBytes: Buffer | undefined;
+		if (existsSync(routinePath)) {
+			if (lstatSync(routinePath).isSymbolicLink())
+				throw new Error("Routine metadata must not be a symlink");
+			routineBytes = readFileSync(routinePath);
+			this.setMetadata(
+				"routines",
+				routineDataSchema.parse(JSON.parse(routineBytes.toString("utf8"))),
+			);
+			report.hashes[".orbit/routines.json"] = sha256(routineBytes);
+		}
 		// A changing source must never yield a silently partial migration.
 		const verified = scanVault(this.root);
 		if (
@@ -561,7 +574,10 @@ export class OrbitDatabase {
 			JSON.stringify(directories) !== JSON.stringify(verified.directories) ||
 			(metadataBytes &&
 				sha256(readFileSync(metadataPath)) !== sha256(metadataBytes)) ||
-			(!metadataBytes && existsSync(metadataPath))
+			(!metadataBytes && existsSync(metadataPath)) ||
+			(routineBytes &&
+				sha256(readFileSync(routinePath)) !== sha256(routineBytes)) ||
+			(!routineBytes && existsSync(routinePath))
 		)
 			throw new Error(
 				"Vault changed during migration. Stop external writers and retry.",

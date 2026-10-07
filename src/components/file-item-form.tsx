@@ -12,6 +12,7 @@ import type {
 	OrbitSnapshot,
 	OrbitSpace,
 } from "#/lib/orbit/schema";
+import { useI18n } from "@/components/locale-provider";
 import { DatePicker, TimePicker } from "@/components/schedule-controls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,6 +69,8 @@ export function FileItemForm({
 	snapshot: OrbitSnapshot;
 	onDone?: () => void;
 }) {
+	const { t, errorText } = useI18n();
+
 	const [title, setTitle] = useState(item.title);
 	const [body, setBody] = useState(item.body);
 	const color = item.color;
@@ -77,9 +80,9 @@ export function FileItemForm({
 	);
 	const [folder, setFolder] = useState(item.folder ?? "");
 	const [newFolder, setNewFolder] = useState("");
-	const [due, setDue] = useState(item.due?.slice(0, 10) ?? "");
+	const [due, setDue] = useState((item.start ?? item.due)?.slice(0, 10) ?? "");
 	const [dueTime, setDueTime] = useState(
-		item.due?.match(/T(\d{2}:\d{2})/)?.[1] ?? "",
+		(item.start ?? item.due)?.match(/T(\d{2}:\d{2})/)?.[1] ?? "",
 	);
 	const [startDate, setStartDate] = useState(
 		item.start?.slice(0, 10) ?? formatDayKey(),
@@ -91,6 +94,10 @@ export function FileItemForm({
 		item.end?.slice(0, 10) ?? item.start?.slice(0, 10) ?? formatDayKey(),
 	);
 	const [endTime, setEndTime] = useState(
+		item.end?.match(/T(\d{2}:\d{2})/)?.[1] ?? "10:00",
+	);
+	const [taskEndDate, setTaskEndDate] = useState(item.end?.slice(0, 10) ?? "");
+	const [taskEndTime, setTaskEndTime] = useState(
 		item.end?.match(/T(\d{2}:\d{2})/)?.[1] ?? "10:00",
 	);
 	const [url, setUrl] = useState(item.url ?? "");
@@ -112,23 +119,41 @@ export function FileItemForm({
 	async function handleSubmit() {
 		if (!title.trim() || saving) return;
 		if (
-			type === "event" &&
-			(endDate < startDate || (endDate === startDate && endTime <= startTime))
+			(type === "event" &&
+				(endDate < startDate ||
+					(endDate === startDate && endTime <= startTime))) ||
+			(type === "task" &&
+				taskEndDate &&
+				(!due ||
+					taskEndDate < due ||
+					(dueTime && taskEndDate === due && taskEndTime <= dueTime)))
 		) {
-			setError("종료는 시작보다 뒤여야 합니다.");
+			setError(t("종료는 시작보다 뒤여야 합니다."));
 			return;
 		}
 		setSaving(true);
 		setError(null);
 		try {
+			const taskDue = due
+				? dueTime
+					? `${due}T${dueTime}:00`
+					: due
+				: undefined;
 			const start =
 				type === "event" && startDate
 					? `${startDate}T${startTime || "09:00"}:00`
-					: undefined;
+					: type === "task" && taskEndDate
+						? taskDue
+						: undefined;
 			const end =
 				type === "event" && endDate
 					? `${endDate}T${endTime || "10:00"}:00`
-					: undefined;
+					: type === "task" && taskEndDate
+						? dueTime
+							? `${taskEndDate}T${taskEndTime}:00`
+							: taskEndDate
+						: undefined;
+
 			await mutateOrbit({
 				data: {
 					action: "file-item",
@@ -140,21 +165,16 @@ export function FileItemForm({
 						color: color ?? null,
 						space: type === "event" && space !== "archive" ? "event" : space,
 						folder: folderSpace ? resolvedFolder : undefined,
-						due:
-							type === "task" && due
-								? dueTime
-									? `${due}T${dueTime}:00`
-									: due
-								: undefined,
-						start,
-						end,
+						due: type === "task" ? (taskDue ?? null) : null,
+						start: start ?? null,
+						end: end ?? null,
 						url: type === "link" && url ? url : undefined,
 					},
 				},
 			});
 			onDone?.();
 		} catch {
-			setError("옮기지 못했습니다. 폴더 이름과 권한을 확인해 주세요.");
+			setError(t("옮기지 못했습니다. 폴더 이름과 권한을 확인해 주세요."));
 		} finally {
 			setSaving(false);
 		}
@@ -162,7 +182,7 @@ export function FileItemForm({
 
 	return (
 		<div className="grid gap-5">
-			<Field label="제목">
+			<Field label={t("제목")}>
 				<Input
 					value={title}
 					onChange={(event) => setTitle(event.target.value)}
@@ -171,7 +191,9 @@ export function FileItemForm({
 			</Field>
 
 			<div className="grid gap-1.5">
-				<span className="text-xs font-medium text-foreground/75">종류</span>
+				<span className="text-xs font-medium text-foreground/75">
+					{t("종류")}
+				</span>
 				<div className="flex flex-wrap gap-1">
 					{visibleTypes.map((value) => (
 						<Button
@@ -184,7 +206,7 @@ export function FileItemForm({
 								if (value === "event") setSpace("event");
 							}}
 						>
-							{ITEM_TYPE_LABEL[value]}
+							{t(ITEM_TYPE_LABEL[value])}
 						</Button>
 					))}
 				</div>
@@ -192,7 +214,7 @@ export function FileItemForm({
 
 			<div className="grid gap-1.5">
 				<span className="text-xs font-medium text-foreground/75">
-					어디로 옮길까요?
+					{t("어디로 옮길까요?")}
 				</span>
 				<div className="grid gap-1.5 sm:grid-cols-2">
 					{DESTINATIONS.map((destination) => (
@@ -207,9 +229,9 @@ export function FileItemForm({
 									: "hover:border-foreground/15 hover:bg-muted/70",
 							)}
 						>
-							<p className="text-sm font-medium">{destination.label}</p>
+							<p className="text-sm font-medium">{t(destination.label)}</p>
 							<p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-								{destination.hint}
+								{t(destination.hint)}
 							</p>
 						</button>
 					))}
@@ -218,7 +240,7 @@ export function FileItemForm({
 
 			{folderSpace && (
 				<div className="grid gap-3 sm:grid-cols-2">
-					<Field label="폴더">
+					<Field label={t("폴더")}>
 						<Select
 							value={folder ? `folder:${folder}` : "root"}
 							onValueChange={(value) =>
@@ -226,12 +248,12 @@ export function FileItemForm({
 							}
 						>
 							<SelectTrigger
-								aria-label="폴더"
+								aria-label={t("폴더")}
 								className="h-9 w-full min-w-0 bg-background"
 							>
 								<SelectValue className="min-w-0 flex-1 text-left">
 									<span className="truncate">
-										{folder || "루트 (폴더 없음)"}
+										{folder || t("루트 (폴더 없음)")}
 									</span>
 								</SelectValue>
 							</SelectTrigger>
@@ -242,7 +264,7 @@ export function FileItemForm({
 							>
 								<SelectGroup>
 									<SelectItem value="root" className="py-2">
-										루트 (폴더 없음)
+										{t("루트 (폴더 없음)")}
 									</SelectItem>
 									{folders.map((entry) => (
 										<SelectItem
@@ -258,11 +280,11 @@ export function FileItemForm({
 							</SelectContent>
 						</Select>
 					</Field>
-					<Field label="새 폴더">
+					<Field label={t("새 폴더")}>
 						<Input
 							value={newFolder}
 							onChange={(event) => setNewFolder(event.target.value)}
-							placeholder="없으면 위에서 선택"
+							placeholder={t("없으면 위에서 선택")}
 							className="h-9"
 						/>
 					</Field>
@@ -271,63 +293,90 @@ export function FileItemForm({
 
 			{type === "task" && (
 				<div className="grid gap-3 sm:grid-cols-2">
-					<Field label="마감 날짜">
+					<Field label={t("시작 날짜")}>
 						<DatePicker
 							value={due}
-							onChange={setDue}
-							label="마감 날짜"
+							onChange={(value) => {
+								setDue(value);
+								if (!value) setTaskEndDate("");
+								else if (taskEndDate && taskEndDate < value)
+									setTaskEndDate(value);
+							}}
+							label={t("시작 날짜")}
 							allowClear
 							className="w-full"
 						/>
 					</Field>
-					<Field label="시간 (선택)">
+					<Field label={t("시간 (선택)")}>
 						<TimePicker
 							value={dueTime}
 							onChange={setDueTime}
-							label="마감 시간"
-							placeholder="시간 없음"
+							label={t("시작 시간")}
+							placeholder={t("시간 없음")}
 							allowEmpty
 							className="w-full"
 						/>
 					</Field>
+					<Field label={t("종료 날짜")}>
+						<DatePicker
+							value={taskEndDate}
+							min={due}
+							onChange={setTaskEndDate}
+							label={t("종료 날짜")}
+							allowClear
+							disabled={!due}
+							className="w-full"
+						/>
+					</Field>
+					{dueTime ? (
+						<Field label={t("종료 시간")}>
+							<TimePicker
+								value={taskEndTime}
+								onChange={setTaskEndTime}
+								label={t("종료 시간")}
+								disabled={!taskEndDate}
+								className="w-full"
+							/>
+						</Field>
+					) : null}
 				</div>
 			)}
 
 			{type === "event" && (
 				<div className="grid gap-3 sm:grid-cols-2">
-					<Field label="시작 날짜">
+					<Field label={t("시작 날짜")}>
 						<DatePicker
 							value={startDate}
 							onChange={(value) => {
 								setStartDate(value);
 								if (endDate < value) setEndDate(value);
 							}}
-							label="시작 날짜"
+							label={t("시작 날짜")}
 							className="w-full"
 						/>
 					</Field>
-					<Field label="시작 시간">
+					<Field label={t("시작 시간")}>
 						<TimePicker
 							value={startTime}
 							onChange={setStartTime}
-							label="시작 시간"
+							label={t("시작 시간")}
 							className="w-full"
 						/>
 					</Field>
-					<Field label="종료 날짜">
+					<Field label={t("종료 날짜")}>
 						<DatePicker
 							value={endDate}
 							min={startDate}
 							onChange={setEndDate}
-							label="종료 날짜"
+							label={t("종료 날짜")}
 							className="w-full"
 						/>
 					</Field>
-					<Field label="종료 시간">
+					<Field label={t("종료 시간")}>
 						<TimePicker
 							value={endTime}
 							onChange={setEndTime}
-							label="종료 시간"
+							label={t("종료 시간")}
 							className="w-full"
 						/>
 					</Field>
@@ -346,23 +395,23 @@ export function FileItemForm({
 				</Field>
 			)}
 
-			<Field label="내용">
+			<Field label={t("내용")}>
 				<Textarea
 					value={body}
 					onChange={(event) => setBody(event.target.value)}
-					placeholder="필요한 만큼만 적어두세요"
+					placeholder={t("필요한 만큼만 적어두세요")}
 					className="min-h-28"
 				/>
 			</Field>
 
-			{error && <p className="text-sm text-destructive">{error}</p>}
+			{error && <p className="text-sm text-destructive">{errorText(error)}</p>}
 
 			<Button
 				type="button"
 				onClick={() => void handleSubmit()}
 				disabled={!title.trim() || saving}
 			>
-				{saving ? "옮기는 중" : "여기로 분류"}
+				{saving ? t("옮기는 중") : t("여기로 분류")}
 			</Button>
 		</div>
 	);

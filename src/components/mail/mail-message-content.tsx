@@ -1,5 +1,6 @@
 import { Download, Paperclip } from "lucide-react";
 import { canPreview, type MailDetail } from "#/lib/mail/types";
+import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { MailHtmlBody } from "./mail-html-body";
@@ -19,6 +20,8 @@ export function MailMessageContent({
 	showSubject?: boolean;
 	conversation?: boolean;
 }) {
+	const { t, intlLocale } = useI18n();
+
 	return (
 		<>
 			<div className={cn("space-y-3", conversation ? "px-4 pb-2 pt-3" : "p-5")}>
@@ -30,15 +33,25 @@ export function MailMessageContent({
 				{conversation ? (
 					<details className="text-xs text-muted-foreground">
 						<summary className="cursor-pointer truncate">
-							받는 사람: {detail.to.map((a) => a.address).join(", ")}
+							{t("받는 사람:")}
+							{detail.to.map((a) => a.address).join(", ")}
 						</summary>
 						<div className="mt-2 space-y-1 break-all">
-							<p>보낸 사람: {detail.from.map((a) => a.address).join(", ")}</p>
-							<p>받는 사람: {detail.to.map((a) => a.address).join(", ")}</p>
+							<p>
+								{t("보낸 사람:")}
+								{detail.from.map((a) => a.address).join(", ")}
+							</p>
+							<p>
+								{t("받는 사람:")}
+								{detail.to.map((a) => a.address).join(", ")}
+							</p>
 							{detail.cc.length > 0 && (
-								<p>참조: {detail.cc.map((a) => a.address).join(", ")}</p>
+								<p>
+									{t("참조:")}
+									{detail.cc.map((a) => a.address).join(", ")}
+								</p>
 							)}
-							<p>{new Date(detail.date).toLocaleString("ko-KR")}</p>
+							<p>{new Date(detail.date).toLocaleString(intlLocale)}</p>
 						</div>
 					</details>
 				) : (
@@ -47,14 +60,16 @@ export function MailMessageContent({
 							{detail.from.map((a) => `${a.name} <${a.address}>`).join(", ")}
 						</p>
 						<p className="break-all">
-							받는 사람: {detail.to.map((a) => a.address).join(", ")}
+							{t("받는 사람:")}
+							{detail.to.map((a) => a.address).join(", ")}
 						</p>
 						{detail.cc.length > 0 && (
 							<p className="break-all">
-								참조: {detail.cc.map((a) => a.address).join(", ")}
+								{t("참조:")}
+								{detail.cc.map((a) => a.address).join(", ")}
 							</p>
 						)}
-						<p>{new Date(detail.date).toLocaleString("ko-KR")}</p>
+						<p>{new Date(detail.date).toLocaleString(intlLocale)}</p>
 					</div>
 				)}
 
@@ -83,7 +98,7 @@ export function MailMessageContent({
 									</span>
 									<a
 										href={`${url}&download=1`}
-										aria-label={`${a.name} 다운로드`}
+										aria-label={t("{0} 다운로드", [a.name])}
 									>
 										<Download className="size-3.5" />
 									</a>
@@ -98,10 +113,12 @@ export function MailMessageContent({
 					{detail.hasRemoteImages && (
 						<div className="flex items-center justify-between border-y bg-muted/30 px-4 py-1.5 text-xs text-muted-foreground">
 							<span>
-								{remoteImages ? "외부 이미지 표시 중" : "외부 이미지 숨김"}
+								{remoteImages
+									? t("외부 이미지 표시 중")
+									: t("외부 이미지 숨김")}
 							</span>
 							<Button variant="ghost" size="sm" onClick={onToggleImages}>
-								{remoteImages ? "숨기기" : "이미지 표시"}
+								{remoteImages ? t("숨기기") : t("이미지 표시")}
 							</Button>
 						</div>
 					)}
@@ -117,7 +134,7 @@ export function MailMessageContent({
 						conversation ? "px-4 pb-4 leading-6" : "px-5 pb-8 leading-7",
 					)}
 				>
-					{detail.text || "본문이 없는 메일입니다."}
+					{detail.text || t("본문이 없는 메일입니다.")}
 				</div>
 			)}
 		</>

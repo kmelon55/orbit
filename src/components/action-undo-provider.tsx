@@ -3,12 +3,15 @@ import { Toaster, toast } from "sonner";
 import { undoOrbit } from "#/lib/orbit/functions";
 import type { MutationReceipt } from "#/lib/orbit/undo-events";
 import { UndoHistory } from "#/lib/orbit/undo-history";
+import { useI18n } from "@/components/locale-provider";
 import { useOrbitWrites } from "./orbit-snapshot-provider";
 import { useTheme } from "./theme-provider";
 
 type ActionEntry = MutationReceipt & { undo: () => Promise<void> };
 
 export function ActionUndoProvider({ children }: { children: ReactNode }) {
+	const { t } = useI18n();
+
 	const { refresh } = useOrbitWrites();
 	const { resolvedTheme } = useTheme();
 	const history = useRef(new UndoHistory<ActionEntry>());
@@ -20,20 +23,20 @@ export function ActionUndoProvider({ children }: { children: ReactNode }) {
 				const restored = await history.current.undo(entry.id);
 				if (!restored) return;
 				toast.dismiss(entry.id);
-				toast.success("되돌렸습니다.", {
+				toast.success(t("되돌렸습니다."), {
 					description: entry.title,
 					duration: 3000,
 				});
 				await refresh().catch(() => {
-					toast.error("되돌렸지만 화면을 갱신하지 못했습니다.");
+					toast.error(t("되돌렸지만 화면을 갱신하지 못했습니다."));
 				});
 			} catch {
-				toast.error("되돌리지 못했습니다.", {
+				toast.error(t("되돌리지 못했습니다."), {
 					id: entry.id,
-					description: "이후 변경된 내용이 있거나 저장에 실패했습니다.",
+					description: t("이후 변경된 내용이 있거나 저장에 실패했습니다."),
 					duration: 10000,
 					action: {
-						label: "다시 시도",
+						label: t("다시 시도"),
 						onClick: (event) => {
 							event.preventDefault();
 							void undo(entry.id);
@@ -42,7 +45,7 @@ export function ActionUndoProvider({ children }: { children: ReactNode }) {
 				});
 			}
 		},
-		[refresh],
+		[refresh, t],
 	);
 	useEffect(() => {
 		function record(event: Event) {
@@ -63,12 +66,12 @@ export function ActionUndoProvider({ children }: { children: ReactNode }) {
 					);
 				},
 			});
-			toast.success(receipt.message, {
+			toast.success(t(receipt.message), {
 				id: receipt.id,
 				description: receipt.title,
 				duration: 10000,
 				action: {
-					label: "되돌리기",
+					label: t("되돌리기"),
 					onClick: (event) => {
 						event.preventDefault();
 						void undo(receipt.id);
@@ -77,13 +80,13 @@ export function ActionUndoProvider({ children }: { children: ReactNode }) {
 			});
 		}
 		window.addEventListener("orbit:mutation", record);
-		const failed = () => toast.error("작업을 완료하지 못했습니다.");
+		const failed = () => toast.error(t("작업을 완료하지 못했습니다."));
 		window.addEventListener("orbit:mutation-failed", failed);
 		return () => {
 			window.removeEventListener("orbit:mutation", record);
 			window.removeEventListener("orbit:mutation-failed", failed);
 		};
-	}, [undo]);
+	}, [undo, t]);
 	useEffect(() => {
 		function onKeyDown(event: KeyboardEvent) {
 			if (
@@ -116,11 +119,13 @@ export function ActionUndoProvider({ children }: { children: ReactNode }) {
 		<>
 			{children}
 			<Toaster
+				containerAriaLabel={t("Notifications")}
 				theme={resolvedTheme}
 				position="bottom-right"
 				closeButton
 				visibleToasts={3}
 				toastOptions={{
+					closeButtonAriaLabel: t("Close"),
 					style: {
 						background: "var(--popover)",
 						color: "var(--popover-foreground)",

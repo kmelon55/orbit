@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import {
 	ArrowRight,
 	CalendarClock,
@@ -6,9 +7,12 @@ import {
 	Circle,
 	ListFilter,
 	Plus,
+	Repeat2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { resolveLocale, translate } from "#/lib/i18n";
+import { moveCalendarItem, taskDatePatch } from "#/lib/orbit/calendar-schedule";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { itemColor } from "#/lib/orbit/item-colors";
 import { isPendingItemId } from "#/lib/orbit/optimistic-mutations";
@@ -26,6 +30,8 @@ import {
 	type ItemConfirmAction,
 	ItemContextMenu,
 } from "@/components/item-context-menu";
+import { useI18n } from "@/components/locale-provider";
+import { RoutineManager } from "@/components/routine-manager";
 import { DatePicker } from "@/components/schedule-controls";
 import { ScheduleEditor } from "@/components/schedule-editor";
 import {
@@ -59,20 +65,23 @@ function waitForRescheduleExit() {
 }
 
 function dueDay(item: OrbitItem) {
-	return item.due?.slice(0, 10);
+	return (item.start ?? item.due)?.slice(0, 10);
 }
 
 function dueTime(item: OrbitItem) {
-	return item.due?.match(/T(\d{2}:\d{2})/)?.[1];
+	return (item.start ?? item.due)?.match(/T(\d{2}:\d{2})/)?.[1];
 }
 
-function formatDue(item: OrbitItem, today: string) {
+function pointDueLabel(item: OrbitItem, today: string, locale = "ko-KR") {
 	const day = dueDay(item);
-	if (!day) return "날짜 없음";
+	if (!day) return translate(resolveLocale(null, locale), "날짜 없음");
 	const time = dueTime(item);
-	if (day === today) return time ? `오늘 ${time}` : "오늘";
+	if (day === today) {
+		const todayLabel = translate(resolveLocale(null, locale), "오늘");
+		return time ? `${todayLabel} ${time}` : todayLabel;
+	}
 	const date = new Date(`${day}T00:00:00`);
-	const label = new Intl.DateTimeFormat("ko-KR", {
+	const label = new Intl.DateTimeFormat(locale, {
 		month: "short",
 		day: "numeric",
 		weekday: "short",
@@ -80,8 +89,14 @@ function formatDue(item: OrbitItem, today: string) {
 	return time ? `${label} ${time}` : label;
 }
 
+function formatDue(item: OrbitItem, today: string, locale = "ko-KR") {
+	const start = pointDueLabel(item, today, locale);
+	if (!item.start || !item.end || item.start === item.end) return start;
+	return `${start} → ${pointDueLabel({ ...item, start: undefined, due: item.end }, today, locale)}`;
+}
+
 function rescheduledDue(item: OrbitItem, day: string) {
-	return `${day}${item.due?.slice(10) ?? ""}`;
+	return `${day}${(item.start ?? item.due)?.slice(10) ?? ""}`;
 }
 
 function targetDays(item: OrbitItem, today: string): RescheduleTarget[] {
@@ -93,6 +108,8 @@ function targetDays(item: OrbitItem, today: string): RescheduleTarget[] {
 }
 
 export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
+	const { t, errorText } = useI18n();
+
 	const [now, setNow] = useState(() => new Date());
 	const today = formatDayKey(now);
 	const upcomingEnd = new Date(now);
@@ -111,6 +128,7 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 	}, []);
 	const [view, setView] = useState<TaskCompletionFilter>("open");
 	const [showEvents, setShowEvents] = useState(false);
+	const [showRoutines, setShowRoutines] = useState(true);
 	const [editor, setEditor] = useState<{
 		open: boolean;
 		item?: OrbitItem;
@@ -164,11 +182,16 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 				.filter((item) => item.type === "task" && item.space !== "archive")
 				.map((item) =>
 					optimisticDueById[item.id]
-						? { ...item, due: optimisticDueById[item.id] }
+						? moveCalendarItem(item, {
+								date: optimisticDueById[item.id].slice(0, 10),
+								mode: "keep-time",
+							})
 						: item,
 				)
 				.sort((left, right) =>
-					(left.due ?? "9999").localeCompare(right.due ?? "9999"),
+					(left.start ?? left.due ?? "9999").localeCompare(
+						right.start ?? right.due ?? "9999",
+					),
 				),
 		[snapshot.items, optimisticDueById],
 	);
@@ -193,7 +216,7 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 	const groups = [
 		{
 			key: "overdue",
-			label: "기한 지남",
+			label: t("기한 지남"),
 			items: visibleItems.filter((item) => {
 				const day = taskListDay(item, today);
 				return Boolean(day && day < today);
@@ -201,12 +224,12 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 		},
 		{
 			key: "today",
-			label: "오늘",
+			label: t("오늘"),
 			items: visibleItems.filter((item) => taskListDay(item, today) === today),
 		},
 		{
 			key: "upcoming",
-			label: showEvents ? "다가오는 항목" : "다가오는 할 일",
+			label: showEvents ? t("다가오는 항목") : t("다가오는 할 일"),
 			items: visibleItems.filter((item) => {
 				const day = taskListDay(item, today);
 				return Boolean(day && day > today && day <= upcomingEndKey);
@@ -214,7 +237,7 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 		},
 		{
 			key: "unscheduled",
-			label: "날짜 없음",
+			label: t("날짜 없음"),
 			items: visibleItems.filter((item) => !taskListDay(item, today)),
 		},
 	];
@@ -250,14 +273,14 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 				target,
 				label:
 					target === "tomorrow"
-						? "내일로 미루기"
+						? t("내일로 미루기")
 						: draggingDay && draggingDay > today
-							? "오늘로 당겨오기"
-							: "오늘로 가져오기",
+							? t("오늘로 당겨오기")
+							: t("오늘로 가져오기"),
 				hint:
 					target === "tomorrow"
-						? "시간은 그대로 두고 날짜만 내일로 바뀝니다."
-						: "시간은 그대로 두고 날짜만 오늘로 바뀝니다.",
+						? t("시간은 그대로 두고 날짜만 내일로 바뀝니다.")
+						: t("시간은 그대로 두고 날짜만 오늘로 바뀝니다."),
 			}))
 		: [];
 
@@ -307,7 +330,7 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 					input: {
 						space: item.space,
 						folder: folderOf(item),
-						due: nextDue,
+						...taskDatePatch(item, nextDue.slice(0, 10)),
 					},
 				},
 			});
@@ -322,8 +345,13 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 			}
 			setRescheduleError(
 				persisted
-					? `“${item.title}”은 저장됐지만 화면 동기화가 늦어지고 있습니다.`
-					: `“${item.title}”의 날짜를 ${target === "today" ? "오늘" : "내일"}로 바꾸지 못했습니다.`,
+					? t("“{0}”은 저장됐지만 화면 동기화가 늦어지고 있습니다.", [
+							item.title,
+						])
+					: t("“{0}”의 날짜를 {1}로 바꾸지 못했습니다.", [
+							item.title,
+							target === "today" ? t("오늘") : t("내일"),
+						]),
 			);
 		} finally {
 			setReschedulingIds((current) => current.filter((id) => id !== item.id));
@@ -349,29 +377,36 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 				<div className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-5 sm:py-6 lg:px-8">
 					<header className="mb-5 flex flex-wrap items-center justify-between gap-3 sm:mb-7">
 						<div>
-							<h2 className="text-xl font-semibold tracking-tight">할 일</h2>
-							<p className="mt-1 hidden text-sm text-muted-foreground sm:block">
-								날짜를 정하면 Today와 Calendar에도 함께 표시됩니다.
-							</p>
+							<h2 className="text-xl font-semibold tracking-tight">
+								{t("할 일")}
+							</h2>
 						</div>
-						<Button onClick={() => void createTask()}>
-							<Plus /> 추가
-						</Button>
+						<div className="flex items-center gap-2">
+							<Button asChild variant="outline">
+								<Link to="/routines">
+									<Repeat2 />
+									{t("루틴")}
+								</Link>
+							</Button>
+							<Button onClick={() => void createTask()}>
+								<Plus /> {t("추가")}
+							</Button>
+						</div>
 					</header>
 
 					<div className="mb-4 flex flex-wrap items-center gap-2 sm:mb-6">
 						<Popover>
 							<PopoverTrigger asChild>
 								<Button variant="outline" size="sm">
-									<ListFilter /> 필터
+									<ListFilter /> {t("필터")}
 								</Button>
 							</PopoverTrigger>
 							<PopoverContent align="start" className="w-60 space-y-1 p-1.5">
 								{(
 									[
-										["open", "미완료"],
-										["today", "오늘 완료한 할 일도 보기"],
-										["done", "완료한 할 일 전체"],
+										["open", t("미완료")],
+										["today", t("오늘 완료한 할 일도 보기")],
+										["done", t("완료한 할 일 전체")],
 									] as const
 								).map(([value, label]) => (
 									<Button
@@ -397,32 +432,50 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 									onClick={() => setShowEvents((current) => !current)}
 								>
 									<Check className={cn("size-4", !showEvents && "invisible")} />{" "}
-									일정 함께 보기
+									{t("일정 함께 보기")}
+								</Button>
+								<Button
+									variant="ghost"
+									size="sm"
+									className="w-full justify-start"
+									aria-pressed={showRoutines}
+									onClick={() => setShowRoutines((current) => !current)}
+								>
+									<Check
+										className={cn("size-4", !showRoutines && "invisible")}
+									/>
+									{t("루틴 표시")}
 								</Button>
 							</PopoverContent>
 						</Popover>
 						<span className="text-xs text-muted-foreground">
 							{view === "done"
-								? `완료 ${doneTasks.length}`
-								: `미완료 ${openTasks.length}`}
-							{view === "today" ? ` · 오늘 완료 ${todayDone.length}` : ""}
-							{showEvents ? ` · 일정 ${events.length}` : ""}
+								? t("완료 {0}", [doneTasks.length])
+								: t("미완료 {0}", [openTasks.length])}
+							{view === "today" ? t("· 오늘 완료 {0}", [todayDone.length]) : ""}
+							{showEvents ? t("· 일정 {0}", [events.length]) : ""}
 						</span>
 					</div>
 
 					{rescheduleError ? (
 						<output className="mb-4 block rounded-lg border border-destructive/25 bg-destructive/8 px-3 py-2 text-sm text-destructive">
-							{rescheduleError}
+							{errorText(rescheduleError)}
 						</output>
 					) : null}
 
+					<RoutineManager
+						snapshot={snapshot}
+						today={today}
+						visible={showRoutines}
+						completionView={view}
+					/>
 					{view !== "done" ? (
 						<div className="space-y-4">
 							{groups.map((group) => (
 								<section key={group.key} className="orbit-card overflow-hidden">
 									<div className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
 										<h3 className="text-xs font-semibold text-muted-foreground">
-											{group.label}
+											{t(group.label)}
 										</h3>
 										<span className="text-xs tabular-nums text-muted-foreground/70">
 											{group.items.length}
@@ -487,9 +540,9 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 				)}
 			>
 				<div className="border-b border-border/60 px-5 py-4">
-					<p className="text-sm font-semibold">빠르게 날짜 이동</p>
+					<p className="text-sm font-semibold">{t("빠르게 날짜 이동")}</p>
 					<p className="mt-0.5 truncate text-xs text-muted-foreground">
-						{draggingTask ? `“${draggingTask.title}”` : "오늘 할 일"}
+						{draggingTask ? `“${draggingTask.title}”` : t("오늘 할 일")}
 					</p>
 				</div>
 				<div className="grid min-h-0 flex-1 auto-rows-fr gap-3 p-4">
@@ -522,9 +575,9 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 							<span className="grid size-11 place-items-center rounded-full bg-background text-foreground shadow-sm ring-1 ring-border/80">
 								<CalendarClock className="size-5" />
 							</span>
-							<p className="mt-3 text-sm font-semibold">{option.label}</p>
+							<p className="mt-3 text-sm font-semibold">{t(option.label)}</p>
 							<p className="mt-1 max-w-48 text-xs leading-5 text-muted-foreground">
-								{option.hint}
+								{t(option.hint)}
 							</p>
 							<ArrowRight className="mt-4 size-4 text-muted-foreground" />
 						</fieldset>
@@ -597,12 +650,19 @@ function TaskRows({
 		folder?: string,
 	) => void | Promise<void>;
 }) {
+	const { t, intlLocale } = useI18n();
+
 	const savingDates = useRef(new Set<string>());
 	const [savingIds, setSavingIds] = useState<ReadonlySet<string>>(new Set());
 	async function changeDate(item: OrbitItem, day: string) {
 		if (savingDates.current.has(item.id) || isPendingItemId(item.id)) return;
-		const due = day ? rescheduledDue(item, day) : null;
-		if ((item.due ?? null) === due) return;
+		const patch = taskDatePatch(item, day);
+		if (
+			(item.due ?? null) === patch.due &&
+			(item.start ?? null) === patch.start &&
+			(item.end ?? null) === patch.end
+		)
+			return;
 		savingDates.current.add(item.id);
 		setSavingIds(new Set(savingDates.current));
 		try {
@@ -610,11 +670,11 @@ function TaskRows({
 				data: {
 					action: "file-item",
 					id: item.id,
-					input: { space: item.space, folder: folderOf(item), due },
+					input: { space: item.space, folder: folderOf(item), ...patch },
 				},
 			});
 		} catch {
-			toast.error("날짜를 바꾸지 못했습니다.");
+			toast.error(t("날짜를 바꾸지 못했습니다."));
 		} finally {
 			savingDates.current.delete(item.id);
 			setSavingIds(new Set(savingDates.current));
@@ -626,6 +686,7 @@ function TaskRows({
 		<div>
 			{items.map((item) => {
 				const day = dueDay(item);
+				const scheduledDay = taskListDay(item, today);
 				const checked = taskToggle.isChecked(item);
 				const departing = departingIds.includes(item.id);
 				const arriving = arrivingIds.includes(item.id);
@@ -678,7 +739,9 @@ function TaskRows({
 											void taskToggle.toggle(item, { exit: exitOnToggle })
 										}
 										aria-label={
-											checked ? `${item.title} 다시 열기` : `${item.title} 완료`
+											checked
+												? t("{0} 다시 열기", [item.title])
+												: t("{0} 완료", [item.title])
 										}
 									/>
 								) : (
@@ -714,7 +777,7 @@ function TaskRows({
 									<DatePicker
 										value={day ?? ""}
 										onChange={(value) => void changeDate(item, value)}
-										label={`${item.title} 날짜 변경`}
+										label={t("{0} 날짜 변경", [item.title])}
 										allowClear
 										disabled={
 											savingIds.has(item.id) ||
@@ -722,11 +785,14 @@ function TaskRows({
 											settling ||
 											isPendingItemId(item.id)
 										}
-										triggerContent={formatDue(item, today)}
+										triggerContent={formatDue(item, today, intlLocale)}
 										variant="ghost"
 										className={cn(
 											"h-8 w-auto max-w-28 shrink-0 gap-1 px-1.5 text-[11px] text-muted-foreground sm:max-w-none sm:gap-1.5 sm:text-xs",
-											day && day < today && !checked && "text-destructive",
+											scheduledDay &&
+												scheduledDay < today &&
+												!checked &&
+												"text-destructive",
 										)}
 									/>
 								) : (
@@ -749,7 +815,7 @@ function TaskRows({
 			<TaskEmpty show={empty} animate={!settling}>
 				<ItemContextMenu createLabel="할 일 추가" onCreate={onCreate}>
 					<div className="flex min-h-16 items-center gap-2 px-4 text-sm text-muted-foreground">
-						<Circle className="size-3.5" /> 비어 있습니다
+						<Circle className="size-3.5" /> {t("비어 있습니다")}
 					</div>
 				</ItemContextMenu>
 			</TaskEmpty>

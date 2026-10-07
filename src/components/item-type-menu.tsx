@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import type { OrbitItem } from "#/lib/orbit/schema";
+import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 
 export type ConvertibleType = "note" | "task" | "event";
@@ -26,6 +27,8 @@ export function ItemTypeMenu({
 	busy: boolean;
 	onConvert: (kind: ConvertibleType) => void;
 }) {
+	const { t } = useI18n();
+
 	if (item.type === "link") return null;
 	const current = ITEM_KINDS[item.type];
 	const Icon = busy ? LoaderCircle : current.icon;
@@ -36,11 +39,11 @@ export function ItemTypeMenu({
 					variant="ghost"
 					size="sm"
 					disabled={busy}
-					aria-label={`${current.label} · 종류 바꾸기`}
+					aria-label={t("{0} · 종류 바꾸기", [t(current.label)])}
 					className="h-8 shrink-0 gap-1.5 px-2 text-xs"
 				>
 					<Icon className={busy ? "size-3.5 animate-spin" : "size-3.5"} />
-					{current.label}
+					{t(current.label)}
 					<ChevronDown className="size-3 text-muted-foreground" />
 				</Button>
 			</DropdownMenu.Trigger>
@@ -52,10 +55,10 @@ export function ItemTypeMenu({
 				>
 					<DropdownMenu.Label className="flex items-center gap-2.5 px-2.5 py-2 text-sm font-medium">
 						<current.icon className="size-4 text-muted-foreground" />
-						<span className="flex-1">{current.label}</span>
+						<span className="flex-1">{t(current.label)}</span>
 						<Check className="size-3.5 text-muted-foreground" />
 						<span className="text-xs font-normal text-muted-foreground">
-							현재
+							{t("현재")}
 						</span>
 					</DropdownMenu.Label>
 					<DropdownMenu.Separator className="mx-1 my-1 h-px bg-border" />
@@ -70,7 +73,7 @@ export function ItemTypeMenu({
 									className="flex min-h-10 cursor-default items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm outline-none select-none focus:bg-accent focus:text-accent-foreground"
 								>
 									<target.icon className="size-4 text-muted-foreground" />
-									{target.action}
+									{t(target.action)}
 								</DropdownMenu.Item>
 							);
 						})}

@@ -5,6 +5,8 @@ import { Schema, Slice } from "@milkdown/kit/prose/model";
 import { EditorState, TextSelection } from "@milkdown/kit/prose/state";
 import { EditorView } from "@milkdown/kit/prose/view";
 import { useEffect, useRef } from "react";
+import { useI18n } from "@/components/locale-provider";
+import { cn } from "@/lib/utils";
 
 // Paragraphs stay plain text. Only their position determines title/body styling.
 const schema = new Schema({
@@ -54,12 +56,18 @@ export function QuickCaptureEditor({
 	onChange,
 	placeholder,
 	autoFocus = false,
+	compact = false,
 }: {
 	value: string;
 	onChange: (value: string) => void;
 	placeholder: string;
 	autoFocus?: boolean;
+	compact?: boolean;
 }) {
+	const { t } = useI18n();
+
+	const labelRef = useRef(t("빠른 기록"));
+	labelRef.current = t("빠른 기록");
 	const hostRef = useRef<HTMLDivElement>(null);
 	const viewRef = useRef<EditorView | null>(null);
 	const onChangeRef = useRef(onChange);
@@ -72,7 +80,7 @@ export function QuickCaptureEditor({
 			state: createState(initialValueRef.current),
 			attributes: {
 				role: "textbox",
-				"aria-label": "빠른 기록",
+				"aria-label": labelRef.current,
 				"aria-multiline": "true",
 				class:
 					"min-h-28 max-h-64 overflow-y-auto whitespace-pre-wrap break-words px-2.5 py-2 text-base leading-7 outline-none [&>p]:m-0 [&>p:first-child]:text-lg [&>p:first-child]:font-semibold",
@@ -96,6 +104,9 @@ export function QuickCaptureEditor({
 	}, []);
 
 	useEffect(() => {
+		viewRef.current?.dom.setAttribute("aria-label", t("빠른 기록"));
+	}, [t]);
+	useEffect(() => {
 		const view = viewRef.current;
 		if (!view) return;
 		const current = view.state.doc.textBetween(
@@ -113,12 +124,21 @@ export function QuickCaptureEditor({
 	}, [autoFocus]);
 
 	return (
-		<div className="relative">
+		<div
+			className={cn(
+				"relative",
+				compact &&
+					"[&_.ProseMirror]:min-h-16 [&_.ProseMirror]:max-h-40 [&_.ProseMirror]:text-sm [&_.ProseMirror>p:first-child]:text-sm",
+			)}
+		>
 			<div ref={hostRef} />
 			{!value && (
 				<div
 					aria-hidden="true"
-					className="pointer-events-none absolute inset-x-0 top-0 px-2.5 py-2 text-lg leading-7 font-semibold text-muted-foreground"
+					className={cn(
+						"pointer-events-none absolute inset-x-0 top-0 px-2.5 py-2 text-lg leading-7 font-semibold text-muted-foreground",
+						compact && "text-sm font-normal",
+					)}
 				>
 					{placeholder}
 				</div>

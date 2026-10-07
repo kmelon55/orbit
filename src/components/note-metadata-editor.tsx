@@ -1,5 +1,6 @@
 import { Tags, X } from "lucide-react";
 import { type KeyboardEvent, useState } from "react";
+import { useI18n } from "@/components/locale-provider";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -25,6 +26,8 @@ export function NoteMetadataEditor({
 	onTitleChange: (value: string) => void;
 	onTagsChange: (value: string) => void;
 }) {
+	const { t } = useI18n();
+
 	const [localTitle, setLocalTitle] = useState(title);
 	const [tagItems, setTagItems] = useState(() => parseTags(tags));
 	const [tagDraft, setTagDraft] = useState("");
@@ -71,8 +74,8 @@ export function NoteMetadataEditor({
 						event.preventDefault();
 					}
 				}}
-				aria-label="노트 제목"
-				placeholder="제목 없음"
+				aria-label={t("노트 제목")}
+				placeholder={t("제목 없음")}
 				rows={1}
 				maxLength={160}
 				className="min-h-0 resize-none overflow-hidden rounded-none border-0 bg-transparent px-0 py-0 text-4xl leading-tight font-semibold tracking-[-0.035em] whitespace-pre-wrap text-foreground shadow-none wrap-anywhere focus-visible:ring-0 md:text-[2.75rem] dark:bg-transparent"
@@ -91,7 +94,7 @@ export function NoteMetadataEditor({
 								onClick={() =>
 									commitTags(tagItems.filter((item) => item !== tag))
 								}
-								aria-label={`${tag} 태그 삭제`}
+								aria-label={t("{0} 태그 삭제", [tag])}
 								className="ml-0 grid h-5 w-0 overflow-hidden place-items-center rounded text-muted-foreground opacity-0 transition-[width,margin,opacity,color,background-color] group-hover/tag:-mr-1 group-hover/tag:ml-1 group-hover/tag:w-5 group-hover/tag:opacity-100 hover:bg-foreground/10 hover:text-foreground focus-visible:-mr-1 focus-visible:ml-1 focus-visible:w-5 focus-visible:opacity-100"
 							>
 								<X className="size-3" />
@@ -104,9 +107,9 @@ export function NoteMetadataEditor({
 						onKeyDown={handleTagKeyDown}
 						onBlur={addTagDraft}
 						placeholder={
-							tagItems.length > 0 ? "태그 추가" : "태그 입력 후 Enter"
+							tagItems.length > 0 ? t("태그 추가") : t("태그 입력 후 Enter")
 						}
-						aria-label="태그 추가"
+						aria-label={t("태그 추가")}
 						maxLength={40}
 						className="h-7 min-w-28 flex-1 rounded-none border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
 					/>

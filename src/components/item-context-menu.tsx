@@ -12,6 +12,7 @@ import {
 import { type ReactElement, useState } from "react";
 import { isPendingItemId } from "#/lib/orbit/optimistic-mutations";
 import type { OrbitItem, OrbitSnapshot } from "#/lib/orbit/schema";
+import { useI18n } from "@/components/locale-provider";
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -71,6 +72,8 @@ export function ItemContextMenu({
 	onConvert?: (kind: "note" | "task" | "event") => void;
 	onMove?: MoveDestination;
 }) {
+	const { t } = useI18n();
+
 	const [open, setOpen] = useState(false);
 	const [moveOpen, setMoveOpen] = useState(false);
 	const showCreate = Boolean(onCreate);
@@ -93,7 +96,7 @@ export function ItemContextMenu({
 					<ContextMenuContent className="w-52">
 						{showCreate ? (
 							<ContextMenuItem onSelect={onCreate}>
-								<Plus /> {createLabel}
+								<Plus /> {t(createLabel)}
 							</ContextMenuItem>
 						) : null}
 						{showCreate && (showItem || onOpen) ? (
@@ -101,39 +104,40 @@ export function ItemContextMenu({
 						) : null}
 						{onOpen ? (
 							<ContextMenuItem onSelect={onOpen}>
-								<FileText /> 열기
+								<FileText /> {t("열기")}
 							</ContextMenuItem>
 						) : null}
 						{item && onFile ? (
 							<ContextMenuItem onSelect={closeThen(onFile)}>
-								<FolderInput /> 세부 정리...
+								<FolderInput /> {t("세부 정리...")}
 							</ContextMenuItem>
 						) : null}
 						{showMove && item && onMove ? (
 							<ContextMenuItem onSelect={closeThen(() => setMoveOpen(true))}>
 								<FolderInput />{" "}
-								{item.type === "task" ? "소속 변경…" : "옮기기…"}
+								{item.type === "task" ? t("소속 변경…") : t("옮기기…")}
 							</ContextMenuItem>
 						) : null}
 						{showConvert && item && onConvert ? <ContextMenuSeparator /> : null}
 						{showConvert && onConvert && item?.type !== "note" ? (
 							<ContextMenuItem onSelect={closeThen(() => onConvert("note"))}>
-								<FileText /> 노트로 바꾸기
+								<FileText /> {t("노트로 바꾸기")}
 							</ContextMenuItem>
 						) : null}
 						{showConvert && onConvert && item?.type !== "task" ? (
 							<ContextMenuItem onSelect={closeThen(() => onConvert("task"))}>
-								<ListTodo /> 할 일로 바꾸기
+								<ListTodo /> {t("할 일로 바꾸기")}
 							</ContextMenuItem>
 						) : null}
 						{showConvert && onConvert && item?.type !== "event" ? (
 							<ContextMenuItem onSelect={closeThen(() => onConvert("event"))}>
-								<CalendarDays /> 일정으로 바꾸기…
+								<CalendarDays /> {t("일정으로 바꾸기…")}
 							</ContextMenuItem>
 						) : null}
 						{item?.type === "task" && onToggleTask ? (
 							<ContextMenuItem onSelect={onToggleTask}>
-								<Check /> {item.status === "done" ? "다시 열기" : "완료로 표시"}
+								<Check />{" "}
+								{item.status === "done" ? t("다시 열기") : t("완료로 표시")}
 							</ContextMenuItem>
 						) : null}
 						{item ? (
@@ -144,14 +148,14 @@ export function ItemContextMenu({
 										void navigator.clipboard.writeText(item.path);
 									}}
 								>
-									<Copy /> 경로 복사
+									<Copy /> {t("경로 복사")}
 								</ContextMenuItem>
 							</>
 						) : null}
 						{item && (canArchive || onDelete) ? <ContextMenuSeparator /> : null}
 						{canArchive ? (
 							<ContextMenuItem onSelect={closeThen(onArchive)}>
-								<Archive /> 보관
+								<Archive /> {t("보관")}
 							</ContextMenuItem>
 						) : null}
 						{item && onDelete ? (
@@ -159,7 +163,7 @@ export function ItemContextMenu({
 								variant="destructive"
 								onSelect={closeThen(onDelete)}
 							>
-								<Trash2 /> 삭제
+								<Trash2 /> {t("삭제")}
 							</ContextMenuItem>
 						) : null}
 					</ContextMenuContent>
@@ -187,27 +191,31 @@ export function ConfirmItemDialog({
 	onOpenChange: (open: boolean) => void;
 	onConfirm: () => void;
 }) {
+	const { t } = useI18n();
+
 	const isDelete = action?.kind === "delete";
 	return (
 		<AlertDialog open={action !== null} onOpenChange={onOpenChange}>
 			<AlertDialogContent>
 				<AlertDialogHeader>
 					<AlertDialogTitle>
-						{isDelete ? "이 항목을 삭제할까요?" : "이 항목을 보관할까요?"}
+						{isDelete ? t("이 항목을 삭제할까요?") : t("이 항목을 보관할까요?")}
 					</AlertDialogTitle>
 					<AlertDialogDescription>
 						{isDelete
-							? `“${action?.item.title}” 항목을 삭제합니다.`
-							: `"${action?.item.title}" 파일은 삭제되지 않고 archive 폴더로 이동합니다.`}
+							? t("“{0}” 항목을 삭제합니다.", [action?.item.title])
+							: t('"{0}" 파일은 삭제되지 않고 archive 폴더로 이동합니다.', [
+									action?.item.title,
+								])}
 					</AlertDialogDescription>
 				</AlertDialogHeader>
 				<AlertDialogFooter>
-					<AlertDialogCancel>취소</AlertDialogCancel>
+					<AlertDialogCancel>{t("취소")}</AlertDialogCancel>
 					<AlertDialogAction
 						variant={isDelete ? "destructive" : "default"}
 						onClick={onConfirm}
 					>
-						{isDelete ? "삭제" : "보관"}
+						{isDelete ? t("삭제") : t("보관")}
 					</AlertDialogAction>
 				</AlertDialogFooter>
 			</AlertDialogContent>

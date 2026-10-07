@@ -17,15 +17,23 @@ export function resizeCalendarItem(
 	item: OrbitItem,
 	target: CalendarDragTarget,
 ): OrbitItem {
-	if (item.type !== "event" || !item.start) return item;
-	const startKey = item.start.slice(0, 10);
+	if (item.type !== "event" && item.type !== "task") return item;
+	const value = item.start ?? item.due;
+	if (!value) return item;
+	// A legacy point task becomes a range when its edge is resized.
+	item = item.type === "task" ? { ...item, start: value, due: value } : item;
+	const startKey = value.slice(0, 10);
 	const endKey = target.date < startKey ? startKey : target.date;
-	const startTime = timeOf(item.start);
+	const startTime = timeOf(value);
 
 	if (!startTime || target.mode !== "time" || !target.time) {
-		const currentEndTime = timeOf(item.end);
+		const currentEndTime =
+			timeOf(item.end) ??
+			(startTime
+				? timeOf(dateTime(new Date(new Date(value).getTime() + 30 * 60_000)))
+				: undefined);
 		if (currentEndTime) {
-			const start = new Date(item.start);
+			const start = new Date(value);
 			const candidate = new Date(`${endKey}T${currentEndTime}:00`);
 			return {
 				...item,
@@ -42,7 +50,7 @@ export function resizeCalendarItem(
 		};
 	}
 
-	const start = new Date(item.start);
+	const start = new Date(value);
 	let end = new Date(`${endKey}T${target.time}:00`);
 	if (end.getTime() <= start.getTime()) {
 		end = new Date(start.getTime() + 30 * 60_000);

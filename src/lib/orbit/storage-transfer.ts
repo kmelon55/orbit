@@ -24,6 +24,11 @@ import {
 } from "./database";
 import { normalizeFolderMetadata } from "./documents";
 import {
+	emptyRoutineData,
+	mergeRoutineData,
+	routineDataSchema,
+} from "./routines";
+import {
 	type OrbitFolderColor,
 	orbitFolderColorSchema,
 	type ScheduleCategory,
@@ -92,6 +97,16 @@ export function exportOrbitDirectory(destination: string) {
 			}
 			mkdirSync(path.join(staging, ".orbit"), { recursive: true });
 			writeFileSync(
+				path.join(staging, ".orbit", "routines.json"),
+				JSON.stringify(
+					routineDataSchema.parse(
+						database.metadata("routines") ?? emptyRoutineData(),
+					),
+					null,
+					2,
+				),
+			);
+			writeFileSync(
 				path.join(staging, ".orbit", "folders.json"),
 				JSON.stringify(
 					database.metadata("folders") ?? { version: 1, folders: {} },
@@ -137,6 +152,18 @@ export function importOrbitDirectory(source: string) {
 			randomUUID(),
 		);
 		try {
+			const routineFile = path.join(root, ".orbit", "routines.json");
+			if (existsSync(routineFile)) {
+				if (lstatSync(routineFile).isSymbolicLink())
+					throw new Error("Routine metadata must not be a symlink");
+				const incoming = routineDataSchema.parse(
+					JSON.parse(readFileSync(routineFile, "utf8")),
+				);
+				const current = routineDataSchema.parse(
+					database.metadata("routines") ?? emptyRoutineData(),
+				);
+				database.setMetadata("routines", mergeRoutineData(current, incoming));
+			}
 			for (const folder of inventory.directories) database.mkdir(folder);
 			for (const entry of inventory.files) {
 				if (entry.raw !== undefined) {

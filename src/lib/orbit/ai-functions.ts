@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { getUiLocale } from "../i18n/functions";
 import { orbitAuthMiddleware } from "./auth";
 
 export const loadAiSettings = createServerFn({ method: "GET" })
@@ -101,5 +102,6 @@ export const askOrbitAi = createServerFn({ method: "POST" })
 			data.references,
 			data.chatId,
 			data.requestId,
+			await getUiLocale(),
 		);
 	});

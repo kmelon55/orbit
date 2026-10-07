@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { type RoutineData, routineMutationSchemas } from "./routines";
 
 export const orbitItemTypeSchema = z.enum(["note", "task", "event", "link"]);
 
@@ -156,6 +157,7 @@ export type MoveTreeInput = z.infer<typeof moveTreeInputSchema>;
 export type TreeOrder = Record<string, string[]>;
 
 export const orbitMutationSchema = z.discriminatedUnion("action", [
+	...routineMutationSchemas,
 	z.object({
 		action: z.literal("save-schedule-category"),
 		input: scheduleCategorySettingsSchema,
@@ -258,6 +260,7 @@ export type OrbitFolder = {
 };
 
 export type OrbitSnapshot = {
+	routineData?: RoutineData;
 	uncategorizedScheduleName?: string;
 	uncategorizedScheduleColor?: OrbitFolderColor;
 	scheduleCategories?: ScheduleCategory[];

@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { SPACE_LABEL } from "#/lib/orbit/para";
 import type { OrbitItem, OrbitSnapshot } from "#/lib/orbit/schema";
+import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -27,6 +28,8 @@ export function NoteOrganizeTray({
 	onClose?: () => void;
 	onMove: MoveItem;
 }) {
+	const { t } = useI18n();
+
 	const isPanel = variant === "panel";
 	const visible = isPanel || open;
 	const movingItem =
@@ -47,9 +50,11 @@ export function NoteOrganizeTray({
 		>
 			<header className="flex min-h-16 shrink-0 items-center gap-3 border-b border-border/60 px-4">
 				<div className="min-w-0 flex-1">
-					<p className="text-sm font-semibold">정리함</p>
+					<p className="text-sm font-semibold">{t("정리함")}</p>
 					<p className="truncate text-xs text-muted-foreground">
-						{movingItem ? `“${movingItem.title}” 정리` : "항목을 선택하세요"}
+						{movingItem
+							? t("“{0}” 정리", [movingItem.title])
+							: t("항목을 선택하세요")}
 					</p>
 				</div>
 				{!isPanel ? (
@@ -57,7 +62,7 @@ export function NoteOrganizeTray({
 						variant="ghost"
 						size="icon-sm"
 						onClick={onClose}
-						aria-label="정리함 닫기"
+						aria-label={t("정리함 닫기")}
 					>
 						<X />
 					</Button>
@@ -77,7 +82,8 @@ export function NoteOrganizeTray({
 			<footer className="border-t border-border/60 px-4 py-3 text-xs leading-5 text-muted-foreground">
 				{movingItem ? (
 					<span>
-						현재: {SPACE_LABEL[movingItem.space]}
+						{t("현재:")}
+						{t(SPACE_LABEL[movingItem.space])}
 						{movingItem.folder ? ` / ${movingItem.folder}` : ""}
 					</span>
 				) : null}

@@ -35,6 +35,7 @@ import { createSearchIndex, searchItems } from "#/lib/orbit/global-search";
 import type { OrbitSnapshot } from "#/lib/orbit/schema";
 import { searchCachedMail } from "#/lib/orbit/search-functions";
 import { AiModelSelector } from "@/components/ai-model-selector";
+import { useI18n } from "@/components/locale-provider";
 import { Input } from "@/components/ui/input";
 
 const icons = {
@@ -66,6 +67,8 @@ export function PaletteAi({
 	inputRef: RefObject<HTMLInputElement | null>;
 	onOpenSource: (source: AiSource) => void;
 }) {
+	const { t, intlLocale, errorText } = useI18n();
+
 	const [question, setQuestion] = useState("");
 	const [caret, setCaret] = useState(0);
 	const [mentions, setMentions] = useState<
@@ -120,10 +123,10 @@ export function PaletteAi({
 			title: item.title,
 			detail:
 				item.type === "task"
-					? "할 일"
+					? t("할 일")
 					: item.type === "event"
-						? "일정"
-						: "노트",
+						? t("일정")
+						: t("노트"),
 			Icon: icons[item.type],
 		}));
 	const mailSuggestions: Suggestion[] = (
@@ -133,8 +136,8 @@ export function PaletteAi({
 		.slice(0, 5)
 		.map((item) => ({
 			reference: { kind: "mail", id: item.id },
-			title: item.subject || "(제목 없음)",
-			detail: `메일 · ${item.from}`,
+			title: item.subject || t("(제목 없음)"),
+			detail: t("메일 · {0}", [item.from]),
 			Icon: Mail,
 		}));
 	const suggestions = [...itemSuggestions, ...mailSuggestions].slice(0, 8);
@@ -228,7 +231,9 @@ export function PaletteAi({
 			setMentions([]);
 		} catch (cause) {
 			setError(
-				cause instanceof Error ? cause.message : "대화를 불러오지 못했습니다.",
+				cause instanceof Error
+					? cause.message
+					: t("대화를 불러오지 못했습니다."),
 			);
 		}
 	}
@@ -246,7 +251,7 @@ export function PaletteAi({
 			setError(
 				cause instanceof Error
 					? cause.message
-					: "Gateway 모델 목록을 갱신하지 못했습니다.",
+					: t("Gateway 모델 목록을 갱신하지 못했습니다."),
 			);
 		} finally {
 			setRefreshingModels(false);
@@ -283,7 +288,7 @@ export function PaletteAi({
 				setError(
 					cause instanceof Error
 						? cause.message
-						: "답변을 가져오지 못했습니다. 기록에서 상태를 확인해 주세요.",
+						: t("답변을 가져오지 못했습니다. 기록에서 상태를 확인해 주세요."),
 				);
 				setHistory(await loadAiHistory().catch(() => history));
 			} finally {
@@ -291,7 +296,7 @@ export function PaletteAi({
 				setPendingQuestion("");
 			}
 		},
-		[busy, model, question, mentions, chat, history],
+		[busy, model, question, mentions, chat, history, t],
 	);
 
 	useEffect(() => {
@@ -313,7 +318,7 @@ export function PaletteAi({
 	return (
 		<section
 			className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
-			aria-label="AI 질문"
+			aria-label={t("AI 질문")}
 		>
 			<div className="relative shrink-0 border-b px-4 py-2">
 				<div className="flex items-center gap-2">
@@ -322,8 +327,8 @@ export function PaletteAi({
 						ref={inputRef}
 						value={question}
 						maxLength={1000}
-						aria-label="AI에게 질문"
-						placeholder="내 자료에 질문하세요 · @로 자료 선택"
+						aria-label={t("AI에게 질문")}
+						placeholder={t("내 자료에 질문하세요 · @로 자료 선택")}
 						className="h-9 min-w-0 flex-1 border-0 py-0 pr-0 pl-1.5 text-sm shadow-none focus-visible:ring-0"
 						onChange={(event) => {
 							setQuestion(event.target.value);
@@ -376,7 +381,7 @@ export function PaletteAi({
 						type="button"
 						onClick={() => void send()}
 						disabled={busy || !model || question.trim().length < 2}
-						aria-label="AI에게 보내기"
+						aria-label={t("AI에게 보내기")}
 						className="grid size-8 shrink-0 place-items-center rounded-lg bg-foreground text-background disabled:opacity-40"
 					>
 						<Send className="size-4" />
@@ -397,7 +402,7 @@ export function PaletteAi({
 									)
 								}
 								className="inline-flex max-w-48 items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs"
-								title="언급 제거"
+								title={t("언급 제거")}
 							>
 								<span className="truncate">@{title}</span>
 								<X className="size-3 shrink-0" />
@@ -409,7 +414,7 @@ export function PaletteAi({
 					<div
 						className="absolute left-3 right-3 top-full z-20 max-h-64 overflow-y-auto rounded-xl border bg-popover p-1 shadow-lg"
 						role="listbox"
-						aria-label="언급할 자료"
+						aria-label={t("언급할 자료")}
 					>
 						{suggestions.length ? (
 							suggestions.map((suggestion, index) => (
@@ -433,14 +438,9 @@ export function PaletteAi({
 							))
 						) : (
 							<p className="p-3 text-xs text-muted-foreground">
-								자료를 찾지 못했습니다.
+								{t("자료를 찾지 못했습니다.")}
 							</p>
 						)}
-						{!mentionTerm ? (
-							<p className="px-2 pb-2 text-xs text-muted-foreground">
-								메일은 @ 뒤에 검색어를 입력하세요.
-							</p>
-						) : null}
 					</div>
 				) : null}
 			</div>
@@ -467,7 +467,8 @@ export function PaletteAi({
 					}}
 					className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs hover:bg-muted"
 				>
-					<Plus className="size-3.5" />새 대화
+					<Plus className="size-3.5" />
+					{t("새 대화")}
 				</button>
 				<button
 					type="button"
@@ -476,19 +477,19 @@ export function PaletteAi({
 					className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs hover:bg-muted"
 				>
 					<History className="size-3.5" />
-					기록
+					{t("기록")}
 				</button>
 			</div>
 			<div className="min-h-0 flex-1 overflow-y-auto p-4">
 				{!configured ? (
 					<p className="rounded-lg bg-muted p-3 text-sm">
-						설정 → AI에서 Gateway API 키를 저장해 주세요.
+						{t("설정 → AI에서 Gateway API 키를 저장해 주세요.")}
 					</p>
 				) : null}
 				{showHistory ? (
 					<div className="grid gap-1">
 						<p className="mb-2 text-xs font-medium text-muted-foreground">
-							지난 대화
+							{t("지난 대화")}
 						</p>
 						{history.length ? (
 							history.map((entry) => (
@@ -500,27 +501,18 @@ export function PaletteAi({
 								>
 									<span className="block truncate text-sm">{entry.title}</span>
 									<span className="text-xs text-muted-foreground">
-										{new Date(entry.updatedAt).toLocaleString("ko-KR")}
+										{new Date(entry.updatedAt).toLocaleString(intlLocale)}
 									</span>
 								</button>
 							))
 						) : (
 							<p className="py-6 text-center text-sm text-muted-foreground">
-								아직 대화가 없습니다.
+								{t("아직 대화가 없습니다.")}
 							</p>
 						)}
 					</div>
 				) : (
 					<div className="grid gap-4">
-						{!chat?.messages.length && !busy ? (
-							<div className="py-12 text-center text-sm text-muted-foreground">
-								<Sparkles className="mx-auto mb-3 size-5" />
-								<p>내 자료에 대해 바로 물어보세요.</p>
-								<p className="mt-1 text-xs">
-									@를 입력하면 노트·할 일·일정·메일을 직접 고를 수 있습니다.
-								</p>
-							</div>
-						) : null}
 						{chat?.messages.map((message) => (
 							<div
 								key={message.id}
@@ -535,12 +527,12 @@ export function PaletteAi({
 								</p>
 								{message.status === "pending" ? (
 									<p className="mt-2 text-xs text-muted-foreground">
-										응답 확인 중 · 기록을 다시 열어 상태를 확인하세요.
+										{t("응답 확인 중 · 기록을 다시 열어 상태를 확인하세요.")}
 									</p>
 								) : null}
 								{message.status === "failed" ? (
 									<p className="mt-2 text-xs text-destructive">
-										응답을 완료하지 못했습니다.
+										{t("응답을 완료하지 못했습니다.")}
 									</p>
 								) : null}
 								{message.sources?.length ? (
@@ -553,12 +545,12 @@ export function PaletteAi({
 												className="max-w-full truncate rounded-md bg-muted px-2 py-1 text-xs hover:bg-accent"
 												title={
 													source.scope === "preview"
-														? "메일 미리보기만 참고"
+														? t("메일 미리보기만 참고")
 														: source.title
 												}
 											>
 												[{source.index}] {source.title}
-												{source.scope === "preview" ? " · 미리보기" : ""}
+												{source.scope === "preview" ? t("· 미리보기") : ""}
 											</button>
 										))}
 									</div>
@@ -569,7 +561,7 @@ export function PaletteAi({
 							<div className="ml-10 rounded-xl bg-muted p-3 text-sm">
 								{pendingQuestion}
 								<p className="mt-2 text-xs text-muted-foreground">
-									답변을 기다리고 있습니다…
+									{t("답변을 기다리고 있습니다…")}
 								</p>
 							</div>
 						) : null}
@@ -578,12 +570,9 @@ export function PaletteAi({
 				)}
 				{error ? (
 					<p role="alert" className="mt-3 text-sm text-destructive">
-						{error}
+						{errorText(error)}
 					</p>
 				) : null}
-			</div>
-			<div className="flex h-9 shrink-0 items-center border-t px-4 text-xs text-muted-foreground">
-				Enter 질문 · @ 자료 언급 · 기록에서 지난 답변 보기
 			</div>
 		</section>
 	);

@@ -18,8 +18,8 @@ Notes, tasks, and calendar events live in embedded SQLite, with portable Markdow
 | --- | --- |
 | Capture | Create notes, tasks, and events from Today, Inbox, or the mobile quick-capture flow. Supported browsers can also use speech input. |
 | Notes | Edit Markdown with background autosave, GFM preview, tags, internal note links, optional Vim mode, and archive/delete actions. |
-| Tasks | See open and completed tasks, grouped as overdue, today, upcoming, or unscheduled. Complete, edit, file, or drag tasks to today or tomorrow. |
-| Calendar | Day, week, and month views for tasks and events, including timed and multi-day events. Create, move, and resize scheduled items. |
+| Tasks | See open and completed tasks, grouped as overdue, today, upcoming, or unscheduled. Set start and end dates and times, complete, edit, file, or drag tasks to today or tomorrow. |
+| Calendar | Day, week, and month views for tasks and events, including timed and multi-day tasks and events. Create, move, and resize scheduled items. |
 | Today | See today's tasks and events together, alongside active project folders and quick capture. |
 | PARA | File items into Projects, Areas, Resources, or Archive. Create and manage nested folders without inventing a database schema first. |
 | Search | Use the global search button or Cmd/Ctrl+K to find notes, tasks, events, and cached mail across folders. Mail search covers subject, addresses, preview, and the full text of recently opened messages. For uncached bodies, use the mail server search within each mailbox folder. |

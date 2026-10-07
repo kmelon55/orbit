@@ -2,6 +2,7 @@ import { Forward, RefreshCw, Reply, ReplyAll } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { mailApi } from "#/lib/mail/client";
 import type { MailDetail, MailMessage } from "#/lib/mail/types";
+import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -36,6 +37,8 @@ export function MailThreadMessage({
 	onCompose: (detail: MailDetail, mode: "reply" | "all" | "forward") => void;
 	onRead: (id: string) => void;
 }) {
+	const { t, intlLocale, errorText } = useI18n();
+
 	const article = useRef<HTMLElement>(null);
 	const [nearby, setNearby] = useState(false);
 	const [retry, setRetry] = useState(0);
@@ -129,13 +132,15 @@ export function MailThreadMessage({
 		message.folder === "sent" ||
 		message.from.some((a) => accountEmails.includes(a.address.toLowerCase()));
 	const sender = sent
-		? `나 · ${message.from.map((a) => a.address).join(", ")}`
+		? t("나 · {0}", [message.from.map((a) => a.address).join(", ")])
 		: message.from.map((a) => a.name || a.address).join(", ");
 	const time = new Date(message.date);
 	return (
 		<article
 			ref={article}
-			aria-label={`${message.from.map((a) => a.name || a.address).join(", ")}의 메일`}
+			aria-label={t("{0}의 메일", [
+				message.from.map((a) => a.name || a.address).join(", "),
+			])}
 			className={cn(
 				"flex min-w-0 flex-col",
 				sent ? "items-end pl-6 sm:pl-16" : "items-start pr-6 sm:pr-16",
@@ -161,10 +166,10 @@ export function MailThreadMessage({
 				<span className="truncate text-xs font-medium">{sender}</span>
 				<time
 					dateTime={time.toISOString()}
-					title={time.toLocaleString("ko-KR")}
+					title={time.toLocaleString(intlLocale)}
 					className="shrink-0 text-[10px] text-muted-foreground"
 				>
-					{time.toLocaleString("ko-KR", {
+					{time.toLocaleString(intlLocale, {
 						month: "numeric",
 						day: "numeric",
 						hour: "2-digit",
@@ -197,7 +202,7 @@ export function MailThreadMessage({
 								onClick={() => onCompose(detail, "reply")}
 							>
 								<Reply className="size-3.5" />
-								답장
+								{t("답장")}
 							</Button>
 							<Button
 								variant="ghost"
@@ -205,7 +210,7 @@ export function MailThreadMessage({
 								onClick={() => onCompose(detail, "all")}
 							>
 								<ReplyAll className="size-3.5" />
-								전체 답장
+								{t("전체 답장")}
 							</Button>
 							<Button
 								variant="ghost"
@@ -213,7 +218,7 @@ export function MailThreadMessage({
 								onClick={() => onCompose(detail, "forward")}
 							>
 								<Forward className="size-3.5" />
-								전달
+								{t("전달")}
 							</Button>
 						</div>
 					</>
@@ -222,7 +227,7 @@ export function MailThreadMessage({
 						{error ? (
 							<>
 								<p role="alert" className="text-sm text-destructive">
-									{error}
+									{errorText(error)}
 								</p>
 								<Button
 									variant="outline"
@@ -235,14 +240,14 @@ export function MailThreadMessage({
 										}
 									}}
 								>
-									본문 다시 불러오기
+									{t("본문 다시 불러오기")}
 								</Button>
 							</>
 						) : (
 							<>
 								<output className="flex items-center gap-2 text-xs text-muted-foreground">
 									<RefreshCw className="size-3 animate-spin" />
-									본문을 불러오는 중…
+									{t("본문을 불러오는 중…")}
 								</output>
 								<Skeleton className="h-4 w-4/5" />
 								<Skeleton className="h-4 w-full" />

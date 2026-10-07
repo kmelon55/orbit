@@ -2,6 +2,7 @@ import { FileText, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { OrbitItem } from "#/lib/orbit/schema";
+import { useI18n } from "@/components/locale-provider";
 import type { NoteEditorAnchor } from "@/components/note-editor";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -21,6 +22,8 @@ export function NoteLinkPicker({
 	onOpenChange: (open: boolean) => void;
 	onSelect: (item: OrbitItem) => void;
 }) {
+	const { t } = useI18n();
+
 	const [query, setQuery] = useState("");
 	const panelRef = useRef<HTMLDivElement>(null);
 	const notes = useMemo(() => {
@@ -71,7 +74,7 @@ export function NoteLinkPicker({
 		<div
 			ref={panelRef}
 			role="dialog"
-			aria-label="노트 연결"
+			aria-label={t("노트 연결")}
 			style={{ left, top, width: panelWidth }}
 			className="fixed z-[70] overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-xl"
 		>
@@ -82,7 +85,7 @@ export function NoteLinkPicker({
 						autoFocus
 						value={query}
 						onChange={(event) => setQuery(event.target.value)}
-						placeholder="Search notes · 노트 검색"
+						placeholder={t("Search notes · 노트 검색")}
 						className="h-9 border-0 bg-transparent pl-9 shadow-none focus-visible:ring-0"
 					/>
 				</div>
@@ -113,7 +116,7 @@ export function NoteLinkPicker({
 					))}
 					{notes.length === 0 ? (
 						<p className="px-3 py-10 text-center text-sm text-muted-foreground">
-							연결할 노트를 찾지 못했습니다.
+							{t("연결할 노트를 찾지 못했습니다.")}
 						</p>
 					) : null}
 				</div>

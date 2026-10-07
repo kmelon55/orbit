@@ -16,6 +16,7 @@ import { createSearchIndex, searchItems } from "#/lib/orbit/global-search";
 import { folderOf, ITEM_TYPE_LABEL, SPACE_LABEL } from "#/lib/orbit/para";
 import type { OrbitItem, OrbitSnapshot } from "#/lib/orbit/schema";
 import { searchCachedMail } from "#/lib/orbit/search-functions";
+import { useI18n } from "@/components/locale-provider";
 import { PaletteAi } from "@/components/palette-ai";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -29,6 +30,8 @@ const icons = {
 type MailHit = Awaited<ReturnType<typeof searchCachedMail>>[number];
 
 export function GlobalSearch({ snapshot }: { snapshot: OrbitSnapshot }) {
+	const { t } = useI18n();
+
 	const [open, setOpen] = useState(false);
 	const [mode, setMode] = useState<"search" | "ai">("search");
 	const [query, setQuery] = useState("");
@@ -209,10 +212,10 @@ export function GlobalSearch({ snapshot }: { snapshot: OrbitSnapshot }) {
 				type="button"
 				onClick={() => setOpen(true)}
 				className="flex h-8 items-center gap-2 rounded-lg px-2.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-				aria-label="검색과 AI 열기"
+				aria-label={t("검색과 AI 열기")}
 			>
 				<Search className="size-4" />
-				<span className="hidden sm:inline">검색 · AI</span>
+				<span className="hidden sm:inline">{t("검색 · AI")}</span>
 				<kbd className="hidden rounded border px-1 text-[10px] md:inline">
 					⌘ K
 				</kbd>
@@ -236,7 +239,7 @@ export function GlobalSearch({ snapshot }: { snapshot: OrbitSnapshot }) {
 							(mode === "search" ? inputRef : aiInputRef).current?.focus();
 						}}
 					>
-						<DialogTitle className="sr-only">검색과 AI</DialogTitle>
+						<DialogTitle className="sr-only">{t("검색과 AI")}</DialogTitle>
 						<div className="flex h-11 shrink-0 items-center gap-1 border-b px-3">
 							<button
 								type="button"
@@ -245,7 +248,7 @@ export function GlobalSearch({ snapshot }: { snapshot: OrbitSnapshot }) {
 								className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted aria-pressed:bg-muted aria-pressed:text-foreground"
 							>
 								<Search className="size-3.5" />
-								검색
+								{t("검색")}
 							</button>
 							<button
 								type="button"
@@ -297,22 +300,17 @@ export function GlobalSearch({ snapshot }: { snapshot: OrbitSnapshot }) {
 												choose(Math.min(active, total - 1));
 											}
 										}}
-										placeholder="검색하거나 AI에게 바로 질문"
+										placeholder={t("검색하거나 AI에게 바로 질문")}
 										className="h-10 border-0 py-0 pr-0 pl-1.5 text-base shadow-none focus-visible:ring-0"
-										aria-label="검색어"
+										aria-label={t("검색어")}
 									/>
 								</div>
 								<div
 									className="min-h-0 flex-1 overflow-y-auto p-2"
 									role="listbox"
-									aria-label="검색 결과"
+									aria-label={t("검색 결과")}
 								>
-									{!query.trim() ? (
-										<p className="px-3 py-8 text-center text-sm text-muted-foreground">
-											노트·할 일·일정·메일을 찾거나 질문을 입력해 ⌘/Ctrl+Enter로
-											AI 대화를 시작하세요.
-										</p>
-									) : (
+									{query.trim() ? (
 										<>
 											{trimmed.length >= 2 ? (
 												<button
@@ -322,7 +320,9 @@ export function GlobalSearch({ snapshot }: { snapshot: OrbitSnapshot }) {
 												>
 													<Sparkles className="size-4 shrink-0" />
 													<span className="min-w-0 flex-1 truncate text-sm font-medium">
-														AI에게 “{trimmed}” 질문하기
+														{t("AI에게 “")}
+														{trimmed}
+														{t("” 질문하기")}
 													</span>
 													<kbd className="shrink-0 text-xs text-muted-foreground">
 														⌘ ↵
@@ -331,7 +331,7 @@ export function GlobalSearch({ snapshot }: { snapshot: OrbitSnapshot }) {
 											) : null}
 											{results.length ? (
 												<p className="px-3 py-2 text-[11px] font-medium text-muted-foreground">
-													노트 · 할 일 · 일정
+													{t("노트 · 할 일 · 일정")}
 												</p>
 											) : null}
 											{results.map(({ entry, snippet }, index) => {
@@ -352,8 +352,8 @@ export function GlobalSearch({ snapshot }: { snapshot: OrbitSnapshot }) {
 																{entry.item.title}
 															</span>
 															<span className="block truncate text-xs text-muted-foreground">
-																{ITEM_TYPE_LABEL[entry.item.type]} ·{" "}
-																{SPACE_LABEL[entry.item.space]}
+																{t(ITEM_TYPE_LABEL[entry.item.type])} ·{" "}
+																{t(SPACE_LABEL[entry.item.space])}
 																{folderOf(entry.item)
 																	? ` / ${folderOf(entry.item)}`
 																	: ""}
@@ -368,8 +368,8 @@ export function GlobalSearch({ snapshot }: { snapshot: OrbitSnapshot }) {
 												);
 											})}
 											<div className="flex items-center justify-between px-3 py-2 text-[11px] font-medium text-muted-foreground">
-												<span>메일</span>
-												{mailLoading ? <span>검색 중…</span> : null}
+												<span>{t("메일")}</span>
+												{mailLoading ? <span>{t("검색 중…")}</span> : null}
 											</div>
 											{mailResults.map((message, index) => (
 												<button
@@ -384,7 +384,7 @@ export function GlobalSearch({ snapshot }: { snapshot: OrbitSnapshot }) {
 													<Mail className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
 													<span className="min-w-0 flex-1">
 														<span className="block truncate text-sm font-medium">
-															{message.subject || "(제목 없음)"}
+															{message.subject || t("(제목 없음)")}
 														</span>
 														<span className="block truncate text-xs text-muted-foreground">
 															{message.from} · {folderLabels[message.folder]}
@@ -399,29 +399,28 @@ export function GlobalSearch({ snapshot }: { snapshot: OrbitSnapshot }) {
 											))}
 											{!total && !mailLoading && !mailError ? (
 												<p className="px-3 py-6 text-center text-sm text-muted-foreground">
-													검색 결과가 없습니다.
+													{t("검색 결과가 없습니다.")}
 												</p>
 											) : null}
 											{mailError ? (
 												<p className="px-3 py-2 text-xs text-destructive">
-													저장된 메일을 검색하지 못했습니다.
+													{t("저장된 메일을 검색하지 못했습니다.")}
 												</p>
 											) : null}
 										</>
-									)}
+									) : null}
 								</div>
-								<div className="flex h-10 shrink-0 items-center justify-between gap-2 border-t px-4 text-xs text-muted-foreground">
-									<span>↑↓ 선택 · Enter 열기 · ⌘/Ctrl+Enter AI 질문</span>
-									{trimmed ? (
+								{trimmed ? (
+									<div className="flex h-10 shrink-0 items-center justify-end border-t px-4 text-xs text-muted-foreground">
 										<button
 											type="button"
 											onClick={searchMoreMail}
 											className="ml-auto truncate hover:text-foreground"
 										>
-											메일함에서 서버 검색 →
+											{t("메일함에서 서버 검색 →")}
 										</button>
-									) : null}
-								</div>
+									</div>
+								) : null}
 							</>
 						) : null}
 						<PaletteAi

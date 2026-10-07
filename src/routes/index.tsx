@@ -5,6 +5,7 @@ import {
 	Circle,
 	FolderClosed,
 	FolderKanban,
+	Inbox,
 	ListTodo,
 	Plus,
 } from "lucide-react";
@@ -19,6 +20,8 @@ import {
 	type ItemConfirmAction,
 	ItemContextMenu,
 } from "@/components/item-context-menu";
+import { useI18n } from "@/components/locale-provider";
+import { useOrbitWrites } from "@/components/orbit-snapshot-provider";
 import { QuickCapture } from "@/components/quick-capture";
 import { ScheduleEditor } from "@/components/schedule-editor";
 import {
@@ -42,7 +45,17 @@ function formatTime(value?: string) {
 }
 
 function TodayPage() {
+	const { t } = useI18n();
+
 	const snapshot = useOrbitSnapshot();
+	const { pending } = useOrbitWrites();
+	const inboxCount =
+		snapshot.counts.inbox +
+		pending.filter(
+			(entry) =>
+				entry.input.space === "inbox" &&
+				(entry.input.type === "note" || entry.input.type === "link"),
+		).length;
 	const [editor, setEditor] = useState<{
 		open: boolean;
 		kind: "task" | "event";
@@ -89,16 +102,31 @@ function TodayPage() {
 							{snapshot.displayDate.longLabel}
 						</p>
 						<h2 className="mt-1 text-2xl font-semibold tracking-tight">
-							Today
+							{t("Today")}
 						</h2>
 					</div>
 					<Button onClick={() => setEditor({ open: true, kind: "task" })}>
-						<Plus /> 추가
+						<Plus /> {t("추가")}
 					</Button>
 				</header>
 
 				<div className="mb-5 sm:mb-8">
 					<QuickCapture />
+					<div className="mt-2 flex justify-end">
+						<Link
+							to="/inbox"
+							preload="render"
+							className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+						>
+							<Inbox className="size-3.5" />
+							<span>
+								{inboxCount > 0
+									? t("정리 대기 {0}개", [inboxCount])
+									: t("Inbox")}
+							</span>
+							<ArrowRight className="size-3" />
+						</Link>
+					</div>
 				</div>
 
 				<div className="grid gap-4 lg:grid-cols-2">
@@ -106,7 +134,7 @@ function TodayPage() {
 						<div className="flex items-center justify-between border-b border-border/60 px-4 py-3.5">
 							<div className="flex items-center gap-2">
 								<ListTodo className="size-4" />
-								<h3 className="text-sm font-semibold">오늘 할 일</h3>
+								<h3 className="text-sm font-semibold">{t("오늘 할 일")}</h3>
 								<span className="text-xs tabular-nums text-muted-foreground">
 									{todayTasks.length}
 								</span>
@@ -115,7 +143,7 @@ function TodayPage() {
 								to="/tasks"
 								className="text-xs text-muted-foreground hover:text-foreground"
 							>
-								전체 보기
+								{t("전체 보기")}
 							</Link>
 						</div>
 						<div>
@@ -158,7 +186,7 @@ function TodayPage() {
 													onClick={() =>
 														void taskToggle.toggle(task, { exit: true })
 													}
-													aria-label={`${task.title} 완료`}
+													aria-label={t("{0} 완료", [task.title])}
 												/>
 												<button
 													type="button"
@@ -181,11 +209,13 @@ function TodayPage() {
 													</span>
 													<span className="mt-0.5 block text-xs text-muted-foreground">
 														{folderOf(task) ??
-															(task.space === "inbox" ? "Inbox" : task.space)}
+															(task.space === "inbox"
+																? t("Inbox")
+																: task.space)}
 													</span>
 												</button>
 												<span className="text-xs tabular-nums text-muted-foreground">
-													{formatTime(task.due)}
+													{t(formatTime(task.start ?? task.due))}
 												</span>
 											</div>
 										</ItemContextMenu>
@@ -195,7 +225,7 @@ function TodayPage() {
 							<TaskEmpty
 								show={todayTasks.every((task) => taskToggle.isExiting(task.id))}
 							>
-								<EmptyRow icon={Circle} text="오늘 할 일이 없습니다" />
+								<EmptyRow icon={Circle} text={t("오늘 할 일이 없습니다")} />
 							</TaskEmpty>
 						</div>
 					</section>
@@ -204,7 +234,7 @@ function TodayPage() {
 						<div className="flex items-center justify-between border-b border-border/60 px-4 py-3.5">
 							<div className="flex items-center gap-2">
 								<CalendarDays className="size-4" />
-								<h3 className="text-sm font-semibold">오늘 일정</h3>
+								<h3 className="text-sm font-semibold">{t("오늘 일정")}</h3>
 								<span className="text-xs tabular-nums text-muted-foreground">
 									{snapshot.today.events.length}
 								</span>
@@ -213,7 +243,7 @@ function TodayPage() {
 								to="/calendar"
 								className="text-xs text-muted-foreground hover:text-foreground"
 							>
-								캘린더
+								{t("캘린더")}
 							</Link>
 						</div>
 						<div>
@@ -242,7 +272,7 @@ function TodayPage() {
 											className="flex min-h-14 w-full items-center gap-3 border-b border-border/55 px-4 text-left transition-colors last:border-b-0 hover:bg-muted/40"
 										>
 											<span className="w-12 shrink-0 text-xs font-medium tabular-nums">
-												{formatTime(event.start)}
+												{t(formatTime(event.start))}
 											</span>
 											<span
 												className={cn(
@@ -257,7 +287,10 @@ function TodayPage() {
 									</ItemContextMenu>
 								))
 							) : (
-								<EmptyRow icon={CalendarDays} text="오늘 일정이 없습니다" />
+								<EmptyRow
+									icon={CalendarDays}
+									text={t("오늘 일정이 없습니다")}
+								/>
 							)}
 						</div>
 					</section>
@@ -267,7 +300,7 @@ function TodayPage() {
 					<div className="flex items-center justify-between border-b border-border/60 px-4 py-3.5">
 						<div className="flex items-center gap-2">
 							<FolderKanban className="size-4" />
-							<h3 className="text-sm font-semibold">Projects</h3>
+							<h3 className="text-sm font-semibold">{t("Projects")}</h3>
 							<span className="text-xs tabular-nums text-muted-foreground">
 								{snapshot.folders.project.length}
 							</span>
@@ -276,7 +309,7 @@ function TodayPage() {
 							to="/projects"
 							className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
 						>
-							전체 보기
+							{t("전체 보기")}
 							<ArrowRight className="size-3.5" />
 						</Link>
 					</div>
@@ -300,7 +333,8 @@ function TodayPage() {
 											{folder.slug}
 										</span>
 										<span className="mt-0.5 block text-xs text-muted-foreground">
-											{folder.count}개 항목
+											{folder.count}
+											{t("개 항목")}
 										</span>
 									</span>
 									<ArrowRight className="size-4 shrink-0 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
@@ -310,7 +344,7 @@ function TodayPage() {
 					) : (
 						<div className="flex min-h-24 items-center justify-center px-4 text-sm text-muted-foreground">
 							<Link to="/projects" className="hover:text-foreground">
-								프로젝트 폴더를 만들면 여기에 바로 표시됩니다
+								{t("프로젝트 폴더를 만들면 여기에 바로 표시됩니다")}
 							</Link>
 						</div>
 					)}
