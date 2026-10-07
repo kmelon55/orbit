@@ -357,7 +357,7 @@ export function ScheduleEditor({
 					if (!savingRef.current) onOpenChange(next);
 				}}
 			>
-				<DialogContent className="top-[max(0.75rem,env(safe-area-inset-top))] flex max-h-[calc(100svh-1.5rem)] translate-y-0 gap-0 overflow-hidden p-0 sm:top-[3svh] sm:max-h-[94svh] sm:max-w-xl">
+				<DialogContent className="top-[max(1.5rem,env(safe-area-inset-top))] flex max-h-[calc(100svh-3rem)] translate-y-0 gap-0 overflow-hidden p-0 sm:top-[6svh] sm:max-h-[calc(94svh-1rem)] sm:max-w-xl">
 					<form
 						className="flex min-h-0 w-full flex-col"
 						onSubmit={(event) => {
@@ -443,7 +443,7 @@ export function ScheduleEditor({
 											? t("일정 제목")
 											: t("할 일")
 								}
-								className="h-auto border-0 bg-transparent px-0 py-1 text-xl font-semibold shadow-none focus-visible:ring-0"
+								className="h-auto border-0 bg-transparent px-2 py-1.5 text-xl font-semibold shadow-none focus-visible:ring-0"
 							/>
 						</DialogHeader>
 
