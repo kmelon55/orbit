@@ -12,6 +12,21 @@ export default defineConfig({
 		},
 	},
 	plugins: [
+		{
+			name: "orbit-media-api-dev-routing",
+			apply: "serve",
+			enforce: "pre",
+			configureServer(server) {
+				server.middlewares.use((request, _response, next) => {
+					// Nitro's dev middleware otherwise treats <img>/<video> API requests
+					// as static assets and returns 404 before TanStack's routes run.
+					if (/^\/api\/orbit\/(media|images)(?:\?|$)/.test(request.url ?? "")) {
+						request.headers["sec-fetch-dest"] = "empty";
+					}
+					next();
+				});
+			},
+		},
 		tanstackStart(),
 		nitro({
 			plugins: ["./src/server/mail-plugin.ts"],

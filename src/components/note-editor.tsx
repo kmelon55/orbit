@@ -1,5 +1,11 @@
 import { Crepe } from "@milkdown/crepe";
-import { commandsCtx, editorViewCtx } from "@milkdown/kit/core";
+import {
+	commandsCtx,
+	editorViewCtx,
+	editorViewOptionsCtx,
+	keymapCtx,
+} from "@milkdown/kit/core";
+import { uploadConfig, uploadPlugin } from "@milkdown/kit/plugin/upload";
 import { clearTextInCurrentBlockCommand } from "@milkdown/kit/preset/commonmark";
 import { TextSelection } from "@milkdown/kit/prose/state";
 import {
@@ -11,6 +17,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { toast } from "sonner";
 import { useI18n } from "@/components/locale-provider";
 import { EditorSkeleton } from "@/components/workspace-skeleton";
 import "@milkdown/crepe/theme/common/style.css";
@@ -20,7 +27,14 @@ import {
 	orbitCanvasSchema,
 	orbitCanvasView,
 } from "@/components/note-canvas-node";
+import {
+	orbitVideoRemark,
+	orbitVideoSchema,
+	orbitVideoView,
+} from "@/components/note-video-node";
 import { useNoteVimPreference } from "@/hooks/use-note-vim-preference";
+import { deleteEmptyParagraphAfterMedia } from "@/lib/orbit/note-block-editing";
+import { isNoteMediaFile, uploadNoteMedia } from "@/lib/orbit/note-media";
 import {
 	createNoteVimController,
 	createNoteVimCursorPlugin,
@@ -271,6 +285,21 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 				}
 			};
 			root.addEventListener("click", openInternalLink);
+			const uploadMedia = async (file: File) => {
+				userInteractedRef.current = true;
+				try {
+					return await uploadNoteMedia(file);
+				} catch (error) {
+					toast.error(
+						t(
+							error instanceof Error
+								? error.message
+								: "Could not save the file. Please try again.",
+						),
+					);
+					throw error;
+				}
+			};
 
 			const crepe = new Crepe({
 				root,
@@ -312,6 +341,37 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 						},
 						buildMenu: (builder) => {
 							const orbit = builder.addGroup("orbit", "Orbit");
+							orbit.addItem("video", {
+								label: t("Video"),
+								icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="13" height="14" rx="2"/><path d="m16 10 5-3v10l-5-3"/></svg>',
+								onRun: (ctx) => {
+									ctx.get(commandsCtx).call(clearTextInCurrentBlockCommand.key);
+									const view = ctx.get(editorViewCtx);
+									const input = document.createElement("input");
+									input.type = "file";
+									input.accept =
+										"video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov";
+									input.multiple = true;
+									input.addEventListener(
+										"change",
+										() => {
+											if (!input.files?.length || view.isDestroyed) return;
+											const transfer = new DataTransfer();
+											for (const file of Array.from(input.files))
+												transfer.items.add(file);
+											view.dom.dispatchEvent(
+												new ClipboardEvent("paste", {
+													clipboardData: transfer,
+													bubbles: true,
+													cancelable: true,
+												}),
+											);
+										},
+										{ once: true },
+									);
+									input.click();
+								},
+							});
 							orbit.addItem("note-link", {
 								label: t("Note link · notelink · 노트 링크 · 노트링크"),
 								icon: noteLinkIcon,
@@ -339,6 +399,7 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 					},
 					[Crepe.Feature.LinkTooltip]: { inputPlaceholder: t("Paste link...") },
 					[Crepe.Feature.ImageBlock]: {
+						onUpload: async (file) => (await uploadMedia(file)).url,
 						inlineUploadPlaceholderText: t("Image URL"),
 						blockUploadPlaceholderText: t("Image URL"),
 						blockCaptionPlaceholderText: t("Image caption"),
@@ -360,9 +421,57 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 			});
 			crepe.editor.config((ctx) => {
 				ctx.set(orbitCanvasLocale.key, localeRef.current);
+				ctx.get(keymapCtx).add({
+					key: "Backspace",
+					priority: 100,
+					onRun: () => deleteEmptyParagraphAfterMedia,
+				});
+				ctx.update(editorViewOptionsCtx, (options) => ({
+					...options,
+					handlePaste(view, event, slice) {
+						if (
+							Array.from(event.clipboardData?.files ?? []).some(isNoteMediaFile)
+						) {
+							// Base props run before Milkdown's HTML clipboard plugin.
+							const plugin = uploadPlugin.key()?.get(view.state);
+							return (
+								plugin?.props.handlePaste?.call(plugin, view, event, slice) ??
+								false
+							);
+						}
+						return options.handlePaste?.call(this, view, event, slice) ?? false;
+					},
+				}));
+				ctx.update(uploadConfig.key, (config) => ({
+					...config,
+					// Screenshots and copied browser images may include both HTML and files.
+					enableHtmlFileUploader: true,
+					uploader: async (files, schema) => {
+						const results = await Promise.allSettled(
+							Array.from(files)
+								.filter(isNoteMediaFile)
+								.map(async (file) => {
+									const media = await uploadMedia(file);
+									return media.mime.startsWith("video/")
+										? schema.nodes.orbitVideo.create({
+												src: media.url,
+												title: file.name,
+											})
+										: schema.nodes["image-block"].create({ src: media.url });
+								}),
+						);
+						// Resolve even on failure so Milkdown removes its upload placeholder.
+						return results.flatMap((result) =>
+							result.status === "fulfilled" ? [result.value] : [],
+						);
+					},
+				}));
 			});
 			crepe.editor.use([
 				orbitCanvasLocale,
+				...orbitVideoRemark,
+				...orbitVideoSchema,
+				orbitVideoView,
 				...orbitCanvasRemark,
 				...orbitCanvasSchema,
 				orbitCanvasView,

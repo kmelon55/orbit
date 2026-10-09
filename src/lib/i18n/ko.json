@@ -947,5 +947,10 @@
 	"To note": "노트로",
 	"To link": "링크로",
 	"노트 편집": "노트 편집",
-	"노트 내용": "노트 내용"
+	"노트 내용": "노트 내용",
+	"Choose an image smaller than 20 MB.": "20MB 이하의 이미지를 선택해 주세요.",
+	"Video": "영상",
+	"Choose a video smaller than 250 MB.": "250MB 이하의 영상을 선택해 주세요.",
+	"Use PNG, JPEG, GIF, WebP, AVIF, MP4, MOV, or WebM.": "PNG, JPEG, GIF, WebP, AVIF 이미지나 MP4, MOV, WebM 영상을 사용해 주세요.",
+	"Could not save the file. Please try again.": "파일을 저장하지 못했습니다. 다시 시도해 주세요."
 }

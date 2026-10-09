@@ -30,6 +30,8 @@ import { Route as ProjectsFolderRouteImport } from './routes/projects.$folder'
 import { Route as ResourcesIndexRouteImport } from './routes/resources.index'
 import { Route as ResourcesFolderRouteImport } from './routes/resources.$folder'
 import { Route as ApiMailSplatRouteImport } from './routes/api.mail.$'
+import { Route as ApiOrbitImagesRouteImport } from './routes/api.orbit.images'
+import { Route as ApiOrbitMediaRouteImport } from './routes/api.orbit.media'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -136,6 +138,16 @@ const ApiMailSplatRoute = ApiMailSplatRouteImport.update({
   path: '/api/mail/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiOrbitImagesRoute = ApiOrbitImagesRouteImport.update({
+  id: '/api/orbit/images',
+  path: '/api/orbit/images',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiOrbitMediaRoute = ApiOrbitMediaRouteImport.update({
+  id: '/api/orbit/media',
+  path: '/api/orbit/media',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -159,6 +171,8 @@ export interface FileRoutesByFullPath {
   '/projects/': typeof ProjectsIndexRoute
   '/resources/': typeof ResourcesIndexRoute
   '/api/mail/$': typeof ApiMailSplatRoute
+  '/api/orbit/images': typeof ApiOrbitImagesRoute
+  '/api/orbit/media': typeof ApiOrbitMediaRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -179,6 +193,8 @@ export interface FileRoutesByTo {
   '/projects': typeof ProjectsIndexRoute
   '/resources': typeof ResourcesIndexRoute
   '/api/mail/$': typeof ApiMailSplatRoute
+  '/api/orbit/images': typeof ApiOrbitImagesRoute
+  '/api/orbit/media': typeof ApiOrbitMediaRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -203,6 +219,8 @@ export interface FileRoutesById {
   '/projects/': typeof ProjectsIndexRoute
   '/resources/': typeof ResourcesIndexRoute
   '/api/mail/$': typeof ApiMailSplatRoute
+  '/api/orbit/images': typeof ApiOrbitImagesRoute
+  '/api/orbit/media': typeof ApiOrbitMediaRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -228,6 +246,8 @@ export interface FileRouteTypes {
     | '/projects/'
     | '/resources/'
     | '/api/mail/$'
+    | '/api/orbit/images'
+    | '/api/orbit/media'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -248,6 +268,8 @@ export interface FileRouteTypes {
     | '/projects'
     | '/resources'
     | '/api/mail/$'
+    | '/api/orbit/images'
+    | '/api/orbit/media'
   id:
     | '__root__'
     | '/'
@@ -271,6 +293,8 @@ export interface FileRouteTypes {
     | '/projects/'
     | '/resources/'
     | '/api/mail/$'
+    | '/api/orbit/images'
+    | '/api/orbit/media'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -289,6 +313,8 @@ export interface RootRouteChildren {
   TasksRoute: typeof TasksRoute
   WhiteboardsRoute: typeof WhiteboardsRoute
   ApiMailSplatRoute: typeof ApiMailSplatRoute
+  ApiOrbitImagesRoute: typeof ApiOrbitImagesRoute
+  ApiOrbitMediaRoute: typeof ApiOrbitMediaRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -440,6 +466,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMailSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/orbit/images': {
+      id: '/api/orbit/images'
+      path: '/api/orbit/images'
+      fullPath: '/api/orbit/images'
+      preLoaderRoute: typeof ApiOrbitImagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/orbit/media': {
+      id: '/api/orbit/media'
+      path: '/api/orbit/media'
+      fullPath: '/api/orbit/media'
+      preLoaderRoute: typeof ApiOrbitMediaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -499,6 +539,8 @@ const rootRouteChildren: RootRouteChildren = {
   TasksRoute: TasksRoute,
   WhiteboardsRoute: WhiteboardsRoute,
   ApiMailSplatRoute: ApiMailSplatRoute,
+  ApiOrbitImagesRoute: ApiOrbitImagesRoute,
+  ApiOrbitMediaRoute: ApiOrbitMediaRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
