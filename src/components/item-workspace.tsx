@@ -79,6 +79,7 @@ import {
 } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { EditorSkeleton } from "@/components/workspace-skeleton";
+import { useItemListMotion } from "@/hooks/use-item-list-motion";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useTaskToggle } from "@/hooks/use-task-toggle";
 import { cn } from "@/lib/utils";
@@ -258,6 +259,8 @@ export function ItemWorkspace({
 		[navigate, router],
 	);
 	const isMobile = useIsMobile();
+	const itemListRef = useRef<HTMLUListElement>(null);
+	useItemListMotion(itemListRef, scopeKey ?? heading);
 	const taskToggle = useTaskToggle();
 	const { acknowledge, retry, refresh } = useOrbitWrites();
 	useEffect(() => {
@@ -1203,10 +1206,14 @@ export function ItemWorkspace({
 					</div>
 				)}
 				<ScrollArea className="min-h-0 min-w-0 flex-1">
-					<ul className="w-full min-w-0 space-y-0.5 p-2">
+					<ul
+						ref={itemListRef}
+						className="relative w-full min-w-0 space-y-0.5 p-2"
+					>
 						{pendingCaptures.map((entry) => (
 							<li
 								key={entry.id}
+								data-item-list-key={entry.id}
 								aria-busy={!entry.failed}
 								className="rounded-xl bg-muted/40 px-3 py-2"
 							>
@@ -1237,6 +1244,7 @@ export function ItemWorkspace({
 							return (
 								<ItemContextMenu key={item.id} {...itemMenu(item)}>
 									<li
+										data-item-list-key={item.id}
 										draggable
 										onDragStart={(event) => {
 											event.dataTransfer.effectAllowed = "move";

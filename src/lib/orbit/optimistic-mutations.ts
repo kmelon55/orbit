@@ -292,8 +292,11 @@ export class OptimisticItems {
 		}
 		this.pending.delete(event.requestId);
 		if (event.phase !== "success") return;
-		if (event.mutation.action === "delete-item")
+		if (event.mutation.action === "delete-item") {
 			this.confirmed.set(event.mutation.id, null);
+			// The server returns the removed item for undo, not an upsert.
+			return;
+		}
 		const item = orbitItemSchema.safeParse(event.result);
 		if (item.success) this.acknowledge(item.data);
 	}

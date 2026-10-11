@@ -50,6 +50,28 @@ test("delete is immediate, stale refresh cannot resurrect it, failure restores o
 	store.restore(note.id, note);
 	assert.equal(store.project(source).items[0], note);
 });
+test("delete response containing the removed item never restores it across refreshes", () => {
+	const store = new OptimisticItems();
+	const other = { ...note, id: "other", updated: "2026-01-02" };
+	const source = snapshot([other, note]);
+	const mutation: OrbitMutation = { action: "delete-item", id: note.id };
+	store.start("delete", mutation, source);
+	store.finish({
+		requestId: "delete",
+		mutation,
+		phase: "success",
+		result: note,
+	});
+	store.reconcile(source);
+	assert.deepEqual(store.project(source).items, [other]);
+	assert.equal(store.project(source).counts.inbox, 1);
+	const refreshed = snapshot([other]);
+	store.reconcile(refreshed);
+	assert.deepEqual(store.project(refreshed).items, [other]);
+	store.restore(note.id, note);
+	assert.deepEqual(store.project(refreshed).items, [other, note]);
+});
+
 test("queued edits keep the latest pending value and roll back to the preceding success", () => {
 	const store = new OptimisticItems();
 	const source = snapshot();
