@@ -163,7 +163,7 @@ export class OptimisticItems {
 	private confirmedCategories = new Map<string, ScheduleCategory>();
 	private folders = new Map<
 		string,
-		{ mutation: FolderMutation; settled: boolean }
+		{ mutation: FolderMutation; settled: boolean; removedIds?: string[] }
 	>();
 	private restored = new Set<string>();
 	private confirmed = new Map<string, OrbitItem | null>();
@@ -196,7 +196,18 @@ export class OptimisticItems {
 		} else if (mutation.action === "save-schedule-category") {
 			this.pendingCategories.set(requestId, mutation.input);
 		} else if (isFolderMutation(mutation)) {
-			this.folders.set(requestId, { mutation, settled: false });
+			const removedIds =
+				mutation.action === "delete-folder" && mutation.input.deleteContents
+					? this.project(snapshot)
+							.items.filter(
+								(item) =>
+									item.space === mutation.input.space &&
+									(item.folder === mutation.input.path ||
+										item.folder?.startsWith(`${mutation.input.path}/`)),
+							)
+							.map((item) => item.id)
+					: undefined;
+			this.folders.set(requestId, { mutation, settled: false, removedIds });
 		} else if ("id" in mutation) {
 			const item = this.project(snapshot).items.find(
 				(entry) => entry.id === mutation.id,
@@ -287,8 +298,10 @@ export class OptimisticItems {
 		}
 		const folder = this.folders.get(event.requestId);
 		if (folder) {
-			if (event.phase === "success") folder.settled = true;
-			else this.folders.delete(event.requestId);
+			if (event.phase === "success") {
+				folder.settled = true;
+				for (const id of folder.removedIds ?? []) this.confirmed.set(id, null);
+			} else this.folders.delete(event.requestId);
 		}
 		this.pending.delete(event.requestId);
 		if (event.phase !== "success") return;

@@ -145,6 +145,8 @@ export const updateFolderInputSchema = z.object({
 export const deleteFolderInputSchema = z.object({
 	space: paraFolderSpaceSchema,
 	path: z.string().trim().min(1).max(500),
+	deleteContents: z.boolean().optional(),
+	confirmationName: z.string().max(500).optional(),
 });
 
 export const moveTreeInputSchema = z.object({

@@ -97,6 +97,10 @@ type NoteDraft = {
 };
 
 export type ItemWorkspaceNavigatorContext = {
+	runWithRemovedItems: (
+		ids: string[],
+		operation: () => Promise<unknown>,
+	) => Promise<void>;
 	runWithSavedItems: (
 		ids: string[],
 		operation: () => Promise<unknown>,
@@ -389,6 +393,7 @@ export function ItemWorkspace({
 	);
 	const saveQueuesRef = useRef<Map<string, Promise<void>>>(new Map());
 	const cancelledCreateIdsRef = useRef(new Set<string>());
+	const removedIdsRef = useRef(new Set<string>());
 	const persistRef = useRef<() => Promise<void>>(async () => {});
 	const createItemRef = useRef<(folder?: string) => void>(() => {});
 	const editorRef = useRef<NoteEditorHandle>(null);
@@ -479,6 +484,7 @@ export function ItemWorkspace({
 			const queued = previous
 				.catch(() => {})
 				.then(async () => {
+					if (removedIdsRef.current.has(id)) return;
 					const saved = lastSavedByIdRef.current[id];
 					if (saved && draftsEqual(next, saved)) return;
 
@@ -562,6 +568,7 @@ export function ItemWorkspace({
 		};
 		window.addEventListener("orbit:before-undo", flush);
 		const unsubscribe = onItemUndone(({ itemId, item, fields }) => {
+			if (item) removedIdsRef.current.delete(itemId);
 			setMovedItems((current) => {
 				const next = { ...current };
 				delete next[itemId];
@@ -1101,6 +1108,53 @@ export function ItemWorkspace({
 		};
 	}
 
+	async function runWithRemovedItems(
+		ids: string[],
+		action: () => Promise<unknown>,
+	) {
+		if (ids.some(isOptimisticItemId))
+			throw new Error(t("노트 저장이 끝난 뒤 다시 삭제해 주세요."));
+		const removed = new Set(ids);
+		for (const id of ids) removedIdsRef.current.add(id);
+		setHiddenItemIds((current) => new Set([...current, ...ids]));
+		if (selectedKeyRef.current && removed.has(selectedKeyRef.current)) {
+			const next = items.find((item) => !removed.has(item.id));
+			if (next) {
+				applyNote(next, next.id);
+				setNoteLocation(next.id, true);
+			} else clearSelection();
+		}
+		try {
+			await Promise.all(
+				ids.map((id) => saveQueuesRef.current.get(id)?.catch(() => {})),
+			);
+			await action();
+			for (const id of ids) {
+				delete localDraftsRef.current[id];
+				delete lastSavedByIdRef.current[id];
+			}
+			setLocalItems((current) =>
+				current.filter((item) => !removed.has(item.id)),
+			);
+			setSavedById((current) =>
+				Object.fromEntries(
+					Object.entries(current).filter(([id]) => !removed.has(id)),
+				),
+			);
+			setSaveErrors((current) =>
+				Object.fromEntries(
+					Object.entries(current).filter(([id]) => !removed.has(id)),
+				),
+			);
+		} catch (error) {
+			for (const id of ids) removedIdsRef.current.delete(id);
+			setHiddenItemIds(
+				(current) => new Set([...current].filter((id) => !removed.has(id))),
+			);
+			throw error;
+		}
+	}
+
 	async function runWithSavedItems(
 		ids: string[],
 		action: () => Promise<unknown>,
@@ -1140,6 +1194,7 @@ export function ItemWorkspace({
 	const renderedNavigator =
 		typeof navigator === "function"
 			? navigator({
+					runWithRemovedItems,
 					runWithSavedItems,
 					selectedId: selected?.id ?? null,
 					items,

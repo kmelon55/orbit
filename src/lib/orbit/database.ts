@@ -397,11 +397,20 @@ export class OrbitDatabase {
 		)
 			throw failure("ENOENT", "Document not found");
 	}
-	rmdir(value: string) {
+	rmdir(value: string, recursive = false) {
 		const key = this.key(value);
 		if (ROOTS.includes(key) || !key)
 			throw new Error("Cannot remove a root folder");
 		const prefix = `${key}/`;
+		if (recursive) {
+			if (!this.info(key).isDirectory())
+				throw failure("ENOTDIR", "Not a folder");
+			for (const table of ["documents", "assets", "directories"])
+				this.prepare(`DELETE FROM ${table} WHERE substr(path,1,?)=?`).run(
+					prefix.length,
+					prefix,
+				);
+		}
 		if (
 			this.prepare(
 				"SELECT 1 FROM directories WHERE substr(path,1,?)=? UNION ALL SELECT 1 FROM documents WHERE substr(path,1,?)=? UNION ALL SELECT 1 FROM assets WHERE substr(path,1,?)=?",

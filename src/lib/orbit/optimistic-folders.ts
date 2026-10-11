@@ -1,6 +1,8 @@
 import { moveItemLocally } from "./item-move";
+import { spaceConfig } from "./para";
 import type { OrbitMutation, OrbitSnapshot } from "./schema";
-import { remapTreeOrder } from "./tree-move";
+import { mergeSnapshotItems } from "./snapshot-overlay";
+import { remapTreeOrder, removeFolderTreeOrder } from "./tree-move";
 import { toVaultSlug } from "./vault-slug";
 
 export type FolderMutation = Extract<
@@ -34,8 +36,19 @@ export function folderMutationObserved(
 ) {
 	const folders = snapshot.folders[mutation.input.space];
 	const next = destination(mutation);
-	if (mutation.action === "delete-folder")
-		return !folders.some((folder) => folder.slug === next);
+	if (mutation.action === "delete-folder") {
+		const inside = (value: string) =>
+			value === next || value.startsWith(`${next}/`);
+		return (
+			!folders.some((folder) => inside(folder.slug)) &&
+			!snapshot.items.some(
+				(item) =>
+					item.space === mutation.input.space &&
+					item.folder &&
+					inside(item.folder),
+			)
+		);
+	}
 	const folder = folders.find((folder) => folder.slug === next);
 	return Boolean(
 		folder &&
@@ -77,23 +90,59 @@ export function projectFolderMutation(
 	}
 	const oldPath = mutation.input.path;
 	const source = folders.find((folder) => folder.slug === oldPath);
-	if (!source) return snapshot;
 	const inside = (path: string) =>
 		path === oldPath || path.startsWith(`${oldPath}/`);
 	if (mutation.action === "delete-folder") {
 		if (
-			source.descendantCount ||
-			folders.some((folder) => folder.slug.startsWith(`${oldPath}/`))
+			!mutation.input.deleteContents &&
+			(source?.descendantCount ||
+				folders.some((folder) => folder.slug.startsWith(`${oldPath}/`)))
 		)
 			return snapshot;
+		const removed = snapshot.items.filter(
+			(item) => item.space === space && item.folder && inside(item.folder),
+		);
+		const removedIds = new Set(removed.map((item) => item.id));
+		if (!mutation.input.deleteContents && removed.length) return snapshot;
+		const prefix = `${spaceConfig(space)?.vault}/${oldPath}/`;
 		return {
-			...snapshot,
+			...mergeSnapshotItems(
+				{
+					...snapshot,
+					items: snapshot.items.filter((item) => !removedIds.has(item.id)),
+				},
+				[],
+				true,
+			),
+			canvases: snapshot.canvases.filter(
+				(canvas) => !canvas.path.startsWith(prefix),
+			),
+			treeOrder: {
+				...snapshot.treeOrder,
+				[space]: removeFolderTreeOrder(
+					snapshot.treeOrder?.[space] ?? {},
+					oldPath,
+					removedIds,
+				),
+			},
 			folders: {
 				...snapshot.folders,
-				[space]: folders.filter((folder) => folder.slug !== oldPath),
+				[space]: folders
+					.filter((folder) => !inside(folder.slug))
+					.map((folder) => ({
+						...folder,
+						descendantCount: snapshot.items.filter(
+							(item) =>
+								item.space === space &&
+								!removedIds.has(item.id) &&
+								(item.folder === folder.slug ||
+									item.folder?.startsWith(`${folder.slug}/`)),
+						).length,
+					})),
 			},
 		};
 	}
+	if (!source) return snapshot;
 	if (
 		nextPath !== oldPath &&
 		(inside(nextPath) || folders.some((folder) => folder.slug === nextPath))

@@ -31,11 +31,13 @@ import {
 	spaceConfig,
 } from "#/lib/orbit/para";
 import type {
+	DeleteFolderInput,
 	OrbitFolder,
 	OrbitFolderColor,
 	OrbitItem,
 	OrbitSnapshot,
 } from "#/lib/orbit/schema";
+import { FolderDeleteDialog } from "@/components/folder-delete-dialog";
 import {
 	ItemWorkspace,
 	type ItemWorkspaceNavigatorContext,
@@ -163,20 +165,9 @@ function UnifiedFolderWorkspace({
 	const [editingFolder, setEditingFolder] = useState<OrbitFolder>();
 	const [editingName, setEditingName] = useState("");
 	const [deletingFolder, setDeletingFolder] = useState<OrbitFolder>();
-
-	const childFolders = useMemo(() => {
-		const result = new Map<string, OrbitFolder[]>();
-		for (const folder of folders) {
-			const key = folder.parent ?? "";
-			const children = result.get(key) ?? [];
-			children.push(folder);
-			result.set(key, children);
-		}
-		for (const children of result.values()) {
-			children.sort((left, right) => left.name.localeCompare(right.name, "ko"));
-		}
-		return result;
-	}, [folders]);
+	const removeFolderItemsRef = useRef<
+		((input: DeleteFolderInput) => Promise<void>) | null
+	>(null);
 
 	function toggleFolder(folder: OrbitFolder) {
 		setCollapsed((current) => {
@@ -284,31 +275,10 @@ function UnifiedFolderWorkspace({
 		}
 	}
 
-	async function deleteFolder() {
-		if (!deletingFolder || saving) return;
-		setDeletingFolder(undefined);
-		setSaving(true);
-		setError(undefined);
-		try {
-			await mutateOrbit({
-				data: {
-					action: "delete-folder",
-					input: { space, path: deletingFolder.slug },
-				},
-			});
-			setDeletingFolder(undefined);
-		} catch {
-			setError(t("비어 있는 폴더만 삭제할 수 있습니다."));
-		} finally {
-			setSaving(false);
-		}
-	}
-
 	function renderFolder(
 		{ folder, depth, hasChildren, expanded }: FolderRow,
 		controls: ItemWorkspaceNavigatorContext,
 	): React.ReactNode {
-		const directFolders = childFolders.get(folder.slug) ?? [];
 		const color = folderColor(folder.color);
 
 		return (
@@ -380,13 +350,25 @@ function UnifiedFolderWorkspace({
 						<ContextMenuSeparator />
 						<ContextMenuItem
 							variant="destructive"
-							disabled={folder.descendantCount > 0 || directFolders.length > 0}
+							disabled={saving}
 							onSelect={() => {
 								setDeletingFolder(folder);
+								removeFolderItemsRef.current = (input) =>
+									controls.runWithRemovedItems(
+										controls.items
+											.filter(
+												(item) =>
+													item.folder === input.path ||
+													item.folder?.startsWith(`${input.path}/`),
+											)
+											.map((item) => item.id),
+										() =>
+											mutateOrbit({ data: { action: "delete-folder", input } }),
+									);
 								setError(undefined);
 							}}
 						>
-							<Trash2 /> {t("빈 폴더 삭제")}
+							<Trash2 /> {t("폴더 삭제")}
 						</ContextMenuItem>
 					</ContextMenuContent>
 				</ContextMenu>
@@ -598,44 +580,40 @@ function UnifiedFolderWorkspace({
 				</DialogContent>
 			</Dialog>
 
-			<Dialog
-				open={Boolean(deletingFolder)}
-				onOpenChange={(open) => {
-					if (!open) setDeletingFolder(undefined);
-				}}
-			>
-				<DialogContent className="max-w-sm">
-					<DialogHeader>
-						<DialogTitle>{t("빈 폴더를 삭제할까요?")}</DialogTitle>
-						<DialogDescription>
-							“{deletingFolder?.name}
-							{t(
-								"” 폴더만 삭제됩니다. 노트나 하위 폴더가 있으면 삭제되지 않습니다.",
-							)}
-						</DialogDescription>
-					</DialogHeader>
-					{error ? (
-						<output className="block text-sm text-destructive">
-							{errorText(error)}
-						</output>
-					) : null}
-					<div className="flex justify-end gap-2">
-						<Button
-							variant="outline"
-							onClick={() => setDeletingFolder(undefined)}
-						>
-							{t("취소")}
-						</Button>
-						<Button
-							variant="destructive"
-							disabled={saving}
-							onClick={() => void deleteFolder()}
-						>
-							{t("삭제")}
-						</Button>
-					</div>
-				</DialogContent>
-			</Dialog>
+			{deletingFolder && (
+				<FolderDeleteDialog
+					key={deletingFolder.slug}
+					folder={deletingFolder}
+					itemCount={
+						items.filter(
+							(item) =>
+								item.folder === deletingFolder.slug ||
+								item.folder?.startsWith(`${deletingFolder.slug}/`),
+						).length
+					}
+					folderCount={
+						folders.filter((folder) =>
+							folder.slug.startsWith(`${deletingFolder.slug}/`),
+						).length
+					}
+					onClose={() => setDeletingFolder(undefined)}
+					onDelete={async (input) => {
+						if (!removeFolderItemsRef.current)
+							throw new Error(t("폴더를 삭제하지 못했습니다."));
+						setSaving(true);
+						try {
+							await removeFolderItemsRef.current(input);
+							if (
+								newFolderParent === input.path ||
+								newFolderParent?.startsWith(`${input.path}/`)
+							)
+								setNewFolderParent(undefined);
+						} finally {
+							setSaving(false);
+						}
+					}}
+				/>
+			)}
 		</>
 	);
 }

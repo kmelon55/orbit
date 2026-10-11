@@ -7,6 +7,27 @@ import type {
 	TreeOrder,
 } from "./schema";
 
+export function removeFolderTreeOrder(
+	order: TreeOrder,
+	folder: string,
+	itemIds: ReadonlySet<string>,
+): TreeOrder {
+	const inside = (value: string) =>
+		value === folder || value.startsWith(`${folder}/`);
+	return Object.fromEntries(
+		Object.entries(order)
+			.filter(([parent]) => !inside(parent))
+			.map(([parent, keys]) => [
+				parent,
+				keys.filter((key) =>
+					key.startsWith("folder:")
+						? !inside(key.slice(7))
+						: !itemIds.has(key.slice(5)),
+				),
+			]),
+	);
+}
+
 export function remapTreeOrder(
 	order: TreeOrder,
 	from: string,

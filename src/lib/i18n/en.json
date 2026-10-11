@@ -913,5 +913,17 @@
 	"노트로": "To note",
 	"링크로": "To link",
 	"노트 편집": "Edit note",
-	"노트 내용": "Note content"
+	"노트 내용": "Note content",
+	"폴더 삭제": "Delete folder",
+	"폴더를 삭제할까요?": "Delete folder?",
+	"“{0}” · 항목 {1}개, 하위 폴더 {2}개": "“{0}” · {1} items, {2} subfolders",
+	"내용까지 함께 삭제": "Delete contents too",
+	"안의 모든 항목과 하위 폴더가 삭제됩니다. 이 작업은 되돌릴 수 없습니다.": "All items and subfolders inside will be deleted. This cannot be undone.",
+	"확인을 위해 “{0}”을 입력하세요.": "Type “{0}” to confirm.",
+	"삭제할 폴더 이름": "Folder name to delete",
+	"내용까지 함께 삭제를 선택하지 않으면 빈 폴더만 삭제됩니다.": "Only empty folders can be deleted unless you select Delete contents too.",
+	"폴더를 삭제하지 못했습니다.": "Could not delete the folder.",
+	"확인을 위해 폴더 이름을 정확히 입력해 주세요.": "Enter the exact folder name to confirm.",
+	"노트 저장이 끝난 뒤 다시 삭제해 주세요.": "Wait for the note to finish saving before deleting.",
+	"삭제 중…": "Deleting…"
 }

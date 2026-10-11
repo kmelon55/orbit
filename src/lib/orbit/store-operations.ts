@@ -39,7 +39,11 @@ import {
 	updateFolderInputSchema,
 	updateNoteInputSchema,
 } from "./schema";
-import { planTreeMove, remapTreeOrder } from "./tree-move";
+import {
+	planTreeMove,
+	remapTreeOrder,
+	removeFolderTreeOrder,
+} from "./tree-move";
 import type { MutationReceipt, UndoResult } from "./undo-events";
 import { splitVaultObjectKey, toVaultSlug } from "./vault-key";
 
@@ -199,8 +203,8 @@ async function moveDocument(from: string, to: string) {
 async function removeDocument(filePath: string) {
 	db().remove(filePath);
 }
-async function removeDirectory(directory: string) {
-	db().rmdir(directory);
+async function removeDirectory(directory: string, recursive = false) {
+	db().rmdir(directory, recursive);
 }
 async function findMarkdownFiles(_directory: string) {
 	return db().paths("item");
@@ -847,9 +851,20 @@ export async function updateOrbitFolder(input: UpdateFolderInput) {
 export async function deleteOrbitFolder(input: DeleteFolderInput) {
 	const parsed = deleteFolderInputSchema.parse(input);
 	const vaultRoot = await ensureVault();
-	const folderPath = normalizeFolderPath(parsed.path);
+	const folderPath = await existingFolderPath(
+		vaultRoot,
+		parsed.space,
+		parsed.path,
+	);
 	if (splitVaultObjectKey(folderPath).length === 0) {
 		throw new Error("Folder path is required");
+	}
+	if (
+		parsed.deleteContents &&
+		parsed.confirmationName?.normalize("NFC") !==
+			splitVaultObjectKey(folderPath).at(-1)?.normalize("NFC")
+	) {
+		throw new Error("확인을 위해 폴더 이름을 정확히 입력해 주세요.");
 	}
 	const directory = path.join(
 		vaultRoot,
@@ -857,8 +872,15 @@ export async function deleteOrbitFolder(input: DeleteFolderInput) {
 		...splitVaultObjectKey(folderPath),
 	);
 	assertInsideVault(vaultRoot, directory);
+	const prefix = `${folderRoot(parsed.space)}/${folderPath}/`;
+	const removedIds = new Set(
+		db()
+			.items()
+			.filter((item) => item.path.startsWith(prefix))
+			.map((item) => item.id),
+	);
 	try {
-		await removeDirectory(directory);
+		await removeDirectory(directory, parsed.deleteContents);
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOTEMPTY") {
 			throw new Error("노트나 하위 폴더가 있는 폴더는 삭제할 수 없습니다.");
@@ -867,10 +889,17 @@ export async function deleteOrbitFolder(input: DeleteFolderInput) {
 	}
 	const metadata = await readFolderMetadata(vaultRoot);
 	const spaceMetadata = metadata.folders[parsed.space];
-	if (spaceMetadata?.[folderPath]) {
-		delete spaceMetadata[folderPath];
-		await writeFolderMetadata(vaultRoot, metadata);
+	for (const key of Object.keys(spaceMetadata ?? {})) {
+		if (key === folderPath || key.startsWith(`${folderPath}/`))
+			delete spaceMetadata?.[key];
 	}
+	if (metadata.treeOrder?.[parsed.space])
+		metadata.treeOrder[parsed.space] = removeFolderTreeOrder(
+			metadata.treeOrder[parsed.space] ?? {},
+			folderPath,
+			removedIds,
+		);
+	await writeFolderMetadata(vaultRoot, metadata);
 	return { space: parsed.space, path: folderPath };
 }
 
