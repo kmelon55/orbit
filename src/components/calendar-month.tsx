@@ -46,6 +46,10 @@ import {
 	visibleEndDayKey,
 } from "#/lib/orbit/calendar-schedule";
 import {
+	calendarRangeSelection,
+	calendarSelectionDay,
+} from "#/lib/orbit/calendar-selection";
+import {
 	HOUR_HEIGHT,
 	layoutTimedItems,
 	timedCardHeight,
@@ -130,6 +134,7 @@ type EditorState = {
 	item?: OrbitItem;
 	date?: string;
 	time?: string;
+	end?: string;
 };
 type DragOperation = "move" | "resize";
 type CalendarVisibility = {
@@ -287,7 +292,12 @@ function CalendarCreateButton({
 	className,
 }: {
 	date: string;
-	onCreate: (date: string, time?: string, kind?: EditorState["kind"]) => void;
+	onCreate: (
+		date: string,
+		time?: string,
+		kind?: EditorState["kind"],
+		end?: string,
+	) => void;
 	className?: string;
 }) {
 	const { t } = useI18n();
@@ -631,6 +641,17 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 		},
 		[navigate],
 	);
+	const chooseView = useCallback(
+		(next: CalendarView) => {
+			const date = formatDayKey();
+			setNavigationVersion((version) => version + 1);
+			setVisibleDate(
+				next === "week" ? formatDayKey(startOfWeek(parseDayKey(date))) : date,
+			);
+			updateCalendar({ view: next, date, selected: date });
+		},
+		[updateCalendar],
+	);
 	const [visibility, setVisibility] = useState<CalendarVisibility>({
 		event: true,
 		task: true,
@@ -695,10 +716,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 							: null;
 			if (nextView) {
 				event.preventDefault();
-				updateCalendar({
-					view: nextView,
-					date: nextView === "day" ? selectedDate : visibleDate,
-				});
+				chooseView(nextView);
 				return;
 			}
 			if (event.key.toLowerCase() === "t") {
@@ -741,7 +759,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 		};
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [cursor, visibleCursor, visibleDate, selectedDate, view, updateCalendar]);
+	}, [cursor, visibleCursor, selectedDate, view, updateCalendar, chooseView]);
 	const today = formatDayKey();
 	const dated = useMemo(
 		() =>
@@ -795,6 +813,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 		date = formatDayKey(cursor),
 		time = "09:00",
 		kind: EditorState["kind"] = "event",
+		end?: string,
 	) {
 		updateCalendar({ selected: date });
 		setEditor({
@@ -802,6 +821,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 			kind,
 			date,
 			time,
+			end,
 		});
 	}
 
@@ -823,13 +843,6 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 
 	function selectDate(date: string) {
 		updateCalendar({ selected: date, date });
-	}
-
-	function chooseView(next: CalendarView) {
-		updateCalendar({
-			view: next,
-			date: next === "day" ? selectedDate : visibleDate,
-		});
 	}
 
 	function move(amount: number) {
@@ -1268,6 +1281,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 					item={editor.item}
 					initialDate={editor.date}
 					initialTime={editor.time}
+					initialEnd={editor.end}
 				/>
 			</div>
 		</CalendarRoutines.Provider>
@@ -1283,7 +1297,12 @@ function MobileAgenda({
 }: {
 	items: OrbitItem[];
 	date: string;
-	onCreate: (date: string, time?: string, kind?: EditorState["kind"]) => void;
+	onCreate: (
+		date: string,
+		time?: string,
+		kind?: EditorState["kind"],
+		end?: string,
+	) => void;
 	onOpen: (item: OrbitItem) => void;
 	compact?: boolean;
 }) {
@@ -1383,7 +1402,12 @@ function MobileDayView({
 	today: string;
 	selectedDate: string;
 	onSelectDate: (date: string) => void;
-	onCreate: (date: string, time?: string, kind?: EditorState["kind"]) => void;
+	onCreate: (
+		date: string,
+		time?: string,
+		kind?: EditorState["kind"],
+		end?: string,
+	) => void;
 	onOpen: (item: OrbitItem) => void;
 }) {
 	const { t, intlLocale } = useI18n();
@@ -1469,7 +1493,12 @@ function MobileWeekView({
 	today: string;
 	selectedDate: string;
 	onSelectDate: (date: string) => void;
-	onCreate: (date: string, time?: string, kind?: EditorState["kind"]) => void;
+	onCreate: (
+		date: string,
+		time?: string,
+		kind?: EditorState["kind"],
+		end?: string,
+	) => void;
 	onOpen: (item: OrbitItem) => void;
 }) {
 	const { t, intlLocale } = useI18n();
@@ -1574,7 +1603,12 @@ function MobileCalendarView({
 	today: string;
 	selectedDate: string;
 	onSelectDate: (date: string) => void;
-	onCreate: (date: string, time?: string, kind?: EditorState["kind"]) => void;
+	onCreate: (
+		date: string,
+		time?: string,
+		kind?: EditorState["kind"],
+		end?: string,
+	) => void;
 	onOpen: (item: OrbitItem) => void;
 	onMove: (amount: number) => void;
 }) {
@@ -1644,7 +1678,12 @@ function CalendarRail({
 	displayOptions: CalendarDisplayOptions;
 	onMoveMonth: (amount: number) => void;
 	onSelectDate: (date: string) => void;
-	onCreate: (date: string, time?: string, kind?: EditorState["kind"]) => void;
+	onCreate: (
+		date: string,
+		time?: string,
+		kind?: EditorState["kind"],
+		end?: string,
+	) => void;
 	onOpen: (item: OrbitItem) => void;
 }) {
 	const { t, intlLocale } = useI18n();
@@ -1801,7 +1840,12 @@ function WeekView({
 	today: string;
 	selectedDate: string;
 	onSelectDate: (date: string) => void;
-	onCreate: (date: string, time?: string, kind?: EditorState["kind"]) => void;
+	onCreate: (
+		date: string,
+		time?: string,
+		kind?: EditorState["kind"],
+		end?: string,
+	) => void;
 	onOpen: (item: OrbitItem) => void;
 	draggingId: string | null;
 	dragOperation: DragOperation;
@@ -1825,6 +1869,52 @@ function WeekView({
 }) {
 	const { t, intlLocale } = useI18n();
 
+	const selectionRef = useRef<{
+		pointerId: number;
+		date: string;
+		anchor: number;
+		startX: number;
+		startY: number;
+		column: HTMLElement;
+	} | null>(null);
+	const [selection, setSelection] = useState<ReturnType<
+		typeof calendarRangeSelection
+	> | null>(null);
+	useEffect(() => {
+		const cancel = (event: KeyboardEvent) => {
+			if (event.key !== "Escape") return;
+			selectionRef.current = null;
+			setSelection(null);
+		};
+		window.addEventListener("keydown", cancel);
+		return () => window.removeEventListener("keydown", cancel);
+	}, []);
+	function updateSelection(event: React.PointerEvent<HTMLButtonElement>) {
+		const drag = selectionRef.current;
+		if (
+			!drag ||
+			event.pointerId !== drag.pointerId ||
+			Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 6
+		)
+			return null;
+		const column =
+			[
+				...(scrollRef.current?.querySelectorAll<HTMLElement>(
+					'[data-calendar-mode="time"]',
+				) ?? []),
+			].find((element) => {
+				const rect = element.getBoundingClientRect();
+				return event.clientX >= rect.left && event.clientX < rect.right;
+			}) ?? drag.column;
+		const current =
+			((event.clientY - column.getBoundingClientRect().top) / HOUR_HEIGHT) * 60;
+		return calendarRangeSelection(
+			drag.date,
+			drag.anchor,
+			column.dataset.calendarDate ?? drag.date,
+			current,
+		);
+	}
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const headerRef = useRef<HTMLDivElement>(null);
 	const initialized = useRef(false);
@@ -1979,7 +2069,6 @@ function WeekView({
 										dayCount > 1 && key === selectedDate && "bg-muted/45",
 									)}
 									onClick={() => onSelectDate(key)}
-									onDoubleClick={() => onCreate(key)}
 								>
 									<span
 										className={cn(
@@ -2071,7 +2160,6 @@ function WeekView({
 											const payload = dragPayload(event.dataTransfer);
 											onDrop(target, payload.id, payload.operation);
 										}}
-										onDoubleClick={() => onCreate(key)}
 									/>
 								);
 							})}
@@ -2194,6 +2282,9 @@ function WeekView({
 					{days.map((day) => {
 						const key = formatDayKey(day);
 						const timed = weekLayout.timedByDay.get(key) ?? [];
+						const selectedRange = selection
+							? calendarSelectionDay(selection, key)
+							: null;
 						const previewItem =
 							dragOperation === "move" &&
 							draggingItem &&
@@ -2275,17 +2366,104 @@ function WeekView({
 											type="button"
 											aria-label={t("{0} {1} 항목 추가", [key, time])}
 											className={cn(
-												"absolute inset-x-0 z-0 w-full cursor-pointer text-left transition-colors [&:hover]:bg-foreground/[0.06] focus-visible:bg-foreground/[0.06] focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring",
+												"absolute inset-x-0 z-0 w-full cursor-crosshair select-none text-left transition-colors [&:hover]:bg-foreground/[0.06] focus-visible:bg-foreground/[0.06] focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring",
 												draggingId && "pointer-events-none",
 											)}
 											style={{
 												top: (index * HOUR_HEIGHT) / 2,
 												height: HOUR_HEIGHT / 2,
 											}}
-											onClick={() => onCreate(key, time)}
+											data-calendar-slot={time}
+											onPointerDown={(event) => {
+												if (
+													event.button !== 0 ||
+													!event.isPrimary ||
+													draggingId ||
+													event.pointerType === "touch"
+												)
+													return;
+												const column = event.currentTarget.closest<HTMLElement>(
+													'[data-calendar-mode="time"]',
+												);
+												if (!column) return;
+												event.preventDefault();
+												event.currentTarget.setPointerCapture(event.pointerId);
+												selectionRef.current = {
+													pointerId: event.pointerId,
+													date: key,
+													anchor:
+														((event.clientY -
+															column.getBoundingClientRect().top) /
+															HOUR_HEIGHT) *
+														60,
+													startX: event.clientX,
+													startY: event.clientY,
+													column,
+												};
+											}}
+											onPointerMove={(event) =>
+												setSelection(updateSelection(event))
+											}
+											onPointerUp={(event) => {
+												const range = updateSelection(event);
+												selectionRef.current = null;
+												setSelection(null);
+												if (
+													event.currentTarget.hasPointerCapture(event.pointerId)
+												)
+													event.currentTarget.releasePointerCapture(
+														event.pointerId,
+													);
+												if (range)
+													onCreate(
+														range.date,
+														range.time,
+														"event",
+														range.endAt,
+													);
+											}}
+											onLostPointerCapture={() => {
+												selectionRef.current = null;
+												setSelection(null);
+											}}
+											onPointerCancel={() => {
+												selectionRef.current = null;
+												setSelection(null);
+											}}
+											onClick={(event) => {
+												if (
+													event.detail === 0 &&
+													event.clientX === 0 &&
+													event.clientY === 0
+												)
+													onCreate(key, time);
+											}}
 										/>
 									);
 								})}
+								{selectedRange ? (
+									<div
+										data-calendar-selection
+										className="pointer-events-none absolute inset-x-1 z-20 rounded-md border border-blue-500 bg-blue-500/20 px-2 py-1 text-xs text-blue-700 dark:text-blue-200"
+										style={{
+											top: (selectedRange.start / 60) * HOUR_HEIGHT,
+											height:
+												((selectedRange.end - selectedRange.start) / 60) *
+												HOUR_HEIGHT,
+										}}
+									>
+										{String(Math.floor(selectedRange.start / 60)).padStart(
+											2,
+											"0",
+										)}
+										:{String(selectedRange.start % 60).padStart(2, "0")}–
+										{String(Math.floor(selectedRange.end / 60)).padStart(
+											2,
+											"0",
+										)}
+										:{String(selectedRange.end % 60).padStart(2, "0")}
+									</div>
+								) : null}
 								{hours.map((hour) => (
 									<div
 										key={hour}
@@ -2565,7 +2743,12 @@ function MonthGrid({
 	today: string;
 	selectedDate: string;
 	onSelectDate: (date: string) => void;
-	onCreate: (date: string, time?: string, kind?: EditorState["kind"]) => void;
+	onCreate: (
+		date: string,
+		time?: string,
+		kind?: EditorState["kind"],
+		end?: string,
+	) => void;
 	onOpen: (item: OrbitItem) => void;
 	draggingId: string | null;
 	dragOperation: DragOperation;

@@ -118,6 +118,7 @@ export function ScheduleEditor({
 	item,
 	initialDate,
 	initialTime = "09:00",
+	initialEnd,
 	onSaved,
 	onConvert,
 }: {
@@ -127,6 +128,7 @@ export function ScheduleEditor({
 	item?: OrbitItem;
 	initialDate?: string;
 	initialTime?: string;
+	initialEnd?: string;
 	onSaved?: (item: OrbitItem) => void;
 	onConvert?: (input: FileItemInput) => Promise<void>;
 }) {
@@ -162,7 +164,7 @@ export function ScheduleEditor({
 			: item && item.type !== "link"
 				? item.type
 				: initialKind;
-		const defaultEndTime = addHour(resolvedTime);
+		const defaultEndTime = timeOf(initialEnd, addHour(resolvedTime));
 		const defaultEndDate =
 			!item?.end &&
 			(resolvedKind === "event" || item?.due?.includes("T")) &&
@@ -178,7 +180,12 @@ export function ScheduleEditor({
 				? ""
 				: resolvedStart,
 		);
-		setEndDate(dayOf(item?.end, resolvedKind === "task" ? "" : defaultEndDate));
+		setEndDate(
+			dayOf(
+				item?.end ?? initialEnd,
+				resolvedKind === "task" ? "" : defaultEndDate,
+			),
+		);
 		setStartTime(resolvedTime);
 		setEndTime(timeOf(item?.end, defaultEndTime));
 		setAllDay(
@@ -191,7 +198,16 @@ export function ScheduleEditor({
 		);
 		setError(null);
 		setDeleteOpen(false);
-	}, [initialDate, initialTime, item, initialKind, isConversion, open, today]);
+	}, [
+		initialDate,
+		initialTime,
+		initialEnd,
+		item,
+		initialKind,
+		isConversion,
+		open,
+		today,
+	]);
 
 	function changeKind(next: ScheduleKind) {
 		if (next === kind) return;
