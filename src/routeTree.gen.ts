@@ -17,14 +17,17 @@ import { Route as CaptureRouteImport } from './routes/capture'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as MailRouteImport } from './routes/mail'
+import { Route as McpRouteImport } from './routes/mcp'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as ResourcesRouteImport } from './routes/resources'
 import { Route as RoutinesRouteImport } from './routes/routines'
 import { Route as SearchRouteImport } from './routes/search'
 import { Route as TasksRouteImport } from './routes/tasks'
 import { Route as WhiteboardsRouteImport } from './routes/whiteboards'
+import { Route as DotwellKnownSplatRouteImport } from './routes/[.]well-known.$'
 import { Route as AreasIndexRouteImport } from './routes/areas.index'
 import { Route as AreasFolderRouteImport } from './routes/areas.$folder'
+import { Route as OauthSplatRouteImport } from './routes/oauth.$'
 import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
 import { Route as ProjectsFolderRouteImport } from './routes/projects.$folder'
 import { Route as ResourcesIndexRouteImport } from './routes/resources.index'
@@ -73,6 +76,11 @@ const MailRoute = MailRouteImport.update({
   path: '/mail',
   getParentRoute: () => rootRouteImport,
 } as any)
+const McpRoute = McpRouteImport.update({
+  id: '/mcp',
+  path: '/mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjectsRoute = ProjectsRouteImport.update({
   id: '/projects',
   path: '/projects',
@@ -103,6 +111,11 @@ const WhiteboardsRoute = WhiteboardsRouteImport.update({
   path: '/whiteboards',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DotwellKnownSplatRoute = DotwellKnownSplatRouteImport.update({
+  id: '/.well-known/$',
+  path: '/.well-known/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AreasIndexRoute = AreasIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -112,6 +125,11 @@ const AreasFolderRoute = AreasFolderRouteImport.update({
   id: '/$folder',
   path: '/$folder',
   getParentRoute: () => AreasRoute,
+} as any)
+const OauthSplatRoute = OauthSplatRouteImport.update({
+  id: '/oauth/$',
+  path: '/oauth/$',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectsIndexRoute = ProjectsIndexRouteImport.update({
   id: '/',
@@ -158,13 +176,16 @@ export interface FileRoutesByFullPath {
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
   '/mail': typeof MailRoute
+  '/mcp': typeof McpRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/resources': typeof ResourcesRouteWithChildren
   '/routines': typeof RoutinesRoute
   '/search': typeof SearchRoute
   '/tasks': typeof TasksRoute
   '/whiteboards': typeof WhiteboardsRoute
+  '/.well-known/$': typeof DotwellKnownSplatRoute
   '/areas/$folder': typeof AreasFolderRoute
+  '/oauth/$': typeof OauthSplatRoute
   '/projects/$folder': typeof ProjectsFolderRoute
   '/resources/$folder': typeof ResourcesFolderRoute
   '/areas/': typeof AreasIndexRoute
@@ -182,11 +203,14 @@ export interface FileRoutesByTo {
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
   '/mail': typeof MailRoute
+  '/mcp': typeof McpRoute
   '/routines': typeof RoutinesRoute
   '/search': typeof SearchRoute
   '/tasks': typeof TasksRoute
   '/whiteboards': typeof WhiteboardsRoute
+  '/.well-known/$': typeof DotwellKnownSplatRoute
   '/areas/$folder': typeof AreasFolderRoute
+  '/oauth/$': typeof OauthSplatRoute
   '/projects/$folder': typeof ProjectsFolderRoute
   '/resources/$folder': typeof ResourcesFolderRoute
   '/areas': typeof AreasIndexRoute
@@ -206,13 +230,16 @@ export interface FileRoutesById {
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
   '/mail': typeof MailRoute
+  '/mcp': typeof McpRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/resources': typeof ResourcesRouteWithChildren
   '/routines': typeof RoutinesRoute
   '/search': typeof SearchRoute
   '/tasks': typeof TasksRoute
   '/whiteboards': typeof WhiteboardsRoute
+  '/.well-known/$': typeof DotwellKnownSplatRoute
   '/areas/$folder': typeof AreasFolderRoute
+  '/oauth/$': typeof OauthSplatRoute
   '/projects/$folder': typeof ProjectsFolderRoute
   '/resources/$folder': typeof ResourcesFolderRoute
   '/areas/': typeof AreasIndexRoute
@@ -233,13 +260,16 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/login'
     | '/mail'
+    | '/mcp'
     | '/projects'
     | '/resources'
     | '/routines'
     | '/search'
     | '/tasks'
     | '/whiteboards'
+    | '/.well-known/$'
     | '/areas/$folder'
+    | '/oauth/$'
     | '/projects/$folder'
     | '/resources/$folder'
     | '/areas/'
@@ -257,11 +287,14 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/login'
     | '/mail'
+    | '/mcp'
     | '/routines'
     | '/search'
     | '/tasks'
     | '/whiteboards'
+    | '/.well-known/$'
     | '/areas/$folder'
+    | '/oauth/$'
     | '/projects/$folder'
     | '/resources/$folder'
     | '/areas'
@@ -280,13 +313,16 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/login'
     | '/mail'
+    | '/mcp'
     | '/projects'
     | '/resources'
     | '/routines'
     | '/search'
     | '/tasks'
     | '/whiteboards'
+    | '/.well-known/$'
     | '/areas/$folder'
+    | '/oauth/$'
     | '/projects/$folder'
     | '/resources/$folder'
     | '/areas/'
@@ -306,12 +342,15 @@ export interface RootRouteChildren {
   InboxRoute: typeof InboxRoute
   LoginRoute: typeof LoginRoute
   MailRoute: typeof MailRoute
+  McpRoute: typeof McpRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
   ResourcesRoute: typeof ResourcesRouteWithChildren
   RoutinesRoute: typeof RoutinesRoute
   SearchRoute: typeof SearchRoute
   TasksRoute: typeof TasksRoute
   WhiteboardsRoute: typeof WhiteboardsRoute
+  DotwellKnownSplatRoute: typeof DotwellKnownSplatRoute
+  OauthSplatRoute: typeof OauthSplatRoute
   ApiMailSplatRoute: typeof ApiMailSplatRoute
   ApiOrbitImagesRoute: typeof ApiOrbitImagesRoute
   ApiOrbitMediaRoute: typeof ApiOrbitMediaRoute
@@ -375,6 +414,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MailRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/mcp': {
+      id: '/mcp'
+      path: '/mcp'
+      fullPath: '/mcp'
+      preLoaderRoute: typeof McpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/projects': {
       id: '/projects'
       path: '/projects'
@@ -417,6 +463,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WhiteboardsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/.well-known/$': {
+      id: '/.well-known/$'
+      path: '/.well-known/$'
+      fullPath: '/.well-known/$'
+      preLoaderRoute: typeof DotwellKnownSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/areas/': {
       id: '/areas/'
       path: '/'
@@ -430,6 +483,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/areas/$folder'
       preLoaderRoute: typeof AreasFolderRouteImport
       parentRoute: typeof AreasRoute
+    }
+    '/oauth/$': {
+      id: '/oauth/$'
+      path: '/oauth/$'
+      fullPath: '/oauth/$'
+      preLoaderRoute: typeof OauthSplatRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/projects/': {
       id: '/projects/'
@@ -532,12 +592,15 @@ const rootRouteChildren: RootRouteChildren = {
   InboxRoute: InboxRoute,
   LoginRoute: LoginRoute,
   MailRoute: MailRoute,
+  McpRoute: McpRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
   ResourcesRoute: ResourcesRouteWithChildren,
   RoutinesRoute: RoutinesRoute,
   SearchRoute: SearchRoute,
   TasksRoute: TasksRoute,
   WhiteboardsRoute: WhiteboardsRoute,
+  DotwellKnownSplatRoute: DotwellKnownSplatRoute,
+  OauthSplatRoute: OauthSplatRoute,
   ApiMailSplatRoute: ApiMailSplatRoute,
   ApiOrbitImagesRoute: ApiOrbitImagesRoute,
   ApiOrbitMediaRoute: ApiOrbitMediaRoute,

@@ -13,6 +13,10 @@ import {
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
+	exportAssistantRecords,
+	importAssistantRecords,
+} from "./assistant-transfer";
+import {
 	databaseFor,
 	getVaultRoot,
 	hashFile,
@@ -97,6 +101,11 @@ export function exportOrbitDirectory(destination: string) {
 			}
 			mkdirSync(path.join(staging, ".orbit"), { recursive: true });
 			writeFileSync(
+				path.join(staging, ".orbit", "assistant.json"),
+				JSON.stringify(exportAssistantRecords(database), null, 2),
+				{ mode: 0o600 },
+			);
+			writeFileSync(
 				path.join(staging, ".orbit", "routines.json"),
 				JSON.stringify(
 					routineDataSchema.parse(
@@ -152,6 +161,15 @@ export function importOrbitDirectory(source: string) {
 			randomUUID(),
 		);
 		try {
+			const assistantFile = path.join(root, ".orbit", "assistant.json");
+			if (existsSync(assistantFile)) {
+				if (lstatSync(assistantFile).isSymbolicLink())
+					throw new Error("Assistant metadata must not be a symlink");
+				importAssistantRecords(
+					database,
+					JSON.parse(readFileSync(assistantFile, "utf8")),
+				);
+			}
 			const routineFile = path.join(root, ".orbit", "routines.json");
 			if (existsSync(routineFile)) {
 				if (lstatSync(routineFile).isSymbolicLink())

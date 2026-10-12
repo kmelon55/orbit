@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import { getUiLocale } from "#/lib/i18n/functions";
 import { getOrbitAuthStatus } from "#/lib/orbit/auth";
 import { loadOrbit } from "#/lib/orbit/functions";
+import { orbitLoginReturn } from "#/lib/orbit/login-return";
 import { noteSearch } from "#/lib/orbit/navigation-search";
 import { ActionUndoProvider } from "@/components/action-undo-provider";
 import { AppShell } from "@/components/app-shell";
@@ -33,10 +34,16 @@ export const Route = createRootRoute({
 	loader: async ({ location }) => {
 		const auth = await getOrbitAuthStatus();
 		if (location.pathname === "/login") {
-			if (auth.authenticated) throw redirect({ to: "/" });
+			if (auth.authenticated)
+				throw redirect({
+					href: orbitLoginReturn(
+						new URLSearchParams(location.searchStr).get("returnTo"),
+					),
+				});
 			return null;
 		}
-		if (!auth.authenticated) throw redirect({ to: "/login" });
+		if (!auth.authenticated)
+			throw redirect({ to: "/login", search: { returnTo: undefined } });
 		return loadOrbit();
 	},
 	staleTime: Number.POSITIVE_INFINITY,

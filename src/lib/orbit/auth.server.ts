@@ -59,6 +59,15 @@ function sessionKey(config: Extract<OrbitAuthConfig, { enabled: true }>) {
 		.digest();
 }
 
+// Changes whenever the owner credentials/session key change; binds MCP grants.
+export function orbitAuthVersion(
+	config: Extract<OrbitAuthConfig, { enabled: true }>,
+) {
+	return createHmac("sha256", sessionKey(config))
+		.update("orbit-mcp-auth-version")
+		.digest("hex");
+}
+
 function signatureFor(
 	body: string,
 	config: Extract<OrbitAuthConfig, { enabled: true }>,

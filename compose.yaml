@@ -9,6 +9,10 @@ services:
       ORBIT_AUTH_USERNAME: ${ORBIT_AUTH_USERNAME:-orbit}
       ORBIT_AUTH_PASSWORD: ${ORBIT_AUTH_PASSWORD:?Set ORBIT_AUTH_PASSWORD in .env}
       ORBIT_PUBLIC_URL: ${ORBIT_PUBLIC_URL:-}
+      ORBIT_MCP_ORIGIN: ${ORBIT_MCP_ORIGIN:-}
+      ORBIT_MCP_CLIENT_ID: ${ORBIT_MCP_CLIENT_ID:-orbit-chatgpt}
+      ORBIT_MCP_REDIRECT_URIS: ${ORBIT_MCP_REDIRECT_URIS:-https://chatgpt.com/connector_platform_oauth_redirect}
+      ORBIT_MCP_ALLOW_WRITES: ${ORBIT_MCP_ALLOW_WRITES:-false}
     volumes:
       - orbit-data:/vault
 volumes:

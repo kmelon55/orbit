@@ -3,12 +3,16 @@ import { useServerFn } from "@tanstack/react-start";
 import { ArrowRight, LockKeyhole } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { loginOrbit } from "#/lib/orbit/auth";
+import { orbitLoginReturn } from "#/lib/orbit/login-return";
 import { LanguageSelect } from "@/components/language-select";
 import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 export const Route = createFileRoute("/login")({
+	validateSearch: (search: Record<string, unknown>) => ({
+		returnTo: search.returnTo ? orbitLoginReturn(search.returnTo) : undefined,
+	}),
 	component: LoginPage,
 });
 
@@ -16,6 +20,7 @@ function LoginPage() {
 	const { t, errorText } = useI18n();
 
 	const login = useServerFn(loginOrbit);
+	const { returnTo } = Route.useSearch();
 	const [username, setUsername] = useState("");
 	const [password, setPassword] = useState("");
 	const [error, setError] = useState("");
@@ -28,7 +33,7 @@ function LoginPage() {
 		setError("");
 		try {
 			await login({ data: { username, password } });
-			window.location.replace("/");
+			window.location.replace(orbitLoginReturn(returnTo));
 		} catch {
 			setError(t("아이디 또는 비밀번호를 확인해 주세요."));
 			setSubmitting(false);
