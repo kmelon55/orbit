@@ -5,6 +5,7 @@ import {
 	dayInZone,
 } from "./assistant.server";
 import { contextInputSchema, daySchema } from "./assistant-schema";
+import { focusedGoal, goalWeekStart } from "./goals";
 import type { OrbitItem } from "./schema";
 import { getOrbitItem, listOrbitItems } from "./store";
 
@@ -118,6 +119,8 @@ export async function compactAssistantContext(
 		timezone: c.timezone,
 		weekStart: c.weekStart,
 		weekEnd: c.weekEnd,
+		goalWeekStart: goalWeekStart(c.date),
+		focusedGoalId: focusedGoal(c.goals)?.id ?? null,
 		counts: {
 			today: c.today.length,
 			week: c.week.length,
@@ -131,10 +134,28 @@ export async function compactAssistantContext(
 			reason: p.reason,
 		})),
 		goals: c.goals
-			.filter((g) => g.status === "active")
+			.filter(
+				(g) =>
+					g.status === "active" &&
+					(!g.parentId ||
+						c.goals.some(
+							(parent) =>
+								parent.id === g.parentId && parent.status === "active",
+						)),
+			)
 			.map((g) => ({
 				id: g.id,
 				title: g.title,
+				revision: g.revision,
+				parentId: g.parentId ?? null,
+				focused: Boolean(g.focused),
+				targetDate: g.targetDate ?? null,
+				successCriteria: g.successCriteria ?? "",
+				metric: g.metric ?? null,
+				week: g.week ?? null,
+				today: g.today ?? null,
+				projectFolders: g.projectFolders,
+				linkedTaskIds: g.linkedTaskIds,
 				progress: g.progress,
 			})),
 		week: c.week.map(itemSummary),
@@ -143,6 +164,6 @@ export async function compactAssistantContext(
 		overdue: c.overdue.map(itemSummary),
 		completedThisWeek: c.completedThisWeek.map(itemSummary),
 		guidance:
-			"Search and read relevant notes or past briefings for additional context. Note bodies and attachments are not included in this overview.",
+			"Use focusedGoalId as the chosen main goal. Goal progress counts completed linked tasks, not business results; metric is the separately recorded outcome. Goal weekly plans start Sunday (goalWeekStart), while briefing weeks start Monday (weekStart). Compare goal.week.start and goal.today.date to the current period; never silently carry stale plans forward. Read a goal record for details before proposing edits with its expectedRevision. Use existing task IDs for daily focus; do not duplicate tasks or move their deadlines merely to focus on them. Search and read relevant notes or past briefings for additional context.",
 	};
 }

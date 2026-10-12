@@ -14,6 +14,7 @@ import { orbitLoginReturn } from "#/lib/orbit/login-return";
 import { noteSearch } from "#/lib/orbit/navigation-search";
 import { ActionUndoProvider } from "@/components/action-undo-provider";
 import { AppShell } from "@/components/app-shell";
+import { GoalProvider } from "@/components/goal-provider";
 import { LocaleProvider } from "@/components/locale-provider";
 import {
 	OrbitSnapshotProvider,
@@ -96,9 +97,11 @@ function RootLayout() {
 	if (!snapshot) return null;
 	return (
 		<OrbitSnapshotProvider key={snapshot.vaultPath} snapshot={snapshot}>
-			<ActionUndoProvider>
-				<WorkspaceLayout />
-			</ActionUndoProvider>
+			<GoalProvider>
+				<ActionUndoProvider>
+					<WorkspaceLayout />
+				</ActionUndoProvider>
+			</GoalProvider>
 		</OrbitSnapshotProvider>
 	);
 }

@@ -65,6 +65,40 @@ export const goalInputSchema = z
 		targetDate: daySchema.optional(),
 		projectFolders: z.array(z.string().min(1).max(500)).max(50).default([]),
 		itemIds: z.array(z.string().min(1).max(200)).max(500).default([]),
+		successCriteria: z.string().trim().max(1000).optional(),
+		metric: z
+			.object({
+				current: z.number().finite().min(0),
+				target: z.number().finite().positive(),
+				unit: z.string().trim().max(30),
+			})
+			.strict()
+			.optional(),
+		focused: z.boolean().optional(),
+		week: z
+			.object({
+				start: daySchema,
+				outcome: z.string().trim().max(1000),
+			})
+			.strict()
+			.refine(
+				(week) => new Date(`${week.start}T12:00:00Z`).getUTCDay() === 0,
+				"Goal planning weeks begin Sunday",
+			)
+			.optional(),
+		today: z
+			.object({
+				date: daySchema,
+				itemIds: z
+					.array(z.string().min(1).max(200))
+					.max(3)
+					.refine(
+						(ids) => new Set(ids).size === ids.length,
+						"Duplicate focus task",
+					),
+			})
+			.strict()
+			.optional(),
 	})
 	.strict();
 export const briefingKindSchema = z.enum([
@@ -121,6 +155,30 @@ const fields = {
 	start: scheduleSchema.optional(),
 	end: scheduleSchema.optional(),
 };
+const goalPatchSchema = z
+	.object({
+		title: title.optional(),
+		description: goalInputSchema.shape.description.removeDefault().optional(),
+		horizon: goalInputSchema.shape.horizon.removeDefault().optional(),
+		parentId: assistantId.nullable().optional(),
+		status: goalInputSchema.shape.status.removeDefault().optional(),
+		importance: goalInputSchema.shape.importance.removeDefault().optional(),
+		targetDate: daySchema.nullable().optional(),
+		projectFolders: goalInputSchema.shape.projectFolders
+			.removeDefault()
+			.optional(),
+		itemIds: goalInputSchema.shape.itemIds.removeDefault().optional(),
+		successCriteria: goalInputSchema.shape.successCriteria,
+		metric: goalInputSchema.shape.metric.nullable(),
+		focused: goalInputSchema.shape.focused,
+		week: goalInputSchema.shape.week.nullable(),
+		today: goalInputSchema.shape.today.nullable(),
+	})
+	.strict()
+	.refine(
+		(patch) => Object.values(patch).some((value) => value !== undefined),
+		"Empty goal update",
+	);
 export const proposalActionSchema = z.discriminatedUnion("kind", [
 	z
 		.object({
@@ -148,6 +206,20 @@ export const proposalActionSchema = z.discriminatedUnion("kind", [
 				})
 				.strict()
 				.refine((p) => Object.keys(p).length > 0, "Empty update"),
+		})
+		.strict(),
+	z
+		.object({
+			kind: z.literal("create-goal"),
+			input: goalInputSchema.omit({ id: true, expectedRevision: true }),
+		})
+		.strict(),
+	z
+		.object({
+			kind: z.literal("update-goal"),
+			goalId: assistantId,
+			expectedRevision: z.number().int().positive(),
+			patch: goalPatchSchema,
 		})
 		.strict(),
 ]);
@@ -224,6 +296,7 @@ export type Recommendation = z.infer<typeof recommendationInputSchema> & {
 	state: "pending" | "deferred" | "rejected" | "applied";
 	fingerprint?: string;
 	resultItemId?: string;
+	resultGoalId?: string;
 	appliedAction?: ProposalAction;
 	deferUntil?: string;
 	createdAt: string;
@@ -248,6 +321,11 @@ export type AssistantState = {
 export const assistantMutationSchema = z.discriminatedUnion("action", [
 	z.object({ action: z.literal("create"), input: createAssistantItemSchema }),
 	z.object({ action: z.literal("goal"), input: goalInputSchema }),
+	z.object({
+		action: z.literal("delete-goal"),
+		id: assistantId,
+		revision: z.number().int().min(1),
+	}),
 	z.object({ action: z.literal("briefing"), input: briefingInputSchema }),
 	z.object({ action: z.literal("inbox"), input: inboxInputSchema }),
 	z.object({
@@ -295,6 +373,7 @@ export const assistantRecordSchemas = {
 			.regex(/^[a-f0-9]{64}$/)
 			.optional(),
 		resultItemId: z.string().min(1).optional(),
+		resultGoalId: assistantId.optional(),
 		appliedAction: proposalActionSchema.optional(),
 		deferUntil: daySchema.optional(),
 		...timestamps,

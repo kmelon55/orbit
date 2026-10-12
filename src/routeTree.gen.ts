@@ -14,6 +14,7 @@ import { Route as ArchiveRouteImport } from './routes/archive'
 import { Route as AreasRouteImport } from './routes/areas'
 import { Route as CalendarRouteImport } from './routes/calendar'
 import { Route as CaptureRouteImport } from './routes/capture'
+import { Route as GoalsRouteImport } from './routes/goals'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as MailRouteImport } from './routes/mail'
@@ -59,6 +60,11 @@ const CalendarRoute = CalendarRouteImport.update({
 const CaptureRoute = CaptureRouteImport.update({
   id: '/capture',
   path: '/capture',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GoalsRoute = GoalsRouteImport.update({
+  id: '/goals',
+  path: '/goals',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InboxRoute = InboxRouteImport.update({
@@ -173,6 +179,7 @@ export interface FileRoutesByFullPath {
   '/areas': typeof AreasRouteWithChildren
   '/calendar': typeof CalendarRoute
   '/capture': typeof CaptureRoute
+  '/goals': typeof GoalsRoute
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
   '/mail': typeof MailRoute
@@ -200,6 +207,7 @@ export interface FileRoutesByTo {
   '/archive': typeof ArchiveRoute
   '/calendar': typeof CalendarRoute
   '/capture': typeof CaptureRoute
+  '/goals': typeof GoalsRoute
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
   '/mail': typeof MailRoute
@@ -227,6 +235,7 @@ export interface FileRoutesById {
   '/areas': typeof AreasRouteWithChildren
   '/calendar': typeof CalendarRoute
   '/capture': typeof CaptureRoute
+  '/goals': typeof GoalsRoute
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
   '/mail': typeof MailRoute
@@ -257,6 +266,7 @@ export interface FileRouteTypes {
     | '/areas'
     | '/calendar'
     | '/capture'
+    | '/goals'
     | '/inbox'
     | '/login'
     | '/mail'
@@ -284,6 +294,7 @@ export interface FileRouteTypes {
     | '/archive'
     | '/calendar'
     | '/capture'
+    | '/goals'
     | '/inbox'
     | '/login'
     | '/mail'
@@ -310,6 +321,7 @@ export interface FileRouteTypes {
     | '/areas'
     | '/calendar'
     | '/capture'
+    | '/goals'
     | '/inbox'
     | '/login'
     | '/mail'
@@ -339,6 +351,7 @@ export interface RootRouteChildren {
   AreasRoute: typeof AreasRouteWithChildren
   CalendarRoute: typeof CalendarRoute
   CaptureRoute: typeof CaptureRoute
+  GoalsRoute: typeof GoalsRoute
   InboxRoute: typeof InboxRoute
   LoginRoute: typeof LoginRoute
   MailRoute: typeof MailRoute
@@ -391,6 +404,13 @@ declare module '@tanstack/react-router' {
       path: '/capture'
       fullPath: '/capture'
       preLoaderRoute: typeof CaptureRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/goals': {
+      id: '/goals'
+      path: '/goals'
+      fullPath: '/goals'
+      preLoaderRoute: typeof GoalsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/inbox': {
@@ -589,6 +609,7 @@ const rootRouteChildren: RootRouteChildren = {
   AreasRoute: AreasRouteWithChildren,
   CalendarRoute: CalendarRoute,
   CaptureRoute: CaptureRoute,
+  GoalsRoute: GoalsRoute,
   InboxRoute: InboxRoute,
   LoginRoute: LoginRoute,
   MailRoute: MailRoute,

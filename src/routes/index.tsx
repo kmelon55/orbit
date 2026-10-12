@@ -15,6 +15,7 @@ import { mutateOrbit } from "#/lib/orbit/functions";
 import { itemColor } from "#/lib/orbit/item-colors";
 import { folderOf, formatDayKey } from "#/lib/orbit/para";
 import type { OrbitItem, OrbitSpace } from "#/lib/orbit/schema";
+import { GoalFocus } from "@/components/goal-focus";
 import {
 	ConfirmItemDialog,
 	type ItemConfirmAction,
@@ -110,6 +111,7 @@ function TodayPage() {
 					</Button>
 				</header>
 
+				<GoalFocus />
 				<div className="mb-5 sm:mb-8">
 					<QuickCapture />
 					<div className="mt-2 flex justify-end">

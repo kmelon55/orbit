@@ -11,6 +11,7 @@ import {
 	LogOut,
 	Mail,
 	Repeat2,
+	Target,
 } from "lucide-react";
 import { useEffect } from "react";
 import { logoutOrbit } from "#/lib/orbit/auth";
@@ -171,6 +172,18 @@ export function AppSidebar() {
 				<SidebarGroup>
 					<SidebarGroupLabel>{t("Planning")}</SidebarGroupLabel>
 					<SidebarMenu>
+						<SidebarMenuItem>
+							<SidebarMenuButton
+								asChild
+								isActive={pathname === "/goals"}
+								tooltip={t("Goals")}
+							>
+								<Link to="/goals" preload="render">
+									<Target />
+									<span>{t("Goals")}</span>
+								</Link>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
 						<SidebarMenuItem>
 							<SidebarMenuButton
 								asChild

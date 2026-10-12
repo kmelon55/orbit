@@ -71,14 +71,24 @@ Manual local stdio remains available with `ORBIT_VAULT_DIR=/absolute/vault pnpm 
 
 React 19, TanStack Start/Router, Vite/Nitro, Tailwind/shadcn; SQLite documents/directories/metadata/assets/app_state. Notes/tasks/events share OrbitItem; projects reuse PARA folders. Existing serialized transactions and nested transaction handling perform writes. No destructive migration, data deletion, new database or separate agent runtime.
 
-Goals, briefings, findings, recommendations and audit are individually keyed `assistant.v1/...` metadata records. Goals have parent/horizon/project/item links and progress is linked-task completion, not a fabricated business KPI. The internal goal service exists; editing goals through MCP is still a later capability. Project folder renames currently require relinking goals. Tasks have completion timestamps but no historical postponement ledger or plan baseline.
+Goals, briefings, findings, recommendations and audit are individually keyed `assistant.v1/...` metadata records. Goals have parent/horizon/project/item links and progress is linked-task completion, not a fabricated business KPI. Goal editing is available through the reviewed MCP proposal flow described below. Project folder renames currently require relinking goals. Tasks have completion timestamps but no historical postponement ledger or plan baseline.
+
+The owner can now create and edit goals at `/goals`, with two levels (goal and milestone), optional success criteria/numeric outcomes, and one focus per level. Outcome measurements remain separate from linked-task completion. Today shows the focused goal, its date-scoped weekly outcome and up to three selected existing tasks; selecting a task does not change its deadline or duplicate it. These fields use the existing goal records and portable assistant export. Goal deletion requires UI confirmation, removes descendant goals, and preserves projects/tasks. The example view is read-only and never writes sample records. Weekly outcomes and daily selections are current plans, not a historical review ledger.
+
+### Goal planning through MCP
+
+- `orbit_assistant_context` includes the selected root goal, goal hierarchy/revisions, success criteria, recorded metrics, weekly outcomes, daily task IDs and linked-task progress. Fetch `orbit_assistant_record(kind: "goals", id)` before editing. Goal planning weeks begin Sunday (`goalWeekStart`); briefing/calendar context retains its existing Monday-based `weekStart`. Date-scoped older plans must not be silently carried forward.
+- `orbit_propose_action` accepts `create-goal` with `input`, or `update-goal` with `goalId`, `expectedRevision` and a partial `patch`. Omitted fields remain intact; `null` clears optional metric/date/parent/week/today fields. Focus selection clears peer focus at the same level and must be included in the review. Proposals do not change goals.
+- After the user reviews the exact changes, `orbit_decide_recommendations` applies selected IDs/revisions under the existing `orbit.apply` permission and host confirmation. Results return `resultGoalId` for goals and `resultItemId` for notes/tasks/events. Manual edits cause stale goal updates to fail; mixed batches roll back together. Replays return saved receipts rather than duplicating goals or overwriting later edits.
+- Apply a new goal first to obtain its ID, then propose milestones and tasks linked to it. After creating/linking tasks, read the latest goal revision before proposing `today: { date, itemIds }`. Existing task completion and calendar changes continue through the normal item proposal flow. Goals and Today read the same persisted records; returning to the Orbit window refreshes goals.
+- No goal delete tool or autonomous scheduling is added. Local MCP SDK tests cover this flow; deployment, refreshed client tool schemas and actual ChatGPT connection/confirmation remain separate acceptance steps.
 
 ## Next stages
 
 - Verify the public deployment, actual Pro connection, metadata discovery and host confirmations. MCP Apps UI is optional and not needed for the plain conversation workflow.
 - Schedule briefing reads only after successful manual runs. Test eligible ChatGPT scheduled tasks at 08:00, then evening/weekly/monthly prompts. Do not assume unattended custom MCP writes or briefing persistence are available: saving a briefing is also a write. If scheduling does not work in the account, consider server Cron plus a separately configured, minimally used AI API; neither is enabled here.
 - GitHub, service metrics, Wadiz/news/research sources can be fetched by ChatGPT's existing connected tools. Persist relevant sourced findings to Orbit. An Orbit-side adapter interface exists for future read-only sources; no external accounts, production DBs or news providers have been connected.
-- Add goal editing, project lifecycle relinking and historical planning data when the core conversation works. Metadata is sufficient for the personal vault; indexing/SQL filtering can improve larger-vault search without changing the MCP response limits.
+- Add project lifecycle relinking and historical planning data when the core conversation works. Metadata is sufficient for the personal vault; indexing/SQL filtering can improve larger-vault search without changing the MCP response limits.
 
 ## Verification and official references
 

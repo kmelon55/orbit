@@ -20,6 +20,7 @@ function pageTitle(pathname: string, t: (message: string) => string) {
 	if (pathname === "/mail") return t("Mail");
 	if (pathname === "/capture") return t("빠른 기록");
 	if (pathname === "/tasks") return t("Tasks");
+	if (pathname === "/goals") return t("Goals");
 	if (pathname === "/routines") return t("Routines");
 	if (pathname.startsWith("/calendar")) return t("Calendar");
 	if (pathname === "/archive") return t("Archive");

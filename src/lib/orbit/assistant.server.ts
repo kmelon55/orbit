@@ -18,6 +18,7 @@ import {
 	recommendationInputSchema,
 } from "./assistant-schema";
 import { databaseFor, sha256, withDatabase } from "./database";
+import { goalInput } from "./goals";
 import type { OrbitItem } from "./schema";
 import {
 	archiveOrbitItem,
@@ -121,7 +122,7 @@ export function loadAssistantState() {
 	return withDatabase(state);
 }
 
-async function saveGoal(input: z.input<typeof goalInputSchema>) {
+async function prepareGoal(input: z.input<typeof goalInputSchema>) {
 	const parsed = goalInputSchema.parse(input);
 	const existing = parsed.id ? read("goal", parsed.id) : null;
 	if (parsed.id && !existing) fail("goal_missing", "목표를 찾을 수 없습니다.");
@@ -138,14 +139,58 @@ async function saveGoal(input: z.input<typeof goalInputSchema>) {
 		parent = found.parentId;
 	}
 	const snapshot = await getOrbitSnapshot();
+	const goals = list("goal");
+	if (parsed.parentId && (!existing || existing.parentId !== parsed.parentId)) {
+		if (
+			read("goal", parsed.parentId)?.parentId ||
+			goals.some((g) => g.parentId === id)
+		)
+			fail("goal_depth", "목표는 두 단계까지만 만들 수 있습니다.");
+	}
+	for (const taskId of same(parsed.today, existing?.today)
+		? []
+		: (parsed.today?.itemIds ?? [])) {
+		const task = item(taskId);
+		if (
+			task.type !== "task" ||
+			task.space === "archive" ||
+			task.status === "cancelled"
+		)
+			fail("goal_task", "진행 가능한 할 일을 선택해 주세요.");
+	}
 	for (const folder of parsed.projectFolders)
-		if (!snapshot.folders.project.some((f) => f.slug === folder))
+		if (
+			!snapshot.folders.project.some((f) => f.slug === folder) &&
+			!existing?.projectFolders.includes(folder)
+		)
 			fail("project_missing", "프로젝트를 찾을 수 없습니다.");
-	for (const id of parsed.itemIds) item(id);
+	for (const id of parsed.itemIds)
+		if (!existing?.itemIds.includes(id)) item(id);
+	return { parsed, existing, id, goals };
+}
+async function saveGoal(input: z.input<typeof goalInputSchema>) {
+	const { parsed, existing, id, goals } = await prepareGoal(input);
 	const now = new Date().toISOString();
+	if (parsed.focused && parsed.status === "active") {
+		for (const other of goals) {
+			if (
+				other.id !== id &&
+				other.parentId === parsed.parentId &&
+				other.focused
+			) {
+				write("goal", {
+					...other,
+					focused: false,
+					revision: other.revision + 1,
+					updatedAt: now,
+				});
+			}
+		}
+	}
 	const { expectedRevision: _, ...values } = parsed;
 	return write("goal", {
 		...values,
+		focused: parsed.status === "active" && Boolean(parsed.focused),
 		id,
 		revision: (existing?.revision ?? 0) + 1,
 		createdAt: existing?.createdAt ?? now,
@@ -253,7 +298,29 @@ async function saveInbox(input: z.input<typeof inboxInputSchema>) {
 		updatedAt: now,
 	});
 }
+type GoalAction = Extract<
+	ProposalAction,
+	{ kind: "create-goal" | "update-goal" }
+>;
+function goalActionInput(action: GoalAction) {
+	if (action.kind === "create-goal") return action.input;
+	const current = read("goal", action.goalId);
+	if (!current) fail("goal_missing", "목표를 찾을 수 없습니다.");
+	return goalInputSchema.parse({
+		...goalInput(current),
+		...Object.fromEntries(
+			Object.entries(action.patch)
+				.filter(([, value]) => value !== undefined)
+				.map(([key, value]) => [key, value === null ? undefined : value]),
+		),
+		expectedRevision: action.expectedRevision,
+	});
+}
 async function validateAction(action: ProposalAction) {
+	if (action.kind === "create-goal" || action.kind === "update-goal") {
+		await prepareGoal(goalActionInput(action));
+		return;
+	}
 	const current = action.kind === "update" ? item(action.itemId) : undefined;
 	if (current && !["note", "task", "event"].includes(current.type))
 		fail("unsupported", "이 항목 유형은 수정할 수 없습니다.");
@@ -300,6 +367,15 @@ async function propose(input: z.input<typeof recommendationInputSchema>) {
 	}
 	if (parsed.goalId && !read("goal", parsed.goalId))
 		fail("goal_missing", "목표를 찾을 수 없습니다.");
+	if (
+		parsed.goalId &&
+		(parsed.action.kind === "create-goal" ||
+			parsed.action.kind === "update-goal")
+	)
+		fail(
+			"goal_link",
+			"목표 추천은 action 안의 parentId 또는 goalId를 사용해 주세요.",
+		);
 	await validateAction(parsed.action);
 	const now = new Date().toISOString();
 	return write("recommendation", {
@@ -339,7 +415,11 @@ async function decide(input: z.input<typeof decisionSchema>) {
 			action.kind !== rec.action.kind ||
 			(action.kind === "update" &&
 				rec.action.kind === "update" &&
-				action.itemId !== rec.action.itemId)
+				action.itemId !== rec.action.itemId) ||
+			(action.kind === "update-goal" &&
+				rec.action.kind === "update-goal" &&
+				(action.goalId !== rec.action.goalId ||
+					action.expectedRevision !== rec.action.expectedRevision))
 		)
 			fail("target_changed", "수정 대상을 바꾸려면 새 추천을 만들어 주세요.");
 		const now = new Date().toISOString();
@@ -366,30 +446,35 @@ async function decide(input: z.input<typeof decisionSchema>) {
 				"추천 이후 원본이 변경되었습니다. 새 추천을 만들어 주세요.",
 			);
 		const result =
-			action.kind === "create"
-				? await createOrbitItem({
-						title: action.title,
-						body: action.body,
-						type: action.type,
-						category: action.category,
-						due: action.due,
-						start: action.start,
-						end: action.end,
-						space:
-							action.type === "event"
-								? "event"
-								: action.projectFolder
-									? "project"
-									: "inbox",
-						folder: action.type !== "event" ? action.projectFolder : undefined,
-					})
-				: await fileOrbitItem(action.itemId, {
-						...action.patch,
-						space: item(action.itemId).space,
-						folder: item(action.itemId).folder,
-					});
+			action.kind === "create-goal" || action.kind === "update-goal"
+				? await saveGoal(goalActionInput(action))
+				: action.kind === "create"
+					? await createOrbitItem({
+							title: action.title,
+							body: action.body,
+							type: action.type,
+							category: action.category,
+							due: action.due,
+							start: action.start,
+							end: action.end,
+							space:
+								action.type === "event"
+									? "event"
+									: action.projectFolder
+										? "project"
+										: "inbox",
+							folder:
+								action.type !== "event" ? action.projectFolder : undefined,
+						})
+					: await fileOrbitItem(action.itemId, {
+							...action.patch,
+							space: item(action.itemId).space,
+							folder: item(action.itemId).folder,
+						});
 		if (!result) fail("apply_failed", "변경 결과를 확인할 수 없습니다.");
-		if (rec.goalId) {
+		const goalResult =
+			action.kind === "create-goal" || action.kind === "update-goal";
+		if (rec.goalId && !goalResult) {
 			const goal = read("goal", rec.goalId);
 			if (!goal) fail("goal_missing", "목표를 찾을 수 없습니다.");
 			if (!goal.itemIds.includes(result.id))
@@ -405,7 +490,9 @@ async function decide(input: z.input<typeof decisionSchema>) {
 				...rec,
 				state: "applied",
 				appliedAction: action,
-				resultItemId: result.id,
+				...(goalResult
+					? { resultGoalId: result.id }
+					: { resultItemId: result.id }),
 				revision: rec.revision + 1,
 				updatedAt: now,
 				deferUntil: undefined,
@@ -637,6 +724,24 @@ async function mutate(
 				case "goal":
 					await saveGoal(mutation.input);
 					break;
+				case "delete-goal": {
+					const goal = read("goal", mutation.id);
+					if (!goal || goal.revision !== mutation.revision)
+						fail(
+							"conflict",
+							"목표가 변경되었습니다. 새로고침 후 확인해 주세요.",
+						);
+					const ids = new Set([goal.id]);
+					const goals = list("goal");
+					for (let i = 0; i < goals.length; i++)
+						for (const child of goals)
+							if (child.parentId && ids.has(child.parentId)) ids.add(child.id);
+					for (const id of ids)
+						databaseFor()
+							.sql.prepare("DELETE FROM metadata WHERE key = ?")
+							.run(`${PREFIX}goal/${id}`);
+					break;
+				}
 				case "briefing":
 					await saveBriefing(mutation.input);
 					break;
