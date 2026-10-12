@@ -42,24 +42,26 @@ Saved ChatGPT briefings and sourced findings become ordinary Inbox notes. Dedupl
 
 ## Deployment and first connection
 
-Implementation and isolated tests are complete; **production configuration, deployment and a real ChatGPT account connection have not been performed**.
+Implementation and isolated tests are complete. On 2026-10-12, the four MCP variables below were saved in the existing Dokploy Orbit application and verified after reloading its Environment page. Real ChatGPT account connection and host confirmation remain acceptance checks.
 
-1. Preserve the current `/vault` mount and existing Orbit credentials. Configure the existing Orbit deployment:
+The production application uses **Dokploy → Orbit → production → Orbit → Environment**, with Dockerfile builds and automatic deployment on GitHub `main` pushes. It does not deploy through the repository Compose template. Dokploy injects saved runtime variables into new containers; `.env.example` is documentation and is not imported automatically. The Create Environment File option stays off.
+
+1. Preserve the current `/vault` mount and existing Orbit credentials. The existing deployment now has:
 
    ```dotenv
    ORBIT_MCP_ORIGIN=https://orbit.lab-42.xyz
    ORBIT_MCP_CLIENT_ID=orbit-chatgpt
    ORBIT_MCP_REDIRECT_URIS=https://chatgpt.com/connector_platform_oauth_redirect
-   ORBIT_MCP_ALLOW_WRITES=false
+   ORBIT_MCP_ALLOW_WRITES=true
    ```
 
    The origin must be the actual public HTTPS origin with no trailing slash. The callback must exactly match the one displayed by ChatGPT; the value above is the documented stable callback for issuers supporting RFC 9207. Update the allowlist if the account shows another callback. Do not use wildcard redirects or the Orbit password as an OAuth client secret.
 
-2. Commit and push through the existing Git deployment flow; do not create another service or manually run a separate deployment. The Compose template forwards these variables but does not enable MCP by default. Route `/mcp`, `/oauth/*` and `/.well-known/oauth-*` to Orbit, without a separate interactive proxy login wall or caching. Preserve the public Host header.
+2. Commit and push through the existing Git deployment flow; do not create another service or manually run a separate deployment. Saved Dokploy variables persist across deployments, but new or changed values need the next deployment to reach the running container. For separate Compose installations, its template forwards these variables but does not enable MCP by default. Route `/mcp`, `/oauth/*` and `/.well-known/oauth-*` to Orbit, without a separate interactive proxy login wall or caching. Preserve the public Host header.
 3. Check unauthenticated `/mcp` returns 401 with `WWW-Authenticate`; check both OAuth metadata endpoints return the configured public origin. Verify OAuth in MCP Inspector without exposing production tokens in logs.
 4. Open [ChatGPT Plugins](https://chatgpt.com/plugins), select **+ → Add custom MCP server**, and name it **Orbit**. Under Connection, enter `https://orbit.lab-42.xyz/mcp`, choose OAuth and the preconfigured client ID `orbit-chatgpt` (no client secret; token endpoint auth method `none`). Account/workspace availability and the precise form must be checked in the actual account. If automatic setup expects DCR, use its manual/preconfigured-client option; this server deliberately has no DCR endpoint.
 5. Select **Create as a plugin**, install the resulting Orbit plugin, and sign in with the existing Orbit account to approve read access. In a new conversation type `@` and select Orbit. Ask “와디즈 관련 메모를 찾아 요점만 알려줘.” Confirm the tool first searches and then fetches only relevant items. The returned content is sent to ChatGPT; keeping the DB local does not keep retrieved content out of the conversation.
-6. After read behavior passes, enable `ORBIT_MCP_ALLOW_WRITES=true`, refresh the custom server's tool metadata and reauthorize with `orbit.read orbit.write orbit.apply`. Existing read-only tokens do not silently gain permissions. Check the write-confirmation prompt on a harmless new task, selected/edited application and a repeated request. Keep confirmation enabled for `orbit_decide_recommendations`; do not choose to remember approval for that tool. Disable the flag if the host does not provide the expected confirmation.
+6. After read behavior passes, request `orbit.read orbit.write orbit.apply` and verify the write-confirmation flow. Production has `ORBIT_MCP_ALLOW_WRITES=true`; a previously read-only connection needs refreshed tool metadata and reauthorization. Existing read-only tokens do not silently gain permissions. Check the write-confirmation prompt on a harmless new task, selected/edited application and a repeated request. Keep confirmation enabled for `orbit_decide_recommendations`; do not choose to remember approval for that tool. Disable the flag if the host does not provide the expected confirmation.
 
 To disable all MCP access, unset `ORBIT_MCP_ORIGIN` and restart through the deployment's normal service management. To revoke credentials, use `/oauth/revoke` with the issued token/client ID or change the Orbit account password (which also invalidates web sessions). Tokens/grants cannot be managed via model tools.
 
