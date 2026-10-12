@@ -54,7 +54,7 @@ export type MailSearch = {
 	message?: string;
 	connection?: string;
 	demo?: boolean;
-	folder?: MailFolder;
+	folder?: MailFolder | "drafts";
 	accounts?: string[];
 	q?: string;
 };
@@ -68,6 +68,7 @@ export function mailSearch(search: Record<string, unknown>): MailSearch {
 			search.demo === true ||
 			undefined,
 		folder:
+			search.folder === "drafts" ||
 			search.folder === "inbox" ||
 			search.folder === "sent" ||
 			search.folder === "trash" ||

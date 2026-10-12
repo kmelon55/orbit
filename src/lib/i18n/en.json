@@ -925,5 +925,17 @@
 	"폴더를 삭제하지 못했습니다.": "Could not delete the folder.",
 	"확인을 위해 폴더 이름을 정확히 입력해 주세요.": "Enter the exact folder name to confirm.",
 	"노트 저장이 끝난 뒤 다시 삭제해 주세요.": "Wait for the note to finish saving before deleting.",
-	"삭제 중…": "Deleting…"
+	"삭제 중…": "Deleting…",
+	"초안": "Drafts",
+	"저장된 초안이 없습니다.": "No saved drafts.",
+	"초안 불러오는 중": "Loading drafts",
+	"초안을 불러오지 못했습니다.": "Could not load drafts.",
+	"초안을 찾을 수 없습니다.": "This draft is no longer available.",
+	"받는 사람 없음": "No recipient",
+	"작성창 확장": "Expand composer",
+	"작성창 축소": "Restore composer size",
+	"저장하고 닫기": "Save and close",
+	"메일은 발송됐지만 초안 정리에 실패했습니다.": "Mail was sent, but the draft could not be removed.",
+	"다른 창에서 초안이 변경되거나 삭제되었습니다. 내용을 복사한 뒤 초안을 다시 열어 주세요.": "This draft was changed or deleted in another window. Copy your edits before reopening it.",
+	"초안 이어 쓰기": "Continue draft"
 }

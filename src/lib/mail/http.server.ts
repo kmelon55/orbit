@@ -8,6 +8,7 @@ import {
 } from "../orbit/auth.server";
 import { mailConfig } from "./config.server";
 import { demoMailRequest } from "./demo.server";
+import { listDrafts, readDraft, writeDraft } from "./drafts.server";
 import { clearGmailToken, gmailConfigured, oauthClient } from "./gmail.server";
 import { accountAddresses, aliasesSchema, matchesAddress } from "./identities";
 import {
@@ -253,12 +254,11 @@ export async function handleMailRequest(request: Request): Promise<Response> {
 					},
 				});
 			}
+			if (path === "drafts") return json(listDrafts());
 			if (path === "draft") {
-				const draftId = z.string().uuid().parse(url.searchParams.get("id"));
-				const row = s.db
-					.prepare("SELECT data FROM drafts WHERE id=?")
-					.get(draftId) as { data: string } | undefined;
-				return json(row ? s.unseal(row.data) : null);
+				return json(
+					readDraft(z.string().uuid().parse(url.searchParams.get("id"))),
+				);
 			}
 		}
 		if (request.method === "POST") {
@@ -432,33 +432,16 @@ export async function handleMailRequest(request: Request): Promise<Response> {
 				return json({ ok: true, testId });
 			}
 			if (path === "draft") {
-				const v = z
-					.object({
-						id: z.string().uuid(),
-						revision: z.number().int().min(0),
-						value: sendSchema
-							.omit({ requestId: true })
-							.extend({
-								to: z.array(z.string().max(500)).max(50),
-								cc: z.array(z.string().max(500)).max(50),
-								bcc: z.array(z.string().max(500)).max(50),
-							})
-							.nullable(),
-					})
-					.parse(input);
-				const row = s.db
-					.prepare("SELECT data FROM drafts WHERE id=?")
-					.get(v.id) as { data: string } | undefined;
-				const prev = row ? s.unseal<{ revision: number }>(row.data) : null;
-				if (prev && v.revision <= prev.revision)
-					return json({ error: "다른 창에서 임시저장이 변경되었습니다." }, 409);
-				if (v.value === null)
-					s.db.prepare("DELETE FROM drafts WHERE id=?").run(v.id);
-				else
-					s.db
-						.prepare("INSERT OR REPLACE INTO drafts VALUES (?,?)")
-						.run(v.id, s.seal(v));
-				return json({ ok: true });
+				const result = writeDraft(input);
+				return result
+					? json(result)
+					: json(
+							{
+								error:
+									"다른 창에서 초안이 변경되거나 삭제되었습니다. 내용을 복사한 뒤 초안을 다시 열어 주세요.",
+							},
+							409,
+						);
 			}
 		}
 		return json({ error: "요청을 찾을 수 없습니다." }, 404);

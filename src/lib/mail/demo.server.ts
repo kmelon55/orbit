@@ -5,6 +5,12 @@ import MailComposer from "nodemailer/lib/mail-composer";
 import { z } from "zod";
 import { parseMail, toDetail } from "./content.server";
 import { relatedMessages } from "./conversations";
+import {
+	draftWriteSchema,
+	hasDraftContent,
+	type MailDraft,
+	summarizeDraft,
+} from "./drafts";
 import { aliasesSchema, matchesAddress, senderAddress } from "./identities";
 import {
 	type BlockedSender,
@@ -48,7 +54,8 @@ type DemoState = {
 	blockedSenders?: BlockedSender[];
 	accounts: MailAccount[];
 	mails: Map<string, DemoMail>;
-	drafts: Map<string, { revision: number; value: unknown }>;
+	drafts: Map<string, MailDraft>;
+	draftRevisions: Map<string, number>;
 	sends: Set<string>;
 };
 const globalDemo = globalThis as typeof globalThis & {
@@ -214,6 +221,7 @@ async function seed(): Promise<DemoState> {
 		accounts: structuredClone(accounts),
 		mails,
 		drafts: new Map(),
+		draftRevisions: new Map(),
 		sends: new Set(),
 	};
 }
@@ -232,6 +240,7 @@ export async function demoMailRequest(
 	const state = await globalDemo.orbitMailDemo;
 	state.accounts ??= structuredClone(accounts);
 	state.blockedSenders ??= [];
+	state.draftRevisions ??= new Map();
 	const url = new URL(request.url);
 	if (request.method === "GET") {
 		if (path === "status")
@@ -278,6 +287,18 @@ export async function demoMailRequest(
 				cursor: null,
 			});
 		}
+		if (path === "drafts")
+			return json(
+				[...state.drafts.entries()]
+					.map(([id, draft]) => ({
+						...draft,
+						id,
+						updatedAt: draft.updatedAt ?? 0,
+					}))
+					.filter((d) => hasDraftContent(d.value))
+					.map(summarizeDraft)
+					.sort((a, b) => b.updatedAt - a.updatedAt),
+			);
 		if (path === "draft")
 			return json(state.drafts.get(url.searchParams.get("id") || "") || null);
 		const mail = state.mails.get(
@@ -398,20 +419,32 @@ export async function demoMailRequest(
 			return json({ ok: true });
 		}
 		if (path === "draft") {
-			const v = z
-				.object({
-					id: z.string().uuid(),
-					revision: z.number().int().min(0),
-					value: z.unknown(),
-				})
-				.parse(input);
+			const v = draftWriteSchema.parse(input);
+			const revision =
+				state.draftRevisions.get(v.id) ?? state.drafts.get(v.id)?.revision ?? 0;
+			if (
+				v.revision <= revision ||
+				(v.baseRevision !== undefined && v.baseRevision !== revision) ||
+				(revision > 0 && !state.drafts.has(v.id) && v.value)
+			)
+				return json(
+					{
+						error:
+							"다른 창에서 초안이 변경되거나 삭제되었습니다. 내용을 복사한 뒤 초안을 다시 열어 주세요.",
+					},
+					409,
+				);
+			const updatedAt = Date.now();
 			if (v.value == null) state.drafts.delete(v.id);
-			else {
-				if (state.drafts.size >= 20 && !state.drafts.has(v.id))
-					state.drafts.delete(state.drafts.keys().next().value as string);
-				state.drafts.set(v.id, { revision: v.revision, value: v.value });
-			}
-			return json({ ok: true });
+			else
+				state.drafts.set(v.id, {
+					id: v.id,
+					revision: v.revision,
+					updatedAt,
+					value: v.value,
+				});
+			state.draftRevisions.set(v.id, v.revision);
+			return json({ ok: true, revision: v.revision, updatedAt });
 		}
 		if (path === "send") {
 			const v = sendSchema.parse(input);

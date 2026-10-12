@@ -28,6 +28,7 @@ import {
 import { toast } from "sonner";
 import { createMailClient } from "#/lib/mail/client";
 import { conversations } from "#/lib/mail/conversations";
+import { type DraftSummary, filterDrafts } from "#/lib/mail/drafts";
 import {
 	accountAddresses,
 	mailScopes,
@@ -39,7 +40,6 @@ import {
 	folderLabels,
 	type MailAction,
 	type MailDetail,
-	type MailFolder,
 	type MailMessage,
 } from "#/lib/mail/types";
 import type { MailSearch } from "#/lib/orbit/navigation-search";
@@ -51,9 +51,11 @@ import { cn } from "@/lib/utils";
 import { MailAccountFilter } from "./mail-account-filter";
 import { MailActionsMenu } from "./mail-actions-menu";
 import { MailComposer } from "./mail-composer";
+import { MailDrafts } from "./mail-drafts";
 import { MailMessageContent } from "./mail-message-content";
 import { MailSettings } from "./mail-settings";
 import { MailThreadMessage } from "./mail-thread-message";
+import { useMailDrafts } from "./use-mail-drafts";
 import { useMailList } from "./use-mail-list";
 
 export function MailWorkspace({ demo = false }: { demo?: boolean }) {
@@ -66,6 +68,8 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 	const router = useRouter();
 	const api = useMemo(() => createMailClient(demo), [demo]);
 	const session = mailSessionFor(api);
+	const draftState = useMailDrafts(api);
+	const [composeDraftId, setComposeDraftId] = useState<string>();
 	const accountIds = location.accounts ?? null;
 	const folder = location.folder ?? "inbox";
 	const search = location.q ?? "";
@@ -127,6 +131,20 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 		beginMutation,
 		refreshRef,
 	} = useMailList(accountIds, folder, search, api);
+	const scopedDrafts = useMemo(
+		() => filterDrafts(draftState.drafts, status?.accounts ?? [], accountIds),
+		[draftState.drafts, status?.accounts, accountIds],
+	);
+	const visibleDrafts = useMemo(
+		() => filterDrafts(scopedDrafts, status?.accounts ?? [], accountIds, query),
+		[scopedDrafts, status?.accounts, accountIds, query],
+	);
+	function openDraft(draft: DraftSummary) {
+		composeGeneration.current++;
+		setComposeDraftId(draft.id);
+		setComposeOriginal(null);
+		setCompose(draft.forwardId ? "forward" : draft.replyId ? "reply" : "new");
+	}
 	const markThreadRead = useCallback(
 		(id: string) => {
 			setMessages((previous) =>
@@ -483,6 +501,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 		);
 	}
 	function changed() {
+		void draftState.refresh();
 		void refreshStatus()
 			.then(() => refreshRef.current(true))
 			.catch((e) => setError(e.message));
@@ -493,6 +512,11 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 		messages.find((m) => m.id === selected) ||
 		thread.find((m) => m.id === selected);
 	const activeThread = thread.some((m) => m.id === selected) ? thread : [];
+	const conversationDraft = scopedDrafts.find((d) =>
+		[selected, ...activeThread.map((m) => m.id)].some(
+			(id) => id && (id === d.replyId || id === d.forwardId),
+		),
+	);
 	const activeAccounts = mailScopes(status?.accounts || [], accountIds);
 	const syncFailed = Object.keys(errors).length > 0;
 	const lastUpdated = activeAccounts.length
@@ -644,7 +668,9 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 					aria-label={syncDescription}
 					title={syncDescription}
 					disabled={busy}
-					onClick={() => void refresh()}
+					onClick={() =>
+						void (folder === "drafts" ? draftState.refresh() : refresh())
+					}
 				>
 					<RefreshCw className={cn("size-4", busy && "animate-spin")} />
 				</Button>
@@ -663,6 +689,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 					onClick={() => {
 						composeGeneration.current++;
 						setComposeOriginal(null);
+						setComposeDraftId(undefined);
 						setCompose("new");
 					}}
 				>
@@ -676,18 +703,26 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 					selected && "hidden md:flex",
 				)}
 			>
-				{(Object.keys(folderLabels) as MailFolder[]).map((f) => (
-					<Button
-						key={f}
-						variant={folder === f ? "secondary" : "ghost"}
-						size="sm"
-						onClick={() => {
-							updateLocation({ folder: f, message: undefined });
-						}}
-					>
-						{t(folderLabels[f])}
-					</Button>
-				))}
+				{(["inbox", "drafts", "sent", "archive", "spam", "trash"] as const).map(
+					(f) => (
+						<Button
+							key={f}
+							variant={folder === f ? "secondary" : "ghost"}
+							size="sm"
+							onClick={() => {
+								updateLocation({ folder: f, message: undefined });
+								if (f === "drafts") void draftState.refresh();
+							}}
+						>
+							{t(f === "drafts" ? "초안" : folderLabels[f])}
+							{f === "drafts" && scopedDrafts.length > 0 && (
+								<span className="text-xs tabular-nums text-muted-foreground">
+									{scopedDrafts.length}
+								</span>
+							)}
+						</Button>
+					),
+				)}
 			</div>
 			{Object.entries(errors).map(([id, message]) => (
 				<div
@@ -701,7 +736,9 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 						variant="ghost"
 						size="sm"
 						disabled={busy}
-						onClick={() => void refresh()}
+						onClick={() =>
+							void (folder === "drafts" ? draftState.refresh() : refresh())
+						}
 					>
 						{t("다시 시도")}
 					</Button>
@@ -735,6 +772,17 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 						</a>
 					</div>
 				</div>
+			) : folder === "drafts" ? (
+				<MailDrafts
+					drafts={visibleDrafts}
+					accounts={status?.accounts ?? []}
+					loading={draftState.loading}
+					error={draftState.error}
+					api={api}
+					onOpen={openDraft}
+					onChange={draftState.changed}
+					onRefresh={draftState.refresh}
+				/>
 			) : (
 				<div className="flex min-h-0 flex-1">
 					<div
@@ -815,6 +863,16 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 											unread ? "font-medium" : "text-foreground/85",
 										)}
 									>
+										{scopedDrafts.some((d) =>
+											group.some(
+												(entry) =>
+													entry.id === d.replyId || entry.id === d.forwardId,
+											),
+										) && (
+											<span className="mr-2 text-xs font-medium text-primary">
+												{t("초안")}
+											</span>
+										)}
 										{m.subject}
 										{group.length > 1 && (
 											<span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
@@ -863,6 +921,16 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 					>
 						{selected && (
 							<div className="flex shrink-0 flex-wrap items-center gap-1 border-b px-3 py-2">
+								{conversationDraft && (
+									<Button
+										variant="secondary"
+										size="sm"
+										onClick={() => openDraft(conversationDraft)}
+									>
+										<Pencil className="size-4" />
+										{t("초안 이어 쓰기")}
+									</Button>
+								)}
 								<Button
 									variant="ghost"
 									size="icon"
@@ -1093,11 +1161,23 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 			{compose && status?.accounts.length && (
 				<MailComposer
 					key={
-						compose === "new"
+						composeDraftId ||
+						(compose === "new"
 							? "new"
-							: `${compose}:${composeOriginal?.id || detail?.id}`
+							: `${compose}:${composeOriginal?.id || detail?.id}`)
 					}
 					accounts={status.accounts}
+					draftId={
+						composeDraftId ||
+						(compose !== "new"
+							? draftState.drafts.find((d) =>
+									compose === "forward"
+										? d.forwardId === (composeOriginal?.id || detail?.id)
+										: d.replyId === (composeOriginal?.id || detail?.id),
+								)?.id
+							: undefined)
+					}
+					onDraftChange={draftState.changed}
 					api={api}
 					demo={demo}
 					defaultAccountId={
@@ -1105,7 +1185,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 					}
 					defaultFrom={selectedView?.address || undefined}
 					original={
-						compose === "new"
+						compose === "new" || composeDraftId
 							? undefined
 							: composeOriginal || detail || undefined
 					}
@@ -1113,9 +1193,11 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 					onClose={() => {
 						composeGeneration.current++;
 						setCompose(null);
+						setComposeDraftId(undefined);
 					}}
 					onSent={() => {
 						setCompose(null);
+						setComposeDraftId(undefined);
 						setDetailRetry((v) => v + 1);
 						void refresh();
 					}}

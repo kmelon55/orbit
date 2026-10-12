@@ -82,6 +82,7 @@ export class MailStore {
    CREATE TABLE IF NOT EXISTS subscriptions (id TEXT PRIMARY KEY, data TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS oauth (id TEXT PRIMARY KEY, data TEXT NOT NULL, expires INTEGER NOT NULL);
    CREATE TABLE IF NOT EXISTS drafts (id TEXT PRIMARY KEY, data TEXT NOT NULL);
+   CREATE TABLE IF NOT EXISTS draft_index (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT);
    CREATE TABLE IF NOT EXISTS push_jobs (id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, data TEXT NOT NULL, attempt INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL, expires INTEGER NOT NULL);
   `);
 	}
@@ -149,8 +150,12 @@ export class MailStore {
 				if (
 					this.unseal<{ value: { accountId: string } }>(row.data).value
 						.accountId === id
-				)
+				) {
 					this.db.prepare("DELETE FROM drafts WHERE id=?").run(row.id);
+					this.db
+						.prepare("UPDATE draft_index SET data=NULL WHERE id=?")
+						.run(row.id);
+				}
 			}
 			this.db.prepare("DELETE FROM settings WHERE key=?").run(`baseline:${id}`);
 			this.db.exec("COMMIT");
@@ -478,6 +483,9 @@ export function mailStore() {
 	} else if (Object.getPrototypeOf(s) !== MailStore.prototype) {
 		// Vite reloads this module but keeps the process-wide store alive.
 		Object.setPrototypeOf(s, MailStore.prototype);
+		s.db.exec(
+			"CREATE TABLE IF NOT EXISTS draft_index (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT)",
+		);
 		Reflect.deleteProperty(s, "searchIndex");
 	}
 	return s;

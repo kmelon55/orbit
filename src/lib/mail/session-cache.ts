@@ -1,4 +1,5 @@
 import type { mailApi } from "./client";
+import type { DraftSummary } from "./drafts";
 import type { MailDetail, MailMessage, MailStatus } from "./types";
 
 export type MailConversation = {
@@ -8,6 +9,7 @@ export type MailConversation = {
 };
 
 type SessionCache = {
+	drafts?: DraftSummary[];
 	status: MailStatus | null;
 	pages: Map<string, MailMessage[]>;
 	details: Map<string, MailDetail>;

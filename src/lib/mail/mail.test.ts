@@ -1635,3 +1635,105 @@ test("demo supports spam, block, unblock and restore through the same HTTP contr
 	).json();
 	assert.ok(restored.messages.some((entry: MailMessage) => entry.id === m.id));
 });
+
+test("draft index restores legacy drafts without exposing attachment bodies and tracks independent drafts", async () => {
+	const firstId = randomUUID();
+	const secondId = randomUUID();
+	const value = {
+		accountId: account.id,
+		from: account.email,
+		to: ["unfinished"],
+		cc: [],
+		bcc: [],
+		subject: "Legacy draft",
+		text: "Keep my manual edits",
+		attachments: [{ name: "private.txt", content: "cHJpdmF0ZSBjb250ZW50" }],
+	};
+	mailStore()
+		.db.prepare("INSERT INTO drafts VALUES (?,?)")
+		.run(firstId, mailStore().seal({ id: firstId, revision: 7, value }));
+	let list = await (await handleMailRequest(request("drafts"))).json();
+	assert.equal(list.length, 1);
+	assert.equal(list[0].id, firstId);
+	assert.equal(list[0].revision, 7);
+	assert.equal(list[0].updatedAt, 0);
+	assert.equal(list[0].attachmentCount, 1);
+	assert.equal(list[0].snippet, value.text);
+	assert.ok(!JSON.stringify(list).includes(value.attachments[0].content));
+	const storedIndex = mailStore()
+		.db.prepare("SELECT data FROM draft_index WHERE id=?")
+		.get(firstId) as { data: string };
+	assert.ok(!storedIndex.data.includes(value.subject));
+	assert.equal(
+		(
+			await handleMailRequest(
+				request("draft", {
+					id: secondId,
+					revision: 1,
+					baseRevision: 0,
+					value: { ...value, subject: "Another draft" },
+				}),
+			)
+		).status,
+		200,
+	);
+	list = await (await handleMailRequest(request("drafts"))).json();
+	assert.deepEqual(
+		list.map((d: { id: string }) => d.id),
+		[secondId, firstId],
+	);
+	const restored = await (
+		await handleMailRequest(request(`draft?id=${firstId}`))
+	).json();
+	assert.deepEqual(restored.value.attachments, value.attachments);
+	mailStore().removeAccount(account.id);
+	assert.deepEqual(
+		await (await handleMailRequest(request("drafts"))).json(),
+		[],
+	);
+});
+
+test("draft edits require the exact base revision and deletion cannot resurrect from a stale window", async () => {
+	const id = randomUUID();
+	const value = {
+		accountId: account.id,
+		to: [],
+		cc: [],
+		bcc: [],
+		subject: "",
+		text: "A",
+		attachments: [],
+	};
+	const save = (
+		revision: number,
+		baseRevision: number,
+		next: typeof value | null,
+	) =>
+		handleMailRequest(
+			request("draft", { id, revision, baseRevision, value: next }),
+		);
+	assert.equal((await save(1, 0, value)).status, 200);
+	assert.equal((await save(2, 1, { ...value, text: "B" })).status, 200);
+	assert.equal((await save(99, 1, { ...value, text: "stale" })).status, 409);
+	assert.equal((await save(3, 1, null)).status, 409);
+	assert.equal(
+		(await (await handleMailRequest(request(`draft?id=${id}`))).json()).value
+			.text,
+		"B",
+	);
+	assert.equal((await save(3, 2, null)).status, 200);
+	assert.equal((await save(4, 3, value)).status, 409);
+	assert.equal(
+		(await handleMailRequest(request("draft", { id, revision: 100, value })))
+			.status,
+		409,
+	);
+	assert.equal(
+		await (await handleMailRequest(request(`draft?id=${id}`))).json(),
+		null,
+	);
+	assert.deepEqual(
+		await (await handleMailRequest(request("drafts"))).json(),
+		[],
+	);
+});

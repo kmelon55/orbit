@@ -7,7 +7,7 @@ import type { MailFolder, MailMessage, MailStatus } from "#/lib/mail/types";
 type Page = { messages: MailMessage[]; cursor: string | null };
 export function useMailList(
 	accountIds: string[] | null,
-	folder: MailFolder,
+	folder: MailFolder | "drafts",
 	search: string,
 	api: typeof mailApi = mailApi,
 ) {
@@ -97,6 +97,7 @@ export function useMailList(
 	}, [api, session]);
 	const refresh = useCallback(
 		async (remote = true, more = false) => {
+			if (folder === "drafts") return;
 			if (active.current || mutations.current) return;
 			const current = generation.current;
 			const abort = controller.current;
@@ -226,7 +227,7 @@ export function useMailList(
 		setCursors({});
 		setSyncing([]);
 		setErrors({});
-		setLoading(!cached);
+		setLoading(folder !== "drafts" && !cached);
 		const current = generation.current;
 		void refreshRef.current(Boolean(cached)).then(() => {
 			if (cached) return;
@@ -236,7 +237,7 @@ export function useMailList(
 			generation.current++;
 			controller.current?.abort();
 		};
-	}, [scope]);
+	}, [scope, folder]);
 	useEffect(() => {
 		const refreshVisible = () => {
 			if (document.visibilityState === "visible") void refreshRef.current(true);
