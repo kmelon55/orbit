@@ -86,6 +86,7 @@ async function consent(url: URL, session = cookie(), decision = "allow") {
 		new Request(url, { headers: { cookie: session } }),
 	);
 	assert.equal(page.status, 200);
+	assert.equal(page.headers.get("referrer-policy"), "strict-origin");
 	const markup = await page.text();
 	const csrf = markup.match(/name="csrf" value="([^"]+)"/)?.[1];
 	assert.ok(csrf);
@@ -271,6 +272,62 @@ test("authorization requires owner session, exact redirect/resource, S256 and sa
 		done();
 	}
 });
+test("consent preserves browser Origin and rejects foreign, opaque or missing origins even with a valid CSRF token", async () => {
+	const done = fixture();
+	try {
+		const { url } = authorization();
+		const ownerSession = cookie();
+		const page = await handleMcpRequest(
+			new Request(url, { headers: { cookie: ownerSession } }),
+		);
+		assert.equal(page.status, 200);
+		assert.equal(page.headers.get("referrer-policy"), "strict-origin");
+		const csrf = (await page.text()).match(/name="csrf" value="([^"]+)"/)?.[1];
+		assert.ok(csrf);
+		for (const requestOrigin of [
+			undefined,
+			"null",
+			"https://evil.example",
+			"https://chatgpt.com",
+		]) {
+			const headers = new Headers({
+				cookie: ownerSession,
+				"content-type": "application/x-www-form-urlencoded",
+			});
+			if (requestOrigin !== undefined) headers.set("origin", requestOrigin);
+			const response = await handleMcpRequest(
+				new Request(url, {
+					method: "POST",
+					headers,
+					body: new URLSearchParams({ csrf, decision: "allow" }),
+				}),
+			);
+			assert.equal(response.status, 403);
+			assert.equal((await response.json()).error, "invalid_origin");
+		}
+		const approved = await handleMcpRequest(
+			new Request(url, {
+				method: "POST",
+				headers: {
+					cookie: ownerSession,
+					origin,
+					"content-type": "application/x-www-form-urlencoded",
+				},
+				body: new URLSearchParams({ csrf, decision: "allow" }),
+			}),
+		);
+		assert.equal(approved.status, 303);
+		assert.ok(
+			new URL(required(approved.headers.get("location"))).searchParams.get(
+				"code",
+			),
+		);
+		assert.equal(approved.headers.get("referrer-policy"), "no-referrer");
+	} finally {
+		done();
+	}
+});
+
 test("PKCE codes are single-use and failed verifier consumes the code", async () => {
 	const done = fixture();
 	try {

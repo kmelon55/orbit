@@ -374,6 +374,10 @@ function html(body: string) {
 			headers: {
 				...privateHeaders,
 				"Content-Type": "text/html; charset=utf-8",
+				// no-referrer makes native form POSTs send Origin: null, which
+				// correctly fails our same-origin consent check. Keep the real
+				// origin without forwarding the OAuth query in Referer headers.
+				"Referrer-Policy": "strict-origin",
 				"Content-Security-Policy":
 					"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
 				"X-Frame-Options": "DENY",
