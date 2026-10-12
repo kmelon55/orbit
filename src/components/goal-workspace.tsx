@@ -48,71 +48,17 @@ const statusLabels = {
 	done: "완료",
 } as const;
 
-function exampleGoals(t: (message: string) => string): Goal[] {
-	const common = {
-		description: "",
-		importance: 3,
-		projectFolders: [],
-		itemIds: [],
-		revision: 1,
-		createdAt: "2026-10-12T00:00:00Z",
-		updatedAt: "2026-10-12T00:00:00Z",
-	};
-	return [
-		{
-			...common,
-			id: "example-root",
-			title: t("첫 유료 고객 10명 확보"),
-			successCriteria: t("직접 만든 제품에 돈을 내고 사용하는 고객 10명"),
-			horizon: "quarter",
-			status: "active",
-			focused: true,
-			metric: { current: 2, target: 10, unit: t("명") },
-			week: {
-				start: goalWeekStart(formatDayKey()),
-				outcome: t("고객 3명과 대화하고 구매를 막는 문제 확인하기"),
-			},
-		},
-		{
-			...common,
-			id: "example-1",
-			parentId: "example-root",
-			horizon: "milestone",
-			status: "done",
-			title: t("가입부터 결제까지 사용할 수 있게 만들기"),
-		},
-		{
-			...common,
-			id: "example-2",
-			parentId: "example-root",
-			horizon: "milestone",
-			status: "active",
-			focused: true,
-			title: t("첫 고객 3명 확보하기"),
-		},
-		{
-			...common,
-			id: "example-3",
-			parentId: "example-root",
-			horizon: "milestone",
-			status: "active",
-			title: t("반복 가능한 고객 유입 방법 찾기"),
-		},
-	];
-}
-
 export function GoalWorkspace() {
 	const { t, errorText } = useI18n();
 	const state = useGoals();
 	const [selectedId, setSelectedId] = useState<string>();
 	const [mobileDetail, setMobileDetail] = useState(false);
 	const [status, setStatus] = useState<Goal["status"]>("active");
-	const [preview, setPreview] = useState(false);
 	const [editor, setEditor] = useState<{ goal?: Goal; parent?: Goal } | null>(
 		null,
 	);
 	const [deleting, setDeleting] = useState<Goal | null>(null);
-	const goals = preview ? exampleGoals(t) : state.goals;
+	const goals = state.goals;
 	const roots = goals
 		.filter((g) => !g.parentId && g.status === status)
 		.sort(
@@ -122,7 +68,6 @@ export function GoalWorkspace() {
 		);
 	const selected = roots.find((g) => g.id === selectedId) ?? roots[0];
 	function create() {
-		setPreview(false);
 		setEditor({});
 	}
 	function edit(goal: Goal) {
@@ -145,16 +90,6 @@ export function GoalWorkspace() {
 						{t("새 목표")}
 					</Button>
 				</header>
-				{preview ? (
-					<div className="mb-5 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-muted/60 px-4 py-2 text-sm">
-						<span className="text-muted-foreground">
-							{t("예시 보기 · 저장되지 않습니다")}
-						</span>
-						<Button variant="ghost" size="sm" onClick={() => setPreview(false)}>
-							{t("예시 닫기")}
-						</Button>
-					</div>
-				) : null}
 				{state.error ? (
 					<div
 						role="alert"
@@ -175,7 +110,7 @@ export function GoalWorkspace() {
 						className="block h-60 animate-pulse rounded-2xl bg-muted/40"
 						aria-label={t("불러오는 중…")}
 					/>
-				) : !state.goals.length && !preview ? (
+				) : !state.goals.length ? (
 					<div className="flex min-h-[420px] flex-col items-center justify-center rounded-2xl border border-dashed px-6 text-center">
 						<div className="mb-5 flex size-14 items-center justify-center rounded-2xl bg-muted">
 							<Target className="size-6 text-muted-foreground" />
@@ -190,15 +125,6 @@ export function GoalWorkspace() {
 							<Button onClick={create}>
 								<Plus />
 								{t("첫 목표 만들기")}
-							</Button>
-							<Button
-								variant="ghost"
-								onClick={() => {
-									setPreview(true);
-									setStatus("active");
-								}}
-							>
-								{t("예시 보기")}
 							</Button>
 						</div>
 					</div>
@@ -301,7 +227,6 @@ export function GoalWorkspace() {
 									key={selected.id}
 									goal={selected}
 									goals={goals}
-									preview={preview}
 									onEdit={edit}
 									onAdd={() => setEditor({ parent: selected })}
 									onDelete={setDeleting}
@@ -393,14 +318,12 @@ export function GoalProgress({ goal }: { goal: Goal }) {
 function GoalDetail({
 	goal,
 	goals,
-	preview,
 	onEdit,
 	onAdd,
 	onDelete,
 }: {
 	goal: Goal;
 	goals: Goal[];
-	preview: boolean;
 	onEdit: (goal: Goal) => void;
 	onAdd: () => void;
 	onDelete: (goal: Goal) => void;
@@ -434,7 +357,7 @@ function GoalDetail({
 				<div className="mb-3 flex items-center justify-between gap-2">
 					<button
 						type="button"
-						disabled={busy || preview || goal.status !== "active"}
+						disabled={busy || goal.status !== "active"}
 						onClick={() =>
 							void save({ ...goalInput(goal), focused: !activeFocus })
 						}
@@ -457,7 +380,7 @@ function GoalDetail({
 							variant="ghost"
 							size="icon-sm"
 							aria-label={t("목표 수정")}
-							disabled={preview || busy}
+							disabled={busy}
 							onClick={() => onEdit(goal)}
 						>
 							<Pencil className="size-3.5" />
@@ -468,7 +391,7 @@ function GoalDetail({
 									variant="ghost"
 									size="icon-sm"
 									aria-label={t("목표 메뉴")}
-									disabled={preview || busy}
+									disabled={busy}
 								>
 									<Ellipsis />
 								</Button>
@@ -527,7 +450,7 @@ function GoalDetail({
 						<Button
 							variant="ghost"
 							size="sm"
-							disabled={preview || busy}
+							disabled={busy}
 							onClick={() => onEdit(goal)}
 						>
 							{t("성과 갱신")}
@@ -545,12 +468,7 @@ function GoalDetail({
 							{children.length}
 						</span>
 					</h4>
-					<Button
-						variant="ghost"
-						size="sm"
-						disabled={preview || busy}
-						onClick={onAdd}
-					>
+					<Button variant="ghost" size="sm" disabled={busy} onClick={onAdd}>
 						<Plus className="size-3.5" />
 						{t("추가")}
 					</Button>
@@ -566,7 +484,7 @@ function GoalDetail({
 										? "border-primary bg-primary text-primary-foreground"
 										: "border-muted-foreground/40 hover:border-primary",
 								)}
-								disabled={preview || busy}
+								disabled={busy}
 								aria-label={
 									child.status === "done"
 										? t("{0} 다시 열기", [child.title])
@@ -583,7 +501,6 @@ function GoalDetail({
 							</button>
 							<button
 								type="button"
-								disabled={preview}
 								onClick={() => onEdit(child)}
 								className="min-w-0 flex-1 text-left"
 							>
@@ -612,7 +529,7 @@ function GoalDetail({
 										variant="ghost"
 										size="icon-sm"
 										aria-label={t("{0} 메뉴", [child.title])}
-										disabled={preview || busy}
+										disabled={busy}
 									>
 										<Ellipsis className="size-4 text-muted-foreground" />
 									</Button>
@@ -650,7 +567,7 @@ function GoalDetail({
 						<button
 							type="button"
 							onClick={onAdd}
-							disabled={preview || busy}
+							disabled={busy}
 							className="w-full rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground hover:bg-muted/30"
 						>
 							{t("첫 번째 단계를 추가하세요.")}
@@ -661,7 +578,7 @@ function GoalDetail({
 			<WeekOutcome
 				key={`${goal.id}-${goal.week?.start}-${goal.week?.outcome}`}
 				goal={goal}
-				disabled={preview || busy}
+				disabled={busy}
 			/>
 			{goal.projectFolders.length > 0 || linkedTasks.length > 0 ? (
 				<section className="border-t pt-5">
@@ -673,7 +590,7 @@ function GoalDetail({
 							variant="ghost"
 							size="sm"
 							onClick={() => onEdit(goal)}
-							disabled={preview || busy}
+							disabled={busy}
 						>
 							{t("연결 수정")}
 						</Button>
