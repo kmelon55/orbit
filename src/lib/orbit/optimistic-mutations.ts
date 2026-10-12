@@ -33,6 +33,8 @@ type RoutineWrite = {
 	timerKeys?: string[];
 };
 function routineWriteKey(mutation: RoutineMutation) {
+	if (mutation.action === "set-routine-schedule")
+		return `routine-schedule:${mutation.day}:${mutation.id}`;
 	if (mutation.action === "routine-timer") return "routine-timers";
 	if (mutation.action === "move-routine") return "routine-order";
 	if (mutation.action === "set-routine-status")
@@ -52,6 +54,14 @@ function projectRoutineWrite(
 		const saved = entry.result.timers[key];
 		if (saved) timers[key] = saved;
 		else delete timers[key];
+	}
+	if (mutation.action === "set-routine-schedule") {
+		const key = `${mutation.day}:${mutation.id}`,
+			schedules = { ...data.schedules };
+		const saved = entry.result.schedules?.[key];
+		if (saved) schedules[key] = saved;
+		else delete schedules[key];
+		return { ...data, schedules };
 	}
 	if (mutation.action === "routine-timer") return { ...data, timers };
 	if (mutation.action === "move-routine") {

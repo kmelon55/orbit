@@ -200,6 +200,12 @@ test("saved routines survive restart, portable export/import and automatic migra
 		});
 		await mutateRoutine({ action: "save-routine", input: routine });
 		await mutateRoutine({
+			action: "set-routine-schedule",
+			id: routine.id,
+			day: today,
+			schedule: { start: `${today}T09:00:00`, end: `${today}T09:25:00` },
+		});
+		await mutateRoutine({
 			action: "routine-timer",
 			id: routine.id,
 			day: today,
@@ -225,6 +231,10 @@ test("saved routines survive restart, portable export/import and automatic migra
 		]);
 		const saved = (await getOrbitSnapshot()).routineData;
 		assert.ok(saved);
+		assert.equal(
+			saved.schedules?.[routineRecordKey(routine.id, today)].start,
+			`${today}T09:00:00`,
+		);
 		assert.equal(
 			saved.timers[routineRecordKey(routine.id, today)].startedAt,
 			null,
@@ -274,6 +284,47 @@ test("optimistic writes roll back narrowly, keep the latest success over stale r
 		await mutateRoutine({ action: "save-routine", input: b });
 		const source = await getOrbitSnapshot(),
 			store = new OptimisticItems();
+		const planning = new OptimisticItems();
+		const plan: RoutineMutation = {
+			action: "set-routine-schedule",
+			id: a.id,
+			day: today,
+			schedule: { start: `${today}T10:00:00`, end: `${today}T10:25:00` },
+		};
+		const key = routineRecordKey(a.id, today);
+		planning.start("plan", plan, source);
+		assert.equal(
+			planning.project(source).routineData?.schedules?.[key].start,
+			`${today}T10:00:00`,
+		);
+		const planned = applyRoutineMutation(
+			routineDataSchema.parse(source.routineData),
+			plan,
+		);
+		planning.finish({
+			requestId: "plan",
+			mutation: plan,
+			phase: "success",
+			result: planned,
+		});
+		const failed: RoutineMutation = {
+			...plan,
+			schedule: { start: `${today}T11:00:00`, end: `${today}T11:25:00` },
+		};
+		planning.start("failed-plan", failed, source);
+		planning.finish({
+			requestId: "failed-plan",
+			mutation: failed,
+			phase: "failure",
+		});
+		assert.equal(
+			planning.project(source).routineData?.schedules?.[key].start,
+			`${today}T10:00:00`,
+		);
+		assert.deepEqual(
+			planning.project(source).routineData?.routines,
+			source.routineData?.routines,
+		);
 		const done: RoutineMutation = {
 			action: "set-routine-status",
 			id: a.id,

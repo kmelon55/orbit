@@ -77,12 +77,36 @@ export const routineTimerSchema = z
 	);
 export type RoutineTimerState = z.infer<typeof routineTimerSchema>;
 
+const routineDateTimeSchema = z.union([
+	routineDaySchema,
+	z.iso
+		.datetime({ local: true })
+		.regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/),
+]);
+export const routineScheduleSchema = z
+	.object({
+		routineId: z.string().uuid(),
+		day: routineDaySchema,
+		start: routineDateTimeSchema,
+		end: routineDateTimeSchema.optional(),
+	})
+	.refine(
+		(value) =>
+			!value.end ||
+			(value.start.includes("T") === value.end.includes("T") &&
+				(value.start.includes("T")
+					? value.end > value.start
+					: value.end >= value.start)),
+		{ message: "종료는 시작 이후여야 합니다." },
+	);
+
 export const routineDataSchema = z
 	.object({
 		version: z.literal(1),
 		routines: z.array(routineSchema).max(200),
 		records: z.record(z.string(), routineRecordSchema),
 		timers: z.record(z.string(), routineTimerSchema).default({}),
+		schedules: z.record(z.string(), routineScheduleSchema).optional(),
 	})
 	.superRefine((data, ctx) => {
 		const ids = new Set(data.routines.map((routine) => routine.id));
@@ -91,6 +115,7 @@ export const routineDataSchema = z
 		for (const [key, record] of [
 			...Object.entries(data.records),
 			...Object.entries(data.timers),
+			...Object.entries(data.schedules ?? {}),
 		]) {
 			if (
 				key !== routineRecordKey(record.routineId, record.day) ||
@@ -109,6 +134,17 @@ export const routineDataSchema = z
 	});
 
 export const routineMutationSchemas = [
+	z.object({
+		action: z.literal("set-routine-schedule"),
+		id: z.string().uuid(),
+		day: routineDaySchema,
+		schedule: z
+			.object({
+				start: routineDateTimeSchema,
+				end: routineDateTimeSchema.optional(),
+			})
+			.nullable(),
+	}),
 	z.object({ action: z.literal("save-routine"), input: routineInputSchema }),
 	z.object({
 		action: z.literal("set-routine-enabled"),
@@ -311,6 +347,26 @@ export function applyRoutineMutation(
 	);
 	if (!routine) throw new Error("루틴을 찾을 수 없습니다.");
 	switch (mutation.action) {
+		case "set-routine-schedule": {
+			if (
+				!isRoutineDue(routine, mutation.day) &&
+				!data.schedules?.[routineRecordKey(routine.id, mutation.day)]
+			)
+				throw new Error("해당 날짜에 예정된 루틴이 아닙니다.");
+			const schedules = { ...data.schedules };
+			const key = routineRecordKey(routine.id, mutation.day);
+			if (mutation.schedule) {
+				const schedule = routineScheduleSchema.parse({
+					...mutation.schedule,
+					routineId: routine.id,
+					day: mutation.day,
+				});
+				if (schedule.start.slice(0, 10) < routine.createdDay)
+					throw new Error("기록할 수 없는 날짜입니다.");
+				schedules[key] = schedule;
+			} else delete schedules[key];
+			return { ...data, schedules };
+		}
 		case "set-routine-enabled":
 			return {
 				...data,
@@ -433,7 +489,22 @@ export function mergeRoutineData(
 			throw new Error(`타이머 가져오기 충돌: ${timer.day}`);
 		timers[key] = timer;
 	}
-	return routineDataSchema.parse({ version: 1, routines, records, timers });
+	const schedules = { ...current.schedules };
+	for (const [key, schedule] of Object.entries(incoming.schedules ?? {})) {
+		if (
+			schedules[key] &&
+			JSON.stringify(schedules[key]) !== JSON.stringify(schedule)
+		)
+			throw new Error(`루틴 일정 가져오기 충돌: ${schedule.day}`);
+		schedules[key] = schedule;
+	}
+	return routineDataSchema.parse({
+		version: 1,
+		routines,
+		records,
+		timers,
+		...(current.schedules || incoming.schedules ? { schedules } : {}),
+	});
 }
 
 // Time derives from a saved timestamp, rather than relying on an open tab's interval.
