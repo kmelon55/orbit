@@ -1,4 +1,11 @@
-import { CalendarDays, Check, ListTodo, Plus, Settings2 } from "lucide-react";
+import {
+	CalendarDays,
+	Check,
+	ListTodo,
+	Plus,
+	Repeat2,
+	Settings2,
+} from "lucide-react";
 import { Popover } from "radix-ui";
 import { type ReactNode, useId, useState } from "react";
 import { toast } from "sonner";
@@ -183,8 +190,8 @@ export function ScheduleCategorySelect({
 }
 
 export type CalendarDisplayOptions = {
-	visibility: { event: boolean; task: boolean };
-	onChangeVisibility: (kind: "event" | "task") => void;
+	visibility: { event: boolean; task: boolean; routine: boolean };
+	onChangeVisibility: (kind: "event" | "task" | "routine") => void;
 	hidden: string[];
 	onChangeHidden: (hidden: string[]) => void;
 };
@@ -298,10 +305,20 @@ export function ScheduleDisplayOptions({
 			<div className="mb-1 px-1 text-[11px] font-semibold text-muted-foreground">
 				{t("표시할 항목")}
 			</div>
-			<div className="grid grid-cols-2 gap-1">
-				{(["task", "event"] as const).map((kind) => {
-					const name = kind === "event" ? t("일정") : t("할 일");
-					const Icon = kind === "event" ? CalendarDays : ListTodo;
+			<div className="space-y-0.5">
+				{(["task", "event", "routine"] as const).map((kind) => {
+					const name =
+						kind === "routine"
+							? t("루틴")
+							: kind === "event"
+								? t("일정")
+								: t("할 일");
+					const Icon =
+						kind === "routine"
+							? Repeat2
+							: kind === "event"
+								? CalendarDays
+								: ListTodo;
 					return (
 						<CalendarDisplayRow
 							key={kind}

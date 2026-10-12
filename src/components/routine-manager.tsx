@@ -32,6 +32,7 @@ import {
 	routineInputSchema,
 	routineScheduleLabel,
 	routineStatus,
+	routineToday,
 } from "#/lib/orbit/routines";
 import type { OrbitSnapshot } from "#/lib/orbit/schema";
 import { useI18n } from "@/components/locale-provider";
@@ -1031,5 +1032,27 @@ function RoutineForm({
 				</Button>
 			</div>
 		</form>
+	);
+}
+
+export function RoutineCalendarEditor({
+	data,
+	routineId,
+	onClose,
+}: {
+	data: RoutineData;
+	routineId: string | null;
+	onClose: () => void;
+}) {
+	const writer = useRoutineWriter();
+	const routine = data.routines.find((entry) => entry.id === routineId);
+	return (
+		<RoutineEditor
+			input={routine ?? null}
+			data={data}
+			today={routineToday(routine?.timeZone ?? "Asia/Seoul")}
+			writer={writer}
+			onClose={onClose}
+		/>
 	);
 }

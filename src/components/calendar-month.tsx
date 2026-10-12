@@ -7,6 +7,7 @@ import {
 	Clock3,
 	ListTodo,
 	Plus,
+	Repeat2,
 } from "lucide-react";
 import {
 	type ComponentProps,
@@ -20,6 +21,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { toast } from "sonner";
 import { dateTimeFormatter, weekdayName } from "#/lib/i18n";
 import {
 	buildMonthLayout,
@@ -33,21 +35,38 @@ import {
 	resizeCalendarItem as resizeScheduledItem,
 } from "#/lib/orbit/calendar-resize";
 import {
+	calendarRoutineItems,
+	isCalendarRoutine,
+} from "#/lib/orbit/calendar-routines";
+import {
 	moveCalendarItem as moveScheduledItem,
 	spansMultipleDays,
 	timedRangeForDay,
 	visibleDayKeys,
 	visibleEndDayKey,
 } from "#/lib/orbit/calendar-schedule";
+import {
+	HOUR_HEIGHT,
+	layoutTimedItems,
+	timedCardHeight,
+} from "#/lib/orbit/calendar-timed-layout";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { itemColor } from "#/lib/orbit/item-colors";
 import { koreanHolidayName } from "#/lib/orbit/korean-holidays";
 import type { CalendarSearch } from "#/lib/orbit/navigation-search";
 import { isPendingItemId } from "#/lib/orbit/optimistic-mutations";
 import { formatDayKey, itemDayKey } from "#/lib/orbit/para";
+import {
+	emptyRoutineData,
+	isRoutineDue,
+	ROUTINE_MOMENTS,
+	type RoutineData,
+	routineToday,
+} from "#/lib/orbit/routines";
 import { visibleScheduleCategory } from "#/lib/orbit/schedule-categories";
 import type { OrbitItem, OrbitSnapshot } from "#/lib/orbit/schema";
 import { useI18n } from "@/components/locale-provider";
+import { RoutineCalendarEditor } from "@/components/routine-manager";
 import {
 	type CalendarDisplayOptions,
 	ScheduleDisplayMenu,
@@ -64,7 +83,7 @@ import { cn } from "@/lib/utils";
 const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
 const HOUR_START = 0;
 const HOUR_END = 24;
-const HOUR_HEIGHT = 56;
+
 const MONTH_ITEMS_TOP = 56;
 const MONTH_LANE_HEIGHT = 26;
 
@@ -116,11 +135,114 @@ type DragOperation = "move" | "resize";
 type CalendarVisibility = {
 	event: boolean;
 	task: boolean;
+	routine: boolean;
 };
 
 const CalendarTasks = createContext<ReturnType<typeof useTaskToggle> | null>(
 	null,
 );
+
+const EMPTY_ROUTINES = emptyRoutineData();
+const CalendarRoutines = createContext<RoutineData>(EMPTY_ROUTINES);
+
+function withRoutineDays(
+	byDay: Map<string, OrbitItem[]>,
+	data: RoutineData,
+	days: string[],
+) {
+	const result = new Map(byDay);
+	// Include yesterday for routines whose duration crosses midnight.
+	const occurrenceDays = days.flatMap((day) => [
+		day,
+		formatDayKey(addDays(parseDayKey(day), -1)),
+	]);
+	for (const item of calendarRoutineItems(data, occurrenceDays)) {
+		for (const day of visibleDayKeys(item)) {
+			const existing = result.get(day) ?? [];
+			if (!existing.some((entry) => entry.id === item.id))
+				result.set(
+					day,
+					[...existing, item].sort((left, right) =>
+						(left.start ?? left.due ?? "").localeCompare(
+							right.start ?? right.due ?? "",
+						),
+					),
+				);
+		}
+	}
+	return result;
+}
+
+function useRoutineDays(byDay: Map<string, OrbitItem[]>, days: Date[]) {
+	const data = useContext(CalendarRoutines);
+	const dayKeys = days.map((day) => formatDayKey(day)).join(",");
+	return useMemo(
+		() => withRoutineDays(byDay, data, dayKeys.split(",")),
+		[byDay, data, dayKeys],
+	);
+}
+
+function CalendarRoutineCheck({
+	item,
+	className,
+}: {
+	item: OrbitItem;
+	className?: string;
+}) {
+	const { t, errorText } = useI18n();
+	const [busy, setBusy] = useState(false);
+	const active = useRef(false);
+	if (!isCalendarRoutine(item)) return null;
+	const { source, day, status } = item.routine;
+	const checked = status === "done";
+	const disabled =
+		busy ||
+		day > routineToday(source.timeZone) ||
+		(status === "open" && !isRoutineDue(source, day));
+	return (
+		<TaskCheck
+			checked={checked}
+			disabled={disabled}
+			className={cn(
+				"absolute left-1 top-0 z-20 pointer-events-auto after:inset-0 disabled:opacity-50",
+				className,
+			)}
+			aria-label={
+				status !== "open"
+					? t("{0} 다시 열기", [item.title])
+					: t("{0} 완료", [item.title])
+			}
+			onPointerDown={(event) => event.stopPropagation()}
+			onClick={async (event) => {
+				event.stopPropagation();
+				if (active.current || disabled) return;
+				active.current = true;
+				setBusy(true);
+				try {
+					await mutateOrbit({
+						data: {
+							action: "set-routine-status",
+							id: source.id,
+							day,
+							status: status === "open" ? "done" : "open",
+						},
+					});
+				} catch (error) {
+					toast.error(
+						errorText(
+							error instanceof Error
+								? error.message
+								: t("루틴을 저장하지 못했습니다."),
+						),
+					);
+				} finally {
+					active.current = false;
+					setBusy(false);
+				}
+			}}
+		/>
+	);
+}
 
 function CalendarTaskCheck({
 	item,
@@ -132,6 +254,8 @@ function CalendarTaskCheck({
 	const { t } = useI18n();
 
 	const tasks = useContext(CalendarTasks);
+	if (isCalendarRoutine(item))
+		return <CalendarRoutineCheck item={item} className={className} />;
 	if (item.type !== "task" || !tasks) return null;
 	const checked = tasks.isChecked(item);
 	return (
@@ -193,14 +317,23 @@ function CalendarItemTitle({
 	className?: string;
 }) {
 	const tasks = useContext(CalendarTasks);
+	const { t } = useI18n();
 	return (
 		<span
 			className={taskTitleClass(
 				item.type === "task" &&
-					(tasks?.isChecked(item) ?? item.status === "done"),
+					(isCalendarRoutine(item)
+						? item.routine.status !== "open"
+						: (tasks?.isChecked(item) ?? item.status === "done")),
 				className,
 			)}
 		>
+			{isCalendarRoutine(item) ? (
+				<Repeat2
+					aria-label={t("루틴")}
+					className="mr-1 inline size-3 align-[-2px]"
+				/>
+			) : null}
 			{item.title}
 		</span>
 	);
@@ -285,7 +418,10 @@ function shortDayLabel(value: string, locale = "ko-KR") {
 
 function itemTimeLabel(item: OrbitItem) {
 	const start = timeOf(item.start ?? item.due);
-	if (!start) return "종일";
+	if (!start)
+		return isCalendarRoutine(item)
+			? ROUTINE_MOMENTS[item.routine.source.moment]
+			: "종일";
 	const end = timeOf(item.end);
 	return end ? `${start}–${end}` : start;
 }
@@ -296,60 +432,6 @@ function eventTone(item: OrbitItem) {
 
 function itemAccent(item: OrbitItem) {
 	return itemColor(item).dot;
-}
-
-function layoutTimedItems(items: OrbitItem[], dayKey: string) {
-	type Entry = {
-		item: OrbitItem;
-		start: number;
-		end: number;
-		label?: string;
-		column: number;
-		columns: number;
-	};
-	const entries: Entry[] = items
-		.map((item) => {
-			const range = timedRangeForDay(item, dayKey);
-			return {
-				item,
-				start: range.start,
-				end: range.end,
-				label: range.label,
-				column: 0,
-				columns: 1,
-			};
-		})
-		.sort((left, right) => left.start - right.start || left.end - right.end);
-	const result: Entry[] = [];
-	let cluster: Entry[] = [];
-	let clusterEnd = -1;
-
-	function flush() {
-		if (cluster.length === 0) return;
-		const columnEnds: number[] = [];
-		for (const entry of cluster) {
-			const available = columnEnds.findIndex((end) => end <= entry.start);
-			entry.column = available === -1 ? columnEnds.length : available;
-			columnEnds[entry.column] = entry.end;
-		}
-		for (const entry of cluster) entry.columns = columnEnds.length;
-		result.push(...cluster);
-		cluster = [];
-	}
-
-	for (const entry of entries) {
-		if (cluster.length > 0 && entry.start >= clusterEnd) flush();
-		cluster.push(entry);
-		clusterEnd = Math.max(clusterEnd, entry.end);
-	}
-	flush();
-	return result;
-}
-
-function timedCardHeight(item: OrbitItem, start: number, end: number) {
-	return item.type === "task" && !item.end
-		? 24
-		: Math.max(2, ((end - start) / 60) * HOUR_HEIGHT);
 }
 
 function CalendarEvent({
@@ -400,30 +482,30 @@ function CalendarEvent({
 			(resizeEndKey ?? dayKey) < endKey,
 	);
 	const canResize = Boolean(
-		onResizeStart &&
+		!isCalendarRoutine(item) &&
+			onResizeStart &&
 			(item.type === "event" || item.type === "task") &&
 			(!endKey || !dayKey || (resizeEndKey ?? dayKey) === endKey),
 	);
 	return (
 		<div
 			className={cn(
-				"group/event relative flex h-full min-h-0 w-full min-w-0 cursor-grab items-start border px-0.5 sm:px-2 text-left transition-colors active:cursor-grabbing",
+				"group/event @container/calendar-event relative flex h-full min-h-0 w-full min-w-0 items-start border px-2 text-left transition-colors active:cursor-grabbing",
+				isCalendarRoutine(item) ? "cursor-pointer" : "cursor-grab",
 				dragging && dragOperation === "move" && "opacity-35",
 				stickyContent ? "overflow-clip" : "overflow-hidden",
 				eventTone(item),
 				continuesFromBefore ? "rounded-l-sm border-l-0" : "rounded-l-md",
 				continuesAfter ? "rounded-r-sm border-r-0" : "rounded-r-md",
 				compact
-					? "h-6 items-center text-[9px] leading-4 sm:text-[11px]"
-					: dense
-						? "items-center py-0.5 text-[11px] shadow-sm"
-						: "py-1.5 text-xs shadow-sm",
+					? "h-6 items-center py-px text-[9px] leading-4 sm:text-[11px]"
+					: "py-1.5 text-xs leading-4 shadow-sm",
 			)}
 		>
 			<button
 				type="button"
-				draggable
-				title={showRange ? `${item.title} · ${displayTime}` : item.title}
+				draggable={!isCalendarRoutine(item)}
+				title={`${item.title} · ${displayTime ? t(displayTime) : t(itemTimeLabel(item))}`}
 				onDragStart={onDragStart}
 				onDragEnd={onDragEnd}
 				onClick={(event) => {
@@ -448,21 +530,26 @@ function CalendarEvent({
 					"pointer-events-none relative z-10 min-w-0 flex-1",
 					horizontalScroll && "calendar-header-content",
 					stickyContent && "sticky top-(--calendar-sticky-top) self-start",
-					item.type === "task" && "min-h-5 pl-6",
+					item.type === "task" && "min-h-4 pl-6",
 					dense && "flex items-center gap-1.5",
 				)}
 			>
-				<CalendarTaskCheck item={item} className="left-0" />
+				<CalendarTaskCheck item={item} className="left-0 size-4" />
 				<span
 					className={cn(
 						"block min-w-0 truncate font-medium",
-						item.type === "task" && "leading-5",
+						item.type === "task" && "leading-4",
 						dense && "flex-1",
 					)}
 				>
-					{compact && !showRange && !continuesFromBefore ? (
+					{compact &&
+					!showRange &&
+					!continuesFromBefore &&
+					!(
+						isCalendarRoutine(item) && item.routine.source.moment === "anytime"
+					) ? (
 						<span className="mr-1 hidden sm:inline font-normal tabular-nums opacity-65">
-							{displayTime ?? timeOf(item.start ?? item.due)}
+							{displayTime ? t(displayTime) : timeOf(item.start ?? item.due)}
 						</span>
 					) : null}
 					<CalendarItemTitle item={item} />
@@ -473,8 +560,8 @@ function CalendarEvent({
 					) : null}
 				</span>
 				{compact ? null : dense ? (
-					<span className="max-w-[45%] shrink-0 truncate tabular-nums opacity-75">
-						{displayTime ?? timeOf(item.start ?? item.due)}
+					<span className="hidden @[160px]/calendar-event:block max-w-[45%] shrink-0 truncate tabular-nums opacity-75">
+						{displayTime ? t(displayTime) : timeOf(item.start ?? item.due)}
 					</span>
 				) : (
 					<span className="mt-0.5 block truncate opacity-70">
@@ -493,7 +580,7 @@ function CalendarEvent({
 						"absolute z-20 touch-none",
 						compact
 							? "inset-y-0 right-0 w-2 cursor-ew-resize"
-							: "inset-x-0 bottom-0 h-2 cursor-ns-resize",
+							: "left-8 right-0 bottom-0 h-2 cursor-ns-resize",
 					)}
 				/>
 			) : null}
@@ -547,7 +634,12 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 	const [visibility, setVisibility] = useState<CalendarVisibility>({
 		event: true,
 		task: true,
+		routine: true,
 	});
+	const [editingRoutine, setEditingRoutine] = useState<string | null>(null);
+	const routineData = visibility.routine
+		? (snapshot.routineData ?? EMPTY_ROUTINES)
+		: EMPTY_ROUTINES;
 	const [editor, setEditor] = useState<EditorState>({
 		open: false,
 		kind: "event",
@@ -692,8 +784,11 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 				),
 			);
 		}
-		return map;
-	}, [dated]);
+		return withRoutineDays(map, routineData, [
+			...gridDays(cursor).map((day) => formatDayKey(day)),
+			selectedDate,
+		]);
+	}, [dated, routineData, cursor, selectedDate]);
 	const selectedItems = byDay.get(selectedDate) ?? [];
 
 	function openNew(
@@ -711,6 +806,10 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 	}
 
 	function openItem(item: OrbitItem) {
+		if (isCalendarRoutine(item)) {
+			setEditingRoutine(item.routine.source.id);
+			return;
+		}
 		const date = itemDayKey(item);
 		if (date) updateCalendar({ selected: date });
 		setEditor({
@@ -753,6 +852,10 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 		item: OrbitItem,
 		event: React.DragEvent<HTMLButtonElement>,
 	) {
+		if (isCalendarRoutine(item)) {
+			event.preventDefault();
+			return;
+		}
 		event.dataTransfer.effectAllowed = "move";
 		event.dataTransfer.setData("text/orbit-item-id", item.id);
 		const card = event.currentTarget.parentElement ?? event.currentTarget;
@@ -776,7 +879,12 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 		item: OrbitItem,
 		event: React.PointerEvent<HTMLButtonElement>,
 	) {
-		if (event.button !== 0 || isPendingItemId(item.id)) return;
+		if (
+			isCalendarRoutine(item) ||
+			event.button !== 0 ||
+			isPendingItemId(item.id)
+		)
+			return;
 		event.preventDefault();
 		event.stopPropagation();
 		resizePointerRef.current = event.pointerId;
@@ -946,70 +1054,109 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 	}, [draggingId, dragOperation]);
 
 	return (
-		<div ref={calendarRef} className="h-full min-h-0 bg-muted/20 p-0 md:p-3">
-			<div className="orbit-card flex h-full min-h-0 flex-col overflow-hidden rounded-none border-x-0 bg-background shadow-none md:rounded-[var(--radius-xl)] md:border-x md:shadow-sm">
-				<header className="flex min-h-14 shrink-0 items-center gap-1.5 border-b border-border/60 px-2 sm:min-h-16 sm:gap-2 sm:px-4">
-					<Button
-						variant="outline"
-						size="sm"
-						className="hidden font-medium sm:inline-flex"
-						onClick={() => {
-							setNavigationVersion((version) => version + 1);
-							const now = new Date();
-							setVisibleDate(
-								view === "week"
-									? formatDayKey(startOfWeek(now))
-									: formatDayKey(now),
-							);
-							updateCalendar({
-								date: formatDayKey(now),
-								selected: formatDayKey(now),
-							});
-						}}
-					>
-						{t("오늘")}
-					</Button>
-					<div className="flex items-center gap-0.5">
+		<CalendarRoutines.Provider value={routineData}>
+			<div ref={calendarRef} className="h-full min-h-0 bg-muted/20 p-0 md:p-3">
+				<div className="orbit-card flex h-full min-h-0 flex-col overflow-hidden rounded-none border-x-0 bg-background shadow-none md:rounded-[var(--radius-xl)] md:border-x md:shadow-sm">
+					<header className="flex min-h-14 shrink-0 items-center gap-1.5 border-b border-border/60 px-2 sm:min-h-16 sm:gap-2 sm:px-4">
 						<Button
-							variant="ghost"
-							size="icon-sm"
-							onClick={() => move(-1)}
-							aria-label={t("이전 {0}", [
-								view === "day" ? t("날") : view === "week" ? t("주") : t("달"),
-							])}
+							variant="outline"
+							size="sm"
+							className="hidden font-medium sm:inline-flex"
+							onClick={() => {
+								setNavigationVersion((version) => version + 1);
+								const now = new Date();
+								setVisibleDate(
+									view === "week"
+										? formatDayKey(startOfWeek(now))
+										: formatDayKey(now),
+								);
+								updateCalendar({
+									date: formatDayKey(now),
+									selected: formatDayKey(now),
+								});
+							}}
 						>
-							<ChevronLeft />
+							{t("오늘")}
 						</Button>
+						<div className="flex items-center gap-0.5">
+							<Button
+								variant="ghost"
+								size="icon-sm"
+								onClick={() => move(-1)}
+								aria-label={t("이전 {0}", [
+									view === "day"
+										? t("날")
+										: view === "week"
+											? t("주")
+											: t("달"),
+								])}
+							>
+								<ChevronLeft />
+							</Button>
+							<Button
+								variant="ghost"
+								size="icon-sm"
+								onClick={() => move(1)}
+								aria-label={t("다음 {0}", [
+									view === "day"
+										? t("날")
+										: view === "week"
+											? t("주")
+											: t("달"),
+								])}
+							>
+								<ChevronRight />
+							</Button>
+						</div>
+						<h2 className="min-w-0 flex-1 truncate px-1 text-base font-semibold tracking-tight sm:text-lg">
+							{view === "day"
+								? dayLabel(cursor, intlLocale)
+								: view === "week"
+									? weekLabel(visibleCursor, true, intlLocale)
+									: monthLabel(visibleCursor, intlLocale)}
+						</h2>
+						<div className="hidden rounded-lg bg-muted/80 p-0.5 sm:flex">
+							{(["day", "week", "month"] as const).map((value, index) => (
+								<Button
+									key={value}
+									type="button"
+									variant="ghost"
+									size="sm"
+									className={cn(
+										"h-7 px-2.5",
+										view === value &&
+											"bg-background shadow-sm hover:bg-background",
+									)}
+									aria-pressed={view === value}
+									onClick={() => chooseView(value)}
+								>
+									{value === "day"
+										? t("일간")
+										: value === "week"
+											? t("주간")
+											: t("월간")}
+									<span className="ml-1 hidden text-[10px] text-muted-foreground sm:inline">
+										{index + 1}
+									</span>
+								</Button>
+							))}
+						</div>
+						<ScheduleDisplayMenu {...displayOptions} />
 						<Button
-							variant="ghost"
-							size="icon-sm"
-							onClick={() => move(1)}
-							aria-label={t("다음 {0}", [
-								view === "day" ? t("날") : view === "week" ? t("주") : t("달"),
-							])}
+							size="sm"
+							aria-label={t("추가")}
+							onClick={() => openNew(selectedDate)}
 						>
-							<ChevronRight />
+							<Plus /> <span className="hidden sm:inline">{t("추가")}</span>
 						</Button>
-					</div>
-					<h2 className="min-w-0 flex-1 truncate px-1 text-base font-semibold tracking-tight sm:text-lg">
-						{view === "day"
-							? dayLabel(cursor, intlLocale)
-							: view === "week"
-								? weekLabel(visibleCursor, true, intlLocale)
-								: monthLabel(visibleCursor, intlLocale)}
-					</h2>
-					<div className="hidden rounded-lg bg-muted/80 p-0.5 sm:flex">
-						{(["day", "week", "month"] as const).map((value, index) => (
+					</header>
+					<div className="grid shrink-0 grid-cols-3 gap-1 border-b border-border/60 bg-muted/20 p-1.5 sm:hidden">
+						{(["day", "week", "month"] as const).map((value) => (
 							<Button
 								key={value}
-								type="button"
 								variant="ghost"
 								size="sm"
-								className={cn(
-									"h-7 px-2.5",
-									view === value &&
-										"bg-background shadow-sm hover:bg-background",
-								)}
+								className={cn(view === value && "bg-muted")}
 								aria-pressed={view === value}
 								onClick={() => chooseView(value)}
 							>
@@ -1018,134 +1165,112 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 									: value === "week"
 										? t("주간")
 										: t("월간")}
-								<span className="ml-1 hidden text-[10px] text-muted-foreground sm:inline">
-									{index + 1}
-								</span>
 							</Button>
 						))}
 					</div>
-					<ScheduleDisplayMenu {...displayOptions} />
-					<Button
-						size="sm"
-						aria-label={t("추가")}
-						onClick={() => openNew(selectedDate)}
-					>
-						<Plus /> <span className="hidden sm:inline">{t("추가")}</span>
-					</Button>
-				</header>
-				<div className="grid shrink-0 grid-cols-3 gap-1 border-b border-border/60 bg-muted/20 p-1.5 sm:hidden">
-					{(["day", "week", "month"] as const).map((value) => (
-						<Button
-							key={value}
-							variant="ghost"
-							size="sm"
-							className={cn(view === value && "bg-muted")}
-							aria-pressed={view === value}
-							onClick={() => chooseView(value)}
-						>
-							{value === "day"
-								? t("일간")
-								: value === "week"
-									? t("주간")
-									: t("월간")}
-						</Button>
-					))}
-				</div>
-				{dragError ? (
-					<div className="shrink-0 border-b bg-destructive/5 px-4 py-2 text-xs text-destructive">
-						{errorText(dragError)}
-					</div>
-				) : null}
+					{dragError ? (
+						<div className="shrink-0 border-b bg-destructive/5 px-4 py-2 text-xs text-destructive">
+							{errorText(dragError)}
+						</div>
+					) : null}
 
-				<div className="flex min-h-0 flex-1">
-					{isMobile && view === "day" ? (
-						<MobileCalendarView
-							view={view}
-							cursor={cursor}
-							byDay={byDay}
-							today={today}
-							selectedDate={selectedDate}
-							onSelectDate={selectDate}
-							onCreate={openNew}
-							onOpen={openItem}
-							onMove={move}
-						/>
-					) : (
-						<>
-							<CalendarRail
-								cursor={visibleCursor}
+					<div className="flex min-h-0 flex-1">
+						{isMobile && view === "day" ? (
+							<MobileCalendarView
+								view={view}
+								cursor={cursor}
+								byDay={byDay}
+								today={today}
 								selectedDate={selectedDate}
-								selectedItems={selectedItems}
-								displayOptions={displayOptions}
-								onMoveMonth={(amount) =>
-									updateCalendar({
-										date: formatDayKey(addMonths(visibleCursor, amount)),
-									})
-								}
 								onSelectDate={selectDate}
 								onCreate={openNew}
 								onOpen={openItem}
+								onMove={move}
 							/>
+						) : (
+							<>
+								<CalendarRail
+									cursor={visibleCursor}
+									selectedDate={selectedDate}
+									selectedItems={selectedItems}
+									displayOptions={displayOptions}
+									onMoveMonth={(amount) =>
+										updateCalendar({
+											date: formatDayKey(addMonths(visibleCursor, amount)),
+										})
+									}
+									onSelectDate={selectDate}
+									onCreate={openNew}
+									onOpen={openItem}
+								/>
 
-							<div className="flex min-w-0 flex-1 flex-col">
-								{view !== "month" ? (
-									<WeekView
-										key={`${navigationVersion}:${view}:${view === "week" ? formatDayKey(startOfWeek(cursor)) : cursorKey}`}
-										onVisibleDate={setVisibleDate}
-										cursor={cursor}
-										dayCount={view === "day" ? 1 : 7}
-										dragGrabOffset={dragGrabOffset}
-										byDay={byDay}
-										today={today}
-										selectedDate={selectedDate}
-										onSelectDate={selectDate}
-										onCreate={openNew}
-										onOpen={openItem}
-										draggingId={draggingId}
-										dragOperation={dragOperation}
-										dragTarget={dragTarget}
-										onDragStart={startDrag}
-										onResizeStart={startResize}
-										onDragEnd={endDrag}
-										onDragPreview={previewDrag}
-										onDrop={dropOn}
-									/>
-								) : (
-									<MonthView
-										onVisibleDate={setVisibleDate}
-										key={`${navigationVersion}:${cursor.getFullYear()}-${cursor.getMonth()}`}
-										cursor={cursor}
-										byDay={byDay}
-										today={today}
-										selectedDate={selectedDate}
-										onSelectDate={selectDate}
-										onCreate={openNew}
-										onOpen={openItem}
-										draggingId={draggingId}
-										dragOperation={dragOperation}
-										dragTarget={dragTarget}
-										onDragStart={startDrag}
-										onResizeStart={startResize}
-										onDragEnd={endDrag}
-										onDragPreview={previewDrag}
-										onDrop={dropOn}
-									/>
-								)}
-							</div>
-						</>
-					)}
+								<div className="flex min-w-0 flex-1 flex-col">
+									{view !== "month" ? (
+										<WeekView
+											key={`${navigationVersion}:${view}:${view === "week" ? formatDayKey(startOfWeek(cursor)) : cursorKey}`}
+											onVisibleDate={setVisibleDate}
+											cursor={cursor}
+											dayCount={view === "day" ? 1 : 7}
+											dragGrabOffset={dragGrabOffset}
+											byDay={byDay}
+											today={today}
+											selectedDate={selectedDate}
+											onSelectDate={selectDate}
+											onCreate={openNew}
+											onOpen={openItem}
+											draggingId={draggingId}
+											dragOperation={dragOperation}
+											dragTarget={dragTarget}
+											onDragStart={startDrag}
+											onResizeStart={startResize}
+											onDragEnd={endDrag}
+											onDragPreview={previewDrag}
+											onDrop={dropOn}
+										/>
+									) : (
+										<MonthView
+											onVisibleDate={setVisibleDate}
+											key={`${navigationVersion}:${cursor.getFullYear()}-${cursor.getMonth()}`}
+											cursor={cursor}
+											byDay={byDay}
+											today={today}
+											selectedDate={selectedDate}
+											onSelectDate={selectDate}
+											onCreate={openNew}
+											onOpen={openItem}
+											draggingId={draggingId}
+											dragOperation={dragOperation}
+											dragTarget={dragTarget}
+											onDragStart={startDrag}
+											onResizeStart={startResize}
+											onDragEnd={endDrag}
+											onDragPreview={previewDrag}
+											onDrop={dropOn}
+										/>
+									)}
+								</div>
+							</>
+						)}
+					</div>
 				</div>
-			</div>
 
-			<ScheduleEditor
-				open={editor.open}
-				onOpenChange={(open) => setEditor((current) => ({ ...current, open }))}
-				kind={editor.kind}
-				item={editor.item}
-				initialDate={editor.date}
-				initialTime={editor.time}
-			/>
-		</div>
+				<RoutineCalendarEditor
+					data={snapshot.routineData ?? EMPTY_ROUTINES}
+					routineId={editingRoutine}
+					onClose={() => setEditingRoutine(null)}
+				/>
+				<ScheduleEditor
+					open={editor.open}
+					onOpenChange={(open) =>
+						setEditor((current) => ({ ...current, open }))
+					}
+					kind={editor.kind}
+					item={editor.item}
+					initialDate={editor.date}
+					initialTime={editor.time}
+				/>
+			</div>
+		</CalendarRoutines.Provider>
 	);
 }
 
@@ -1207,7 +1332,7 @@ function MobileAgenda({
 									) : null}
 								</>
 							) : (
-								<span>{t("종일")}</span>
+								<span>{t(itemTimeLabel(item))}</span>
 							)}
 						</span>
 						<span
@@ -1225,7 +1350,11 @@ function MobileAgenda({
 								) : (
 									<ListTodo className="size-3" />
 								)}
-								{item.type === "event" ? t("일정") : t("할 일")}
+								{isCalendarRoutine(item)
+									? t("루틴")
+									: item.type === "event"
+										? t("일정")
+										: t("할 일")}
 								{spansMultipleDays(item) ? t("· 여러 날") : ""}
 							</span>
 						</span>
@@ -1649,7 +1778,7 @@ function WeekView({
 	cursor,
 	onVisibleDate,
 	dayCount,
-	byDay,
+	byDay: suppliedByDay,
 	today,
 	selectedDate,
 	onSelectDate,
@@ -1761,6 +1890,7 @@ function WeekView({
 			),
 		[startTime, dayCount, range.start, range.end],
 	);
+	const byDay = useRoutineDays(suppliedByDay, days);
 	const columns = days.length;
 	const weekLayout = useMemo(() => buildWeekLayout(byDay, days), [byDay, days]);
 	const hours = Array.from(
@@ -2196,10 +2326,9 @@ function WeekView({
 										className="pointer-events-none absolute z-20 opacity-65"
 										style={{
 											top:
-												((previewRange.start - HOUR_START * 60) / 60) *
+												((previewLayout.start - HOUR_START * 60) / 60) *
 												HOUR_HEIGHT,
 											height: timedCardHeight(
-												previewItem,
 												previewRange.start,
 												previewRange.end,
 											),
@@ -2214,18 +2343,12 @@ function WeekView({
 												previewRange.label ? t(previewRange.label) : undefined
 											}
 											dense={
-												timedCardHeight(
-													previewItem,
-													previewRange.start,
-													previewRange.end,
-												) < 40
+												timedCardHeight(previewRange.start, previewRange.end) <
+												56
 											}
 											stickyContent={
-												timedCardHeight(
-													previewItem,
-													previewRange.start,
-													previewRange.end,
-												) >= 40
+												timedCardHeight(previewRange.start, previewRange.end) >=
+												56
 											}
 											onClick={() => {}}
 											onDragStart={() => {}}
@@ -2236,11 +2359,7 @@ function WeekView({
 								{layoutTimedItems(timed, key).map((layout) => {
 									const top =
 										((layout.start - HOUR_START * 60) / 60) * HOUR_HEIGHT;
-									const height = timedCardHeight(
-										layout.item,
-										layout.start,
-										layout.end,
-									);
+									const height = timedCardHeight(layout.start, layout.end);
 									return (
 										<div
 											key={layout.item.id}
@@ -2254,8 +2373,8 @@ function WeekView({
 										>
 											<CalendarEvent
 												item={layout.item}
-												dense={height < 40}
-												stickyContent={height >= 40}
+												dense={height < 56}
+												stickyContent={height >= 56}
 												dayKey={key}
 												displayTime={layout.label ? t(layout.label) : undefined}
 												resizeEndKey={key}
@@ -2424,7 +2543,7 @@ function MonthGrid({
 	cursor,
 	days: suppliedDays,
 	minHeight = 0,
-	byDay,
+	byDay: suppliedByDay,
 	today,
 	selectedDate,
 	onSelectDate,
@@ -2470,6 +2589,7 @@ function MonthGrid({
 	const { t, intlLocale } = useI18n();
 
 	const days = suppliedDays ?? gridDays(cursor);
+	const byDay = useRoutineDays(suppliedByDay, days);
 	const monthLayout = buildMonthLayout(byDay, days);
 	const rowHeights = monthLayout.rowLaneCounts.map((count) =>
 		Math.max(112, MONTH_ITEMS_TOP + count * MONTH_LANE_HEIGHT + 6),
