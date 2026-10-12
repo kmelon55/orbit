@@ -37,6 +37,7 @@ import {
 import {
 	calendarRoutineItems,
 	isCalendarRoutine,
+	moveCalendarRoutine,
 } from "#/lib/orbit/calendar-routines";
 import {
 	moveCalendarItem as moveScheduledItem,
@@ -125,6 +126,12 @@ function HolidayLabel({
 			{holiday}
 		</span>
 	);
+}
+
+function moveCalendarEntry(item: OrbitItem, target: DragTarget) {
+	return isCalendarRoutine(item)
+		? moveCalendarRoutine(item, target)
+		: moveScheduledItem(item, target);
 }
 
 type CalendarView = "day" | "week" | "month";
@@ -492,8 +499,7 @@ function CalendarEvent({
 			(resizeEndKey ?? dayKey) < endKey,
 	);
 	const canResize = Boolean(
-		!isCalendarRoutine(item) &&
-			onResizeStart &&
+		onResizeStart &&
 			(item.type === "event" || item.type === "task") &&
 			(!endKey || !dayKey || (resizeEndKey ?? dayKey) === endKey),
 	);
@@ -501,7 +507,7 @@ function CalendarEvent({
 		<div
 			className={cn(
 				"group/event @container/calendar-event relative flex h-full min-h-0 w-full min-w-0 items-start border px-2 text-left transition-colors active:cursor-grabbing",
-				isCalendarRoutine(item) ? "cursor-pointer" : "cursor-grab",
+				"cursor-grab",
 				dragging && dragOperation === "move" && "opacity-35",
 				stickyContent ? "overflow-clip" : "overflow-hidden",
 				eventTone(item),
@@ -514,7 +520,7 @@ function CalendarEvent({
 		>
 			<button
 				type="button"
-				draggable={!isCalendarRoutine(item)}
+				draggable
 				title={`${item.title} · ${displayTime ? t(displayTime) : t(itemTimeLabel(item))}`}
 				onDragStart={onDragStart}
 				onDragEnd={onDragEnd}
@@ -555,9 +561,7 @@ function CalendarEvent({
 					{compact &&
 					!showRange &&
 					!continuesFromBefore &&
-					!(
-						isCalendarRoutine(item) && item.routine.source.moment === "anytime"
-					) ? (
+					!(isCalendarRoutine(item) && !item.start?.includes("T")) ? (
 						<span className="mr-1 hidden sm:inline font-normal tabular-nums opacity-65">
 							{displayTime ? t(displayTime) : timeOf(item.start ?? item.due)}
 						</span>
@@ -658,9 +662,6 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 		routine: true,
 	});
 	const [editingRoutine, setEditingRoutine] = useState<string | null>(null);
-	const routineData = visibility.routine
-		? (snapshot.routineData ?? EMPTY_ROUTINES)
-		: EMPTY_ROUTINES;
 	const [editor, setEditor] = useState<EditorState>({
 		open: false,
 		kind: "event",
@@ -680,6 +681,10 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 	const calendarRef = useRef<HTMLDivElement>(null);
 	const resizePointerRef = useRef<number | null>(null);
 	const [localItems, setLocalItems] = useState(snapshot.items);
+	const [draggingRoutine, setDraggingRoutine] = useState<OrbitItem | null>(
+		null,
+	);
+	const draggingRoutineRef = useRef<OrbitItem | null>(null);
 	const [draggingId, setDraggingId] = useState<string | null>(null);
 	const [dragOperation, setDragOperation] = useState<DragOperation>("move");
 	const [dragTarget, setDragTarget] = useState<DragTarget | null>(null);
@@ -692,6 +697,39 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 	const saveQueuesRef = useRef<Map<string, Promise<void>>>(new Map());
 	const saveVersionsRef = useRef<Map<string, number>>(new Map());
 	localItemsRef.current = localItems;
+	const routineData = useMemo(() => {
+		const data = visibility.routine
+			? (snapshot.routineData ?? EMPTY_ROUTINES)
+			: EMPTY_ROUTINES;
+		if (
+			!draggingRoutine ||
+			!isCalendarRoutine(draggingRoutine) ||
+			dragOperation !== "resize" ||
+			!dragTarget
+		)
+			return data;
+		const next = resizeScheduledItem(draggingRoutine, dragTarget);
+		if (!next.start) return data;
+		const { source, day } = draggingRoutine.routine;
+		return {
+			...data,
+			schedules: {
+				...data.schedules,
+				[`${day}:${source.id}`]: {
+					routineId: source.id,
+					day,
+					start: next.start,
+					end: next.end,
+				},
+			},
+		};
+	}, [
+		visibility.routine,
+		snapshot.routineData,
+		draggingRoutine,
+		dragOperation,
+		dragTarget,
+	]);
 
 	useEffect(() => {
 		setLocalItems(snapshot.items);
@@ -865,10 +903,8 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 		item: OrbitItem,
 		event: React.DragEvent<HTMLButtonElement>,
 	) {
-		if (isCalendarRoutine(item)) {
-			event.preventDefault();
-			return;
-		}
+		draggingRoutineRef.current = isCalendarRoutine(item) ? item : null;
+		setDraggingRoutine(draggingRoutineRef.current);
 		event.dataTransfer.effectAllowed = "move";
 		event.dataTransfer.setData("text/orbit-item-id", item.id);
 		const card = event.currentTarget.parentElement ?? event.currentTarget;
@@ -892,15 +928,12 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 		item: OrbitItem,
 		event: React.PointerEvent<HTMLButtonElement>,
 	) {
-		if (
-			isCalendarRoutine(item) ||
-			event.button !== 0 ||
-			isPendingItemId(item.id)
-		)
-			return;
+		if (event.button !== 0 || isPendingItemId(item.id)) return;
 		event.preventDefault();
 		event.stopPropagation();
 		resizePointerRef.current = event.pointerId;
+		draggingRoutineRef.current = isCalendarRoutine(item) ? item : null;
+		setDraggingRoutine(draggingRoutineRef.current);
 		draggingIdRef.current = item.id;
 		dragOperationRef.current = "resize";
 		dragTargetRef.current = null;
@@ -913,6 +946,8 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 	}
 
 	function endDrag() {
+		draggingRoutineRef.current = null;
+		setDraggingRoutine(null);
 		const pointer = resizePointerRef.current;
 		if (pointer !== null && calendarRef.current?.hasPointerCapture(pointer)) {
 			calendarRef.current.releasePointerCapture(pointer);
@@ -946,13 +981,30 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 	) {
 		const id = transferredId || draggingIdRef.current || draggingId;
 		if (!id) return;
-		const current = localItemsRef.current.find((item) => item.id === id);
+		const current =
+			draggingRoutineRef.current?.id === id
+				? draggingRoutineRef.current
+				: localItemsRef.current.find((item) => item.id === id);
 		if (!current) return;
 		const next =
 			operation === "resize"
 				? resizeScheduledItem(current, target)
-				: moveScheduledItem(current, target);
+				: moveCalendarEntry(current, target);
 		if (next === current) return;
+		if (isCalendarRoutine(current) && next.start) {
+			void mutateOrbit({
+				data: {
+					action: "set-routine-schedule",
+					id: current.routine.source.id,
+					day: current.routine.day,
+					schedule: { start: next.start, end: next.end },
+				},
+			}).catch(() =>
+				setDragError(t("일정을 저장하지 못해 원래 위치로 돌렸습니다.")),
+			);
+			endDrag();
+			return;
+		}
 		setLocalItems((items) =>
 			items.map((item) => (item.id === id ? next : item)),
 		);
@@ -2290,7 +2342,7 @@ function WeekView({
 							draggingItem &&
 							dragTarget?.mode === "time" &&
 							dragTarget.time
-								? moveScheduledItem(draggingItem, dragTarget)
+								? moveCalendarEntry(draggingItem, dragTarget)
 								: null;
 						const previewRange =
 							previewItem &&
