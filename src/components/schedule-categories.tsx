@@ -1,6 +1,7 @@
 import {
 	CalendarDays,
 	Check,
+	ChevronDown,
 	ListTodo,
 	Plus,
 	Repeat2,
@@ -290,6 +291,8 @@ export function ScheduleDisplayOptions({
 	onChangeHidden,
 }: CalendarDisplayOptions) {
 	const { t } = useI18n();
+	const [itemsOpen, setItemsOpen] = useState(true);
+	const itemsId = useId();
 
 	const categories = useScheduleCategories();
 	const uncategorized = useUncategorizedCategory();
@@ -302,35 +305,60 @@ export function ScheduleDisplayOptions({
 	}
 	return (
 		<fieldset className="min-w-0" aria-label={t("달력 표시")}>
-			<div className="mb-1 px-1 text-[11px] font-semibold text-muted-foreground">
+			<button
+				type="button"
+				aria-expanded={itemsOpen}
+				aria-controls={itemsId}
+				onClick={() => setItemsOpen((open) => !open)}
+				className="mb-1 flex w-full items-center justify-between rounded-md px-1 py-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-ring"
+			>
 				{t("표시할 항목")}
-			</div>
-			<div className="space-y-0.5">
-				{(["task", "event", "routine"] as const).map((kind) => {
-					const name =
-						kind === "routine"
-							? t("루틴")
-							: kind === "event"
-								? t("일정")
-								: t("할 일");
-					const Icon =
-						kind === "routine"
-							? Repeat2
-							: kind === "event"
-								? CalendarDays
-								: ListTodo;
-					return (
-						<CalendarDisplayRow
-							key={kind}
-							name={name}
-							visible={visibility[kind]}
-							onToggle={() => onChangeVisibility(kind)}
-							icon={
-								<Icon className="size-3.5 shrink-0 text-muted-foreground" />
-							}
-						/>
-					);
-				})}
+				<ChevronDown
+					className={cn(
+						"size-3.5 transition-transform duration-200 motion-reduce:transition-none",
+						!itemsOpen && "-rotate-90",
+					)}
+				/>
+			</button>
+			<div
+				id={itemsId}
+				inert={!itemsOpen}
+				className={cn(
+					"grid transition-[grid-template-rows,opacity] duration-200 ease-in-out motion-reduce:transition-none",
+					itemsOpen
+						? "grid-rows-[1fr] opacity-100"
+						: "grid-rows-[0fr] opacity-0",
+				)}
+			>
+				<div className="min-h-0 overflow-hidden">
+					<div className="space-y-0.5">
+						{(["task", "event", "routine"] as const).map((kind) => {
+							const name =
+								kind === "routine"
+									? t("루틴")
+									: kind === "event"
+										? t("일정")
+										: t("할 일");
+							const Icon =
+								kind === "routine"
+									? Repeat2
+									: kind === "event"
+										? CalendarDays
+										: ListTodo;
+							return (
+								<CalendarDisplayRow
+									key={kind}
+									name={name}
+									visible={visibility[kind]}
+									onToggle={() => onChangeVisibility(kind)}
+									icon={
+										<Icon className="size-3.5 shrink-0 text-muted-foreground" />
+									}
+								/>
+							);
+						})}
+					</div>
+				</div>
 			</div>
 			<div className="mt-3 border-t pt-2">
 				<div className="mb-1 flex items-center justify-between gap-2 px-1">
