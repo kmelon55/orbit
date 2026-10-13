@@ -80,6 +80,7 @@ import {
 import { ScheduleEditor } from "@/components/schedule-editor";
 import { TaskCheck, taskTitleClass } from "@/components/task-check";
 import { Button } from "@/components/ui/button";
+import { useCalendarVisibility } from "@/hooks/use-calendar-visibility";
 import { useKoreanHolidays } from "@/hooks/use-korean-holidays";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useTaskToggle } from "@/hooks/use-task-toggle";
@@ -144,11 +145,6 @@ type EditorState = {
 	end?: string;
 };
 type DragOperation = "move" | "resize";
-type CalendarVisibility = {
-	event: boolean;
-	task: boolean;
-	routine: boolean;
-};
 
 const CalendarTasks = createContext<ReturnType<typeof useTaskToggle> | null>(
 	null,
@@ -656,11 +652,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 		},
 		[updateCalendar],
 	);
-	const [visibility, setVisibility] = useState<CalendarVisibility>({
-		event: true,
-		task: true,
-		routine: true,
-	});
+	const [visibility, toggleVisibility] = useCalendarVisibility(view);
 	const [editingRoutine, setEditingRoutine] = useState<string | null>(null);
 	const [editor, setEditor] = useState<EditorState>({
 		open: false,
@@ -668,8 +660,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 	});
 	const displayOptions: CalendarDisplayOptions = {
 		visibility,
-		onChangeVisibility: (kind) =>
-			setVisibility((current) => ({ ...current, [kind]: !current[kind] })),
+		onChangeVisibility: toggleVisibility,
 		hidden: hiddenCategories ?? [],
 		onChangeHidden: (hiddenCategories) =>
 			updateCalendar({
