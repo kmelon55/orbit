@@ -1,8 +1,12 @@
 import { moveItemLocally } from "./item-move";
-import { spaceConfig } from "./para";
+import { folderOf, spaceConfig } from "./para";
 import type { OrbitMutation, OrbitSnapshot } from "./schema";
 import { mergeSnapshotItems } from "./snapshot-overlay";
-import { remapTreeOrder, removeFolderTreeOrder } from "./tree-move";
+import {
+	remapTreeOrder,
+	removeFolderTreeOrder,
+	transferFolderTreeOrder,
+} from "./tree-move";
 import { toVaultSlug } from "./vault-slug";
 
 export type FolderMutation = Extract<
@@ -24,7 +28,11 @@ function destination(mutation: FolderMutation) {
 	if (mutation.action === "delete-folder") return mutation.input.path;
 	const parts = mutation.input.path.split("/");
 	return [
-		mutation.input.parent ?? parts.slice(0, -1).join("/"),
+		mutation.input.parent ??
+			(mutation.input.destinationSpace &&
+			mutation.input.destinationSpace !== mutation.input.space
+				? ""
+				: parts.slice(0, -1).join("/")),
 		mutation.input.name ? toVaultSlug(mutation.input.name) : parts.at(-1),
 	]
 		.filter(Boolean)
@@ -34,7 +42,11 @@ export function folderMutationObserved(
 	snapshot: OrbitSnapshot,
 	mutation: FolderMutation,
 ) {
-	const folders = snapshot.folders[mutation.input.space];
+	const destinationSpace =
+		mutation.action === "update-folder"
+			? (mutation.input.destinationSpace ?? mutation.input.space)
+			: mutation.input.space;
+	const folders = snapshot.folders[destinationSpace];
 	const next = destination(mutation);
 	if (mutation.action === "delete-folder") {
 		const inside = (value: string) =>
@@ -54,8 +66,11 @@ export function folderMutationObserved(
 		folder &&
 			(!mutation.input.color || folder.color === mutation.input.color) &&
 			(mutation.action !== "update-folder" ||
-				next === mutation.input.path ||
-				!folders.some((entry) => entry.slug === mutation.input.path)),
+				(destinationSpace === mutation.input.space &&
+					next === mutation.input.path) ||
+				!snapshot.folders[mutation.input.space].some(
+					(entry) => entry.slug === mutation.input.path,
+				)),
 	);
 }
 export function projectFolderMutation(
@@ -143,6 +158,97 @@ export function projectFolderMutation(
 		};
 	}
 	if (!source) return snapshot;
+	const nextSpace = mutation.input.destinationSpace ?? space;
+	if (nextSpace !== space) {
+		if (snapshot.folders[nextSpace].some((folder) => folder.slug === nextPath))
+			return snapshot;
+		const moved = snapshot.items.filter(
+			(item) => item.space === space && inside(folderOf(item) ?? ""),
+		);
+		const ids = new Set(moved.map((item) => item.id));
+		const order = transferFolderTreeOrder(
+			snapshot.treeOrder?.[space] ?? {},
+			snapshot.treeOrder?.[nextSpace] ?? {},
+			oldPath,
+			nextPath,
+			ids,
+		);
+		const movedFolders = folders
+			.filter((folder) => inside(folder.slug))
+			.map((folder) => {
+				const slug = nextPath + folder.slug.slice(oldPath.length);
+				const parts = slug.split("/");
+				return {
+					...folder,
+					space: nextSpace,
+					slug,
+					name: parts.at(-1) ?? slug,
+					parent: parts.slice(0, -1).join("/") || undefined,
+					depth: parts.length - 1,
+					color:
+						folder.slug === oldPath
+							? (mutation.input.color ?? folder.color)
+							: folder.color,
+				};
+			});
+		const nextItems = snapshot.items.map((item) => {
+			if (!ids.has(item.id)) return item;
+			const folder = nextPath + (folderOf(item) ?? "").slice(oldPath.length);
+			return {
+				...item,
+				space: nextSpace,
+				folder,
+				path: `${spaceConfig(nextSpace)?.vault}/${folder}/${item.path.split("/").at(-1)}`,
+			};
+		});
+		const countFolders = (entries: typeof folders, target: typeof space) =>
+			entries.map((folder) => ({
+				...folder,
+				count: nextItems.filter(
+					(item) => item.space === target && folderOf(item) === folder.slug,
+				).length,
+				descendantCount: nextItems.filter(
+					(item) =>
+						item.space === target &&
+						(folderOf(item) === folder.slug ||
+							folderOf(item)?.startsWith(`${folder.slug}/`)),
+				).length,
+			}));
+		const prefix = `${spaceConfig(space)?.vault}/${oldPath}/`;
+		return mergeSnapshotItems(
+			{
+				...snapshot,
+				items: nextItems,
+				canvases: snapshot.canvases.map((canvas) =>
+					canvas.path.startsWith(prefix)
+						? {
+								...canvas,
+								path: `${spaceConfig(nextSpace)?.vault}/${nextPath}/${canvas.path.slice(prefix.length)}`,
+							}
+						: canvas,
+				),
+				folders: {
+					...snapshot.folders,
+					[space]: countFolders(
+						folders.filter((folder) => !inside(folder.slug)),
+						space,
+					),
+					[nextSpace]: countFolders(
+						[...snapshot.folders[nextSpace], ...movedFolders],
+						nextSpace,
+					),
+				},
+				treeOrder: {
+					...snapshot.treeOrder,
+					[space]: order.source,
+					[nextSpace]: order.destination,
+				},
+			},
+			[],
+			true,
+		);
+	}
+
 	if (
 		nextPath !== oldPath &&
 		(inside(nextPath) || folders.some((folder) => folder.slug === nextPath))

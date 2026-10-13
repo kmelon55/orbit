@@ -43,6 +43,7 @@ import {
 	planTreeMove,
 	remapTreeOrder,
 	removeFolderTreeOrder,
+	transferFolderTreeOrder,
 } from "./tree-move";
 import type { MutationReceipt, UndoResult } from "./undo-events";
 import { splitVaultObjectKey, toVaultSlug } from "./vault-key";
@@ -781,22 +782,33 @@ export async function updateOrbitFolder(input: UpdateFolderInput) {
 	const currentParts = splitVaultObjectKey(currentPath);
 	if (currentParts.length === 0) throw new Error("Folder path is required");
 
+	const nextSpace = parsed.destinationSpace ?? parsed.space;
+	const crossSpace = nextSpace !== parsed.space;
 	let nextPath = currentPath;
-	if (parsed.name || parsed.parent !== undefined) {
+	if (parsed.name || parsed.parent !== undefined || crossSpace) {
 		const nextName = parsed.name
 			? toVaultSlug(parsed.name)
 			: (currentParts.at(-1) ?? currentPath);
 		const parent =
 			parsed.parent !== undefined
-				? await existingFolderPath(vaultRoot, parsed.space, parsed.parent)
-				: currentParts.slice(0, -1).join("/");
-		if (parent === currentPath || parent.startsWith(`${currentPath}/`))
+				? await existingFolderPath(vaultRoot, nextSpace, parsed.parent)
+				: crossSpace
+					? ""
+					: currentParts.slice(0, -1).join("/");
+		if (
+			!crossSpace &&
+			(parent === currentPath || parent.startsWith(`${currentPath}/`))
+		)
 			throw new Error("자신의 하위 폴더로 이동할 수 없습니다.");
 		nextPath = [parent, nextName].filter(Boolean).join("/");
-		if (nextPath !== currentPath) {
+		if (crossSpace || nextPath !== currentPath) {
 			const root = path.join(vaultRoot, folderRoot(parsed.space));
 			const source = path.join(root, ...currentParts);
-			const destination = path.join(root, ...splitVaultObjectKey(nextPath));
+			const destination = path.join(
+				vaultRoot,
+				folderRoot(nextSpace),
+				...splitVaultObjectKey(nextPath),
+			);
 			assertInsideVault(vaultRoot, source);
 			assertInsideVault(vaultRoot, destination);
 			try {
@@ -806,12 +818,33 @@ export async function updateOrbitFolder(input: UpdateFolderInput) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 			}
 			await moveDocument(source, destination);
+			if (crossSpace) {
+				const prefix = `${destination}${path.sep}`;
+				for (const file of db()
+					.paths("item")
+					.filter((file) => file.startsWith(prefix))) {
+					const document = db().read(file);
+					if (!document.item) continue;
+					const parsedDocument = matter(document.raw);
+					db().write(
+						file,
+						matter.stringify(parsedDocument.content, {
+							...parsedDocument.data,
+							space: nextSpace,
+						}),
+						false,
+						{ created: document.created, modified: document.modified },
+					);
+				}
+			}
 		}
 	}
 
 	const metadata = await readFolderMetadata(vaultRoot);
 	const currentMetadata = metadata.folders[parsed.space] ?? {};
-	const nextMetadata: Record<string, { color: OrbitFolderColor }> = {};
+	const nextMetadata: Record<string, { color: OrbitFolderColor }> = crossSpace
+		? { ...metadata.folders[nextSpace] }
+		: {};
 	for (const [folderPath, value] of Object.entries(currentMetadata)) {
 		if (
 			folderPath === currentPath ||
@@ -819,26 +852,52 @@ export async function updateOrbitFolder(input: UpdateFolderInput) {
 		) {
 			const suffix = folderPath.slice(currentPath.length);
 			nextMetadata[`${nextPath}${suffix}`] = value;
-		} else {
+			if (crossSpace) delete currentMetadata[folderPath];
+		} else if (!crossSpace) {
 			nextMetadata[folderPath] = value;
 		}
 	}
 	if (parsed.color) {
 		nextMetadata[nextPath] = { color: parsed.color };
 	}
-	if (metadata.treeOrder?.[parsed.space] && currentPath !== nextPath) {
+	if (crossSpace) {
+		const movedIds = new Set(
+			db()
+				.items()
+				.filter(
+					(item) =>
+						item.space === nextSpace &&
+						(item.folder === nextPath ||
+							item.folder?.startsWith(`${nextPath}/`)),
+				)
+				.map((item) => item.id),
+		);
+		const order = transferFolderTreeOrder(
+			metadata.treeOrder?.[parsed.space] ?? {},
+			metadata.treeOrder?.[nextSpace] ?? {},
+			currentPath,
+			nextPath,
+			movedIds,
+		);
+		metadata.treeOrder = {
+			...metadata.treeOrder,
+			[parsed.space]: order.source,
+			[nextSpace]: order.destination,
+		};
+		metadata.folders[parsed.space] = currentMetadata;
+	} else if (metadata.treeOrder?.[parsed.space] && currentPath !== nextPath) {
 		metadata.treeOrder[parsed.space] = remapTreeOrder(
 			metadata.treeOrder[parsed.space] ?? {},
 			currentPath,
 			nextPath,
 		);
 	}
-	metadata.folders[parsed.space] = nextMetadata;
+	metadata.folders[nextSpace] = nextMetadata;
 	await writeFolderMetadata(vaultRoot, metadata);
 
 	const parts = splitVaultObjectKey(nextPath);
 	return {
-		space: parsed.space,
+		space: nextSpace,
 		slug: nextPath,
 		name: parts.at(-1) ?? nextPath,
 		parent: parts.length > 1 ? parts.slice(0, -1).join("/") : undefined,

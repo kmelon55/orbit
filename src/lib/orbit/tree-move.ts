@@ -7,6 +7,32 @@ import type {
 	TreeOrder,
 } from "./schema";
 
+export function transferFolderTreeOrder(
+	source: TreeOrder,
+	destination: TreeOrder,
+	from: string,
+	to: string,
+	itemIds: ReadonlySet<string>,
+) {
+	const subtree = Object.fromEntries(
+		Object.entries(source).filter(
+			([parent]) => parent === from || parent.startsWith(`${from}/`),
+		),
+	);
+	const parent = to.split("/").slice(0, -1).join("/");
+	return {
+		source: removeFolderTreeOrder(source, from, itemIds),
+		destination: {
+			...destination,
+			...remapTreeOrder(subtree, from, to),
+			[parent]: [
+				...(destination[parent] ?? []).filter((key) => key !== `folder:${to}`),
+				`folder:${to}`,
+			],
+		},
+	};
+}
+
 export function removeFolderTreeOrder(
 	order: TreeOrder,
 	folder: string,

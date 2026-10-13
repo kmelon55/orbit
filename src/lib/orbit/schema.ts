@@ -135,6 +135,7 @@ export const createFolderInputSchema = z.object({
 });
 
 export const updateFolderInputSchema = z.object({
+	destinationSpace: paraFolderSpaceSchema.optional(),
 	parent: z.string().trim().max(500).optional(),
 	space: paraFolderSpaceSchema,
 	path: z.string().trim().min(1).max(500),

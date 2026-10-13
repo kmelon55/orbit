@@ -4,6 +4,7 @@ import {
 	FilePlus2,
 	FileText,
 	FolderClosed,
+	FolderInput,
 	FolderPlus,
 	Link as LinkIcon,
 	ListTodo,
@@ -28,6 +29,7 @@ import {
 	type FolderSpaceId,
 	folderOf,
 	itemsInSpace,
+	SPACE_LABEL,
 	spaceConfig,
 } from "#/lib/orbit/para";
 import type {
@@ -275,6 +277,40 @@ function UnifiedFolderWorkspace({
 		}
 	}
 
+	async function moveFolder(
+		folder: OrbitFolder,
+		destinationSpace: FolderSpaceId,
+		controls: ItemWorkspaceNavigatorContext,
+	) {
+		if (saving) return;
+		setSaving(true);
+		setError(undefined);
+		try {
+			await colorQueuesRef.current.get(folder.slug);
+			const ids = controls.items
+				.filter(
+					(item) =>
+						folderOf(item) === folder.slug ||
+						folderOf(item)?.startsWith(`${folder.slug}/`),
+				)
+				.map((item) => item.id);
+			await controls.runWithSavedItems(ids, () =>
+				mutateOrbit({
+					data: {
+						action: "update-folder",
+						input: { space, path: folder.slug, destinationSpace, parent: "" },
+					},
+				}),
+			);
+		} catch (error) {
+			setError(
+				error instanceof Error ? error.message : t("이동하지 못했습니다."),
+			);
+		} finally {
+			setSaving(false);
+		}
+	}
+
 	function renderFolder(
 		{ folder, depth, hasChildren, expanded }: FolderRow,
 		controls: ItemWorkspaceNavigatorContext,
@@ -321,6 +357,23 @@ function UnifiedFolderWorkspace({
 							<FolderPlus /> {t("하위 폴더 만들기")}
 						</ContextMenuItem>
 						<ContextMenuSeparator />
+						<ContextMenuSub>
+							<ContextMenuSubTrigger disabled={saving}>
+								<FolderInput /> {t("옮기기…")}
+							</ContextMenuSubTrigger>
+							<ContextMenuSubContent className="w-40">
+								{(["project", "area", "resource", "archive"] as const)
+									.filter((target) => target !== space)
+									.map((target) => (
+										<ContextMenuItem
+											key={target}
+											onSelect={() => void moveFolder(folder, target, controls)}
+										>
+											{t(SPACE_LABEL[target])}
+										</ContextMenuItem>
+									))}
+							</ContextMenuSubContent>
+						</ContextMenuSub>
 						<ContextMenuSub>
 							<ContextMenuSubTrigger>
 								<Palette /> {t("색상")}
