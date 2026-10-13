@@ -1,6 +1,7 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
 	CalendarDays,
+	ChevronDown,
 	ChevronLeft,
 	ChevronRight,
 	Circle,
@@ -53,7 +54,7 @@ import {
 import {
 	HOUR_HEIGHT,
 	layoutTimedItems,
-	timedCardHeight,
+	MIN_TIMED_CARD_HEIGHT,
 } from "#/lib/orbit/calendar-timed-layout";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { itemColor } from "#/lib/orbit/item-colors";
@@ -80,6 +81,7 @@ import {
 import { ScheduleEditor } from "@/components/schedule-editor";
 import { TaskCheck, taskTitleClass } from "@/components/task-check";
 import { Button } from "@/components/ui/button";
+import { useCalendarTimeZoom } from "@/hooks/use-calendar-time-zoom";
 import { useCalendarVisibility } from "@/hooks/use-calendar-visibility";
 import { useKoreanHolidays } from "@/hooks/use-korean-holidays";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -511,7 +513,9 @@ function CalendarEvent({
 				continuesAfter ? "rounded-r-sm border-r-0" : "rounded-r-md",
 				compact
 					? "h-6 items-center py-px text-[9px] leading-4 sm:text-[11px]"
-					: "py-1.5 text-xs leading-4 shadow-sm",
+					: dense
+						? "items-center py-0 text-xs leading-4 shadow-sm"
+						: "py-1.5 text-xs leading-4 shadow-sm",
 			)}
 		>
 			<button
@@ -614,7 +618,8 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 	const { t, intlLocale, errorText } = useI18n();
 
-	const isMobile = useIsMobile();
+	const [hourHeight, setHourHeight] = useState(HOUR_HEIGHT);
+	const [headerCollapsed, setHeaderCollapsed] = useState(false);
 	const location = useSearch({ from: "/calendar" });
 	const navigate = useNavigate({ from: "/calendar" });
 	const view = location.view ?? "month";
@@ -919,7 +924,8 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 		item: OrbitItem,
 		event: React.PointerEvent<HTMLButtonElement>,
 	) {
-		if (event.button !== 0 || isPendingItemId(item.id)) return;
+		if (event.button !== 0 || !event.isPrimary || isPendingItemId(item.id))
+			return;
 		event.preventDefault();
 		event.stopPropagation();
 		resizePointerRef.current = event.pointerId;
@@ -1066,7 +1072,11 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 					return {
 						date,
 						mode: "time",
-						time: calendarResizeTime(event.clientY, rect.top, HOUR_HEIGHT),
+						time: calendarResizeTime(
+							event.clientY,
+							rect.top,
+							Number(cell.dataset.calendarHourHeight) || HOUR_HEIGHT,
+						),
 					};
 				}
 				return { date, mode: "keep-time" };
@@ -1231,82 +1241,70 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 					) : null}
 
 					<div className="flex min-h-0 flex-1">
-						{isMobile && view === "day" ? (
-							<MobileCalendarView
-								view={view}
-								cursor={cursor}
-								byDay={byDay}
-								today={today}
-								selectedDate={selectedDate}
-								onSelectDate={selectDate}
-								onCreate={openNew}
-								onOpen={openItem}
-								onMove={move}
-							/>
-						) : (
-							<>
-								<CalendarRail
-									cursor={visibleCursor}
+						<CalendarRail
+							cursor={visibleCursor}
+							selectedDate={selectedDate}
+							selectedItems={selectedItems}
+							displayOptions={displayOptions}
+							onMoveMonth={(amount) =>
+								updateCalendar({
+									date: formatDayKey(addMonths(visibleCursor, amount)),
+								})
+							}
+							onSelectDate={selectDate}
+							onCreate={openNew}
+							onOpen={openItem}
+						/>
+
+						<div className="flex min-w-0 flex-1 flex-col">
+							{view !== "month" ? (
+								<WeekView
+									hourHeight={hourHeight}
+									onHourHeightChange={setHourHeight}
+									headerCollapsed={headerCollapsed}
+									onHeaderCollapsedChange={setHeaderCollapsed}
+									key={`${navigationVersion}:${view}:${view === "week" ? formatDayKey(startOfWeek(cursor)) : cursorKey}`}
+									onVisibleDate={setVisibleDate}
+									cursor={cursor}
+									dayCount={view === "day" ? 1 : 7}
+									dragGrabOffset={dragGrabOffset}
+									byDay={byDay}
+									today={today}
 									selectedDate={selectedDate}
-									selectedItems={selectedItems}
-									displayOptions={displayOptions}
-									onMoveMonth={(amount) =>
-										updateCalendar({
-											date: formatDayKey(addMonths(visibleCursor, amount)),
-										})
-									}
 									onSelectDate={selectDate}
 									onCreate={openNew}
 									onOpen={openItem}
+									draggingId={draggingId}
+									dragOperation={dragOperation}
+									dragTarget={dragTarget}
+									onDragStart={startDrag}
+									onResizeStart={startResize}
+									onDragEnd={endDrag}
+									onDragPreview={previewDrag}
+									onDrop={dropOn}
 								/>
-
-								<div className="flex min-w-0 flex-1 flex-col">
-									{view !== "month" ? (
-										<WeekView
-											key={`${navigationVersion}:${view}:${view === "week" ? formatDayKey(startOfWeek(cursor)) : cursorKey}`}
-											onVisibleDate={setVisibleDate}
-											cursor={cursor}
-											dayCount={view === "day" ? 1 : 7}
-											dragGrabOffset={dragGrabOffset}
-											byDay={byDay}
-											today={today}
-											selectedDate={selectedDate}
-											onSelectDate={selectDate}
-											onCreate={openNew}
-											onOpen={openItem}
-											draggingId={draggingId}
-											dragOperation={dragOperation}
-											dragTarget={dragTarget}
-											onDragStart={startDrag}
-											onResizeStart={startResize}
-											onDragEnd={endDrag}
-											onDragPreview={previewDrag}
-											onDrop={dropOn}
-										/>
-									) : (
-										<MonthView
-											onVisibleDate={setVisibleDate}
-											key={`${navigationVersion}:${cursor.getFullYear()}-${cursor.getMonth()}`}
-											cursor={cursor}
-											byDay={byDay}
-											today={today}
-											selectedDate={selectedDate}
-											onSelectDate={selectDate}
-											onCreate={openNew}
-											onOpen={openItem}
-											draggingId={draggingId}
-											dragOperation={dragOperation}
-											dragTarget={dragTarget}
-											onDragStart={startDrag}
-											onResizeStart={startResize}
-											onDragEnd={endDrag}
-											onDragPreview={previewDrag}
-											onDrop={dropOn}
-										/>
-									)}
-								</div>
-							</>
-						)}
+							) : (
+								<MonthView
+									onVisibleDate={setVisibleDate}
+									key={`${navigationVersion}:${cursor.getFullYear()}-${cursor.getMonth()}`}
+									cursor={cursor}
+									byDay={byDay}
+									today={today}
+									selectedDate={selectedDate}
+									onSelectDate={selectDate}
+									onCreate={openNew}
+									onOpen={openItem}
+									draggingId={draggingId}
+									dragOperation={dragOperation}
+									dragTarget={dragTarget}
+									onDragStart={startDrag}
+									onResizeStart={startResize}
+									onDragEnd={endDrag}
+									onDragPreview={previewDrag}
+									onDrop={dropOn}
+								/>
+							)}
+						</div>
 					</div>
 				</div>
 
@@ -1427,280 +1425,6 @@ function MobileAgenda({
 					/>
 				</div>
 			))}
-		</div>
-	);
-}
-
-function MobileDayView({
-	cursor,
-	byDay,
-	today,
-	selectedDate,
-	onSelectDate,
-	onCreate,
-	onOpen,
-}: {
-	cursor: Date;
-	byDay: Map<string, OrbitItem[]>;
-	today: string;
-	selectedDate: string;
-	onSelectDate: (date: string) => void;
-	onCreate: (
-		date: string,
-		time?: string,
-		kind?: EditorState["kind"],
-		end?: string,
-	) => void;
-	onOpen: (item: OrbitItem) => void;
-}) {
-	const { t, intlLocale } = useI18n();
-
-	const start = startOfWeek(cursor);
-	const days = Array.from({ length: 7 }, (_, index) => addDays(start, index));
-	const items = byDay.get(selectedDate) ?? [];
-	return (
-		<div className="flex min-h-0 flex-1 flex-col">
-			<div className="grid shrink-0 grid-cols-7 border-b border-border/60 px-1 py-1.5">
-				{days.map((day) => {
-					const key = formatDayKey(day);
-					const selected = key === selectedDate;
-					const count = (byDay.get(key) ?? []).length;
-					return (
-						<button
-							key={key}
-							type="button"
-							onClick={() => onSelectDate(key)}
-							aria-label={calendarDateLabel(key, intlLocale)}
-							className="flex min-h-14 flex-col items-center justify-center rounded-xl text-[10px] text-muted-foreground"
-						>
-							<span className={calendarDayTone(day)}>
-								{weekdayName(day.getDay(), intlLocale)}
-							</span>
-							<span
-								className={cn(
-									"mt-0.5 grid size-7 place-items-center rounded-full text-sm font-semibold text-foreground",
-									!selected && key !== today && calendarDayTone(day),
-									selected && "bg-foreground text-background",
-									key === today && !selected && "text-blue-600",
-								)}
-							>
-								{day.getDate()}
-							</span>
-							<span
-								className={cn(
-									"mt-0.5 size-1 rounded-full",
-									count > 0 ? "bg-foreground/65" : "bg-transparent",
-								)}
-							/>
-						</button>
-					);
-				})}
-			</div>
-			<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3">
-				<div className="mb-3 flex items-center justify-between">
-					<div>
-						<h3 className="text-base font-semibold">
-							{shortDayLabel(selectedDate, intlLocale)}
-						</h3>
-						<HolidayLabel date={selectedDate} />
-						<p className="text-xs text-muted-foreground">
-							{items.length > 0
-								? t("{0}개 항목", [items.length])
-								: t("여유 있는 날")}
-						</p>
-					</div>
-					<CalendarCreateButton date={selectedDate} onCreate={onCreate} />
-				</div>
-				<MobileAgenda
-					items={items}
-					date={selectedDate}
-					onCreate={onCreate}
-					onOpen={onOpen}
-				/>
-			</div>
-		</div>
-	);
-}
-
-function MobileWeekView({
-	cursor,
-	byDay,
-	today,
-	selectedDate,
-	onSelectDate,
-	onCreate,
-	onOpen,
-}: {
-	cursor: Date;
-	byDay: Map<string, OrbitItem[]>;
-	today: string;
-	selectedDate: string;
-	onSelectDate: (date: string) => void;
-	onCreate: (
-		date: string,
-		time?: string,
-		kind?: EditorState["kind"],
-		end?: string,
-	) => void;
-	onOpen: (item: OrbitItem) => void;
-}) {
-	const { t, intlLocale } = useI18n();
-
-	const start = startOfWeek(cursor);
-	const days = Array.from({ length: 7 }, (_, index) => addDays(start, index));
-	return (
-		<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-muted/20 p-2.5">
-			<div className="space-y-2">
-				{days.map((day) => {
-					const key = formatDayKey(day);
-					const items = byDay.get(key) ?? [];
-					return (
-						<section
-							key={key}
-							className={cn(
-								"overflow-hidden rounded-2xl border bg-background",
-								key === selectedDate && "ring-1 ring-foreground/15",
-							)}
-						>
-							<div className="flex items-center gap-2 border-b border-border/50 px-2 py-1.5">
-								<button
-									type="button"
-									onClick={() => onSelectDate(key)}
-									aria-label={calendarDateLabel(key, intlLocale)}
-									className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 py-1 text-left"
-								>
-									<span
-										className={cn(
-											"grid size-8 shrink-0 place-items-center rounded-full text-sm font-semibold",
-											key !== today && calendarDayTone(day),
-											key === today && "bg-blue-600 text-white",
-										)}
-									>
-										{day.getDate()}
-									</span>
-									<span className="min-w-0 flex-1">
-										<span
-											className={cn(
-												"text-sm font-medium",
-												calendarDayTone(day),
-											)}
-										>
-											{weekdayName(day.getDay(), intlLocale)}
-											{t("요일")}
-										</span>
-										<HolidayLabel date={key} />
-									</span>
-									<span className="text-xs text-muted-foreground">
-										{items.length ? t("{0}개", [items.length]) : t("비어 있음")}
-									</span>
-								</button>
-								<CalendarCreateButton date={key} onCreate={onCreate} />
-							</div>
-							{items.length > 0 ? (
-								<div className="space-y-1 p-1.5">
-									{items.map((item) => (
-										<button
-											key={item.id}
-											type="button"
-											onClick={() => onOpen(item)}
-											className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left active:bg-muted"
-										>
-											<span
-												className={cn(
-													"size-2 shrink-0 rounded-full",
-													itemAccent(item),
-												)}
-											/>
-											<span className="w-16 shrink-0 text-[11px] tabular-nums text-muted-foreground">
-												{t(itemTimeLabel(item))}
-											</span>
-											<span className="min-w-0 flex-1 truncate text-sm font-medium">
-												{item.title}
-											</span>
-										</button>
-									))}
-								</div>
-							) : null}
-						</section>
-					);
-				})}
-			</div>
-		</div>
-	);
-}
-
-function MobileCalendarView({
-	view,
-	cursor,
-	byDay,
-	today,
-	selectedDate,
-	onSelectDate,
-	onCreate,
-	onOpen,
-	onMove,
-}: {
-	view: CalendarView;
-	cursor: Date;
-	byDay: Map<string, OrbitItem[]>;
-	today: string;
-	selectedDate: string;
-	onSelectDate: (date: string) => void;
-	onCreate: (
-		date: string,
-		time?: string,
-		kind?: EditorState["kind"],
-		end?: string,
-	) => void;
-	onOpen: (item: OrbitItem) => void;
-	onMove: (amount: number) => void;
-}) {
-	const touchStart = useRef<{ x: number; y: number } | null>(null);
-	const shared = {
-		cursor,
-		byDay,
-		today,
-		selectedDate,
-		onSelectDate,
-		onCreate,
-		onOpen,
-	};
-	return (
-		<div
-			className={cn(
-				"flex min-h-0 min-w-0 flex-1 overflow-hidden",
-				view === "month" && "touch-pan-y",
-			)}
-			onTouchStart={(event) => {
-				if (event.touches.length !== 1) {
-					touchStart.current = null;
-					return;
-				}
-				const touch = event.touches[0];
-				touchStart.current = touch
-					? { x: touch.clientX, y: touch.clientY }
-					: null;
-			}}
-			onTouchEnd={(event) => {
-				const start = touchStart.current;
-				const touch = event.changedTouches[0];
-				touchStart.current = null;
-				if (!start || !touch) return;
-				const dx = touch.clientX - start.x;
-				const dy = touch.clientY - start.y;
-				if (Math.abs(dx) > 64 && Math.abs(dx) > Math.abs(dy) * 1.35) {
-					onMove(dx > 0 ? -1 : 1);
-				}
-			}}
-			onTouchCancel={() => {
-				touchStart.current = null;
-			}}
-		>
-			{view === "day" ? (
-				<MobileDayView {...shared} />
-			) : (
-				<MobileWeekView {...shared} />
-			)}
 		</div>
 	);
 }
@@ -1856,7 +1580,51 @@ function CalendarRail({
 	);
 }
 
+function CurrentTimeIndicator({
+	day,
+	hourHeight,
+}: {
+	day: string;
+	hourHeight: number;
+}) {
+	const [now, setNow] = useState<Date | null>(null);
+
+	useEffect(() => {
+		const update = () => {
+			if (document.visibilityState === "visible") setNow(new Date());
+		};
+		update();
+		const interval = window.setInterval(update, 5 * 60_000);
+		document.addEventListener("visibilitychange", update);
+		window.addEventListener("focus", update);
+		return () => {
+			window.clearInterval(interval);
+			document.removeEventListener("visibilitychange", update);
+			window.removeEventListener("focus", update);
+		};
+	}, []);
+
+	if (!now || formatDayKey(now) !== day) return null;
+	const hours =
+		now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3_600;
+
+	return (
+		<div
+			aria-hidden="true"
+			data-calendar-current-time
+			className="pointer-events-none absolute inset-x-0 z-20 border-t border-red-500"
+			style={{ top: (hours - HOUR_START) * hourHeight }}
+		>
+			<span className="absolute -top-1 -left-1 size-2 rounded-full bg-red-500" />
+		</div>
+	);
+}
+
 function WeekView({
+	hourHeight,
+	onHourHeightChange,
+	headerCollapsed,
+	onHeaderCollapsedChange,
 	cursor,
 	onVisibleDate,
 	dayCount,
@@ -1876,6 +1644,10 @@ function WeekView({
 	onDragPreview,
 	onDrop,
 }: {
+	hourHeight: number;
+	onHourHeightChange: (height: number) => void;
+	headerCollapsed: boolean;
+	onHeaderCollapsedChange: (collapsed: boolean) => void;
 	cursor: Date;
 	onVisibleDate: (date: string) => void;
 	dayCount: 1 | 7;
@@ -1950,7 +1722,7 @@ function WeekView({
 				return event.clientX >= rect.left && event.clientX < rect.right;
 			}) ?? drag.column;
 		const current =
-			((event.clientY - column.getBoundingClientRect().top) / HOUR_HEIGHT) * 60;
+			((event.clientY - column.getBoundingClientRect().top) / hourHeight) * 60;
 		return calendarRangeSelection(
 			drag.date,
 			drag.anchor,
@@ -1960,13 +1732,24 @@ function WeekView({
 	}
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const headerRef = useRef<HTMLDivElement>(null);
+	const suppressZoomClick = useCalendarTimeZoom({
+		scrollRef,
+		headerRef,
+		hourHeight,
+		onHourHeightChange,
+		onGestureStart: () => {
+			selectionRef.current = null;
+			setSelection(null);
+			if (draggingId) onDragEnd();
+		},
+	});
 	const initialized = useRef(false);
 	const pendingPrepend = useRef<{ start: number; left: number } | null>(null);
 	const [viewportWidth, setViewportWidth] = useState(0);
 	const [range, setRange] = useState({ start: -7, end: 13 });
 	const columnWidth =
 		dayCount === 1
-			? Math.max(284, viewportWidth - 56)
+			? Math.max(0, viewportWidth - 56)
 			: Math.max(96, (viewportWidth - 56) / 7);
 	useLayoutEffect(() => {
 		const element = scrollRef.current;
@@ -2030,15 +1813,21 @@ function WeekView({
 		{ length: HOUR_END - HOUR_START },
 		(_, index) => HOUR_START + index,
 	);
-	const calendarHeight = (HOUR_END - HOUR_START) * HOUR_HEIGHT;
+	// Leave room for the minimum-height label of an event just before midnight.
+	const calendarHeight =
+		(HOUR_END - HOUR_START) * hourHeight + MIN_TIMED_CARD_HEIGHT;
 	const draggingItem = Array.from(byDay.values())
 		.flat()
 		.find((item) => item.id === draggingId);
 
+	const currentHourHeight = useRef(hourHeight);
+	useLayoutEffect(() => {
+		currentHourHeight.current = hourHeight;
+	}, [hourHeight]);
 	useEffect(() => {
 		const hour = formatDayKey(cursor) === today ? new Date().getHours() : 8;
 		scrollRef.current?.scrollTo({
-			top: Math.max(0, (hour - 2) * HOUR_HEIGHT),
+			top: Math.max(0, (hour - 2) * currentHourHeight.current),
 			behavior: "auto",
 		});
 	}, [cursor, today]);
@@ -2047,7 +1836,7 @@ function WeekView({
 		return calendarMoveTime(
 			clientY,
 			element.getBoundingClientRect().top,
-			HOUR_HEIGHT,
+			hourHeight,
 			dragGrabOffset,
 		);
 	}
@@ -2056,6 +1845,13 @@ function WeekView({
 		<div
 			ref={scrollRef}
 			data-calendar-week-scroll
+			data-calendar-hour-height={hourHeight}
+			onClickCapture={(event) => {
+				if (suppressZoomClick()) {
+					event.preventDefault();
+					event.stopPropagation();
+				}
+			}}
 			onScroll={(event) => {
 				if (dayCount === 1 || !initialized.current || pendingPrepend.current)
 					return;
@@ -2081,7 +1877,7 @@ function WeekView({
 					setRange((current) => ({ ...current, end: current.end + 7 }));
 				}
 			}}
-			className="relative min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain [overflow-anchor:none]"
+			className="relative min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain [touch-action:pan-x_pan-y] [overflow-anchor:none]"
 			style={
 				{
 					"--calendar-sticky-top": `${headerHeight + 4}px`,
@@ -2144,19 +1940,40 @@ function WeekView({
 							gridTemplateColumns: `56px repeat(${columns}, minmax(0, 1fr))`,
 						}}
 					>
-						<div className="sticky left-0 z-40 border-r bg-background px-1 py-2 text-center text-[10px] text-muted-foreground">
-							{t("종일·기간")}
+						<div className="sticky left-0 z-40 border-r bg-background text-muted-foreground">
+							<button
+								type="button"
+								className="flex min-h-11 w-full flex-col items-center justify-center gap-0.5 px-0.5 text-[9px] hover:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+								aria-label={`${t("종일")} ${t(headerCollapsed ? "펼치기" : "접기")}`}
+								aria-expanded={!headerCollapsed}
+								aria-controls="calendar-all-day-items"
+								onClick={() => onHeaderCollapsedChange(!headerCollapsed)}
+							>
+								<ChevronDown
+									className={cn(
+										"size-3.5 transition-transform duration-200 motion-reduce:transition-none",
+										headerCollapsed && "-rotate-90",
+									)}
+								/>
+								<span>{t("종일")}</span>
+							</button>
 						</div>
 						<div
 							data-calendar-header
-							className="relative col-start-2 -col-end-1 grid overflow-y-auto"
+							id="calendar-all-day-items"
+							aria-hidden={headerCollapsed}
+							inert={headerCollapsed}
+							className={cn(
+								"relative col-start-2 -col-end-1 grid transition-[height,opacity] duration-200 ease-out motion-reduce:transition-none",
+								headerCollapsed
+									? "overflow-hidden opacity-0"
+									: "overflow-y-auto opacity-100",
+							)}
 							style={{
 								gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
-								maxHeight: 160,
-								height: Math.max(
-									44,
-									weekLayout.laneCount * MONTH_LANE_HEIGHT + 8,
-								),
+								height: headerCollapsed
+									? 44
+									: `min(160px, 22dvh, ${Math.max(44, weekLayout.laneCount * MONTH_LANE_HEIGHT + 8)}px)`,
 							}}
 						>
 							{days.map((day) => {
@@ -2316,7 +2133,7 @@ function WeekView({
 									"absolute right-2 text-[10px] text-muted-foreground",
 									hour === HOUR_START ? "translate-y-1" : "-translate-y-1/2",
 								)}
-								style={{ top: (hour - HOUR_START) * HOUR_HEIGHT }}
+								style={{ top: (hour - HOUR_START) * hourHeight }}
 							>
 								{String(hour).padStart(2, "0")}:00
 							</span>
@@ -2349,6 +2166,7 @@ function WeekView({
 											previewItem,
 										],
 										key,
+										hourHeight,
 									).find((entry) => entry.item.id === previewItem.id)
 								: null;
 						return (
@@ -2362,6 +2180,7 @@ function WeekView({
 								style={{ height: calendarHeight }}
 								data-calendar-date={key}
 								data-calendar-mode="time"
+								data-calendar-hour-height={hourHeight}
 								onDragOver={(event) => {
 									event.preventDefault();
 									event.dataTransfer.dropEffect = "move";
@@ -2413,8 +2232,8 @@ function WeekView({
 												draggingId && "pointer-events-none",
 											)}
 											style={{
-												top: (index * HOUR_HEIGHT) / 2,
-												height: HOUR_HEIGHT / 2,
+												top: (index * hourHeight) / 2,
+												height: hourHeight / 2,
 											}}
 											data-calendar-slot={time}
 											onPointerDown={(event) => {
@@ -2437,7 +2256,7 @@ function WeekView({
 													anchor:
 														((event.clientY -
 															column.getBoundingClientRect().top) /
-															HOUR_HEIGHT) *
+															hourHeight) *
 														60,
 													startX: event.clientX,
 													startY: event.clientY,
@@ -2475,9 +2294,11 @@ function WeekView({
 											}}
 											onClick={(event) => {
 												if (
-													event.detail === 0 &&
-													event.clientX === 0 &&
-													event.clientY === 0
+													(event.nativeEvent as PointerEvent).pointerType ===
+														"touch" ||
+													(event.detail === 0 &&
+														event.clientX === 0 &&
+														event.clientY === 0)
 												)
 													onCreate(key, time);
 											}}
@@ -2489,10 +2310,10 @@ function WeekView({
 										data-calendar-selection
 										className="pointer-events-none absolute inset-x-1 z-20 rounded-md border border-blue-500 bg-blue-500/20 px-2 py-1 text-xs text-blue-700 dark:text-blue-200"
 										style={{
-											top: (selectedRange.start / 60) * HOUR_HEIGHT,
+											top: (selectedRange.start / 60) * hourHeight,
 											height:
 												((selectedRange.end - selectedRange.start) / 60) *
-												HOUR_HEIGHT,
+												hourHeight,
 										}}
 									>
 										{String(Math.floor(selectedRange.start / 60)).padStart(
@@ -2511,7 +2332,7 @@ function WeekView({
 									<div
 										key={hour}
 										className="pointer-events-none absolute inset-x-0 border-t"
-										style={{ top: (hour - HOUR_START) * HOUR_HEIGHT }}
+										style={{ top: (hour - HOUR_START) * hourHeight }}
 									/>
 								))}
 								{hours.map((hour) => (
@@ -2519,24 +2340,11 @@ function WeekView({
 										key={`${hour}:30`}
 										className="pointer-events-none absolute inset-x-0 border-t border-dashed border-border/35"
 										style={{
-											top: (hour - HOUR_START + 0.5) * HOUR_HEIGHT,
+											top: (hour - HOUR_START + 0.5) * hourHeight,
 										}}
 									/>
 								))}
-								{key === today ? (
-									<div
-										className="pointer-events-none absolute inset-x-0 z-20 border-t border-red-500"
-										style={{
-											top:
-												((new Date().getHours() * 60 +
-													new Date().getMinutes()) /
-													60) *
-												HOUR_HEIGHT,
-										}}
-									>
-										<span className="absolute -top-1 -left-1 size-2 rounded-full bg-red-500" />
-									</div>
-								) : null}
+								<CurrentTimeIndicator day={key} hourHeight={hourHeight} />
 								{previewItem &&
 								previewRange &&
 								previewLayout &&
@@ -2546,13 +2354,8 @@ function WeekView({
 										aria-hidden="true"
 										className="pointer-events-none absolute z-20 opacity-65"
 										style={{
-											top:
-												((previewLayout.start - HOUR_START * 60) / 60) *
-												HOUR_HEIGHT,
-											height: timedCardHeight(
-												previewRange.start,
-												previewRange.end,
-											),
+											top: previewLayout.top,
+											height: previewLayout.height,
 											left: `calc(${(previewLayout.column / previewLayout.columns) * 100}% + 3px)`,
 											width: `calc(${100 / previewLayout.columns}% - 5px)`,
 										}}
@@ -2563,24 +2366,16 @@ function WeekView({
 											displayTime={
 												previewRange.label ? t(previewRange.label) : undefined
 											}
-											dense={
-												timedCardHeight(previewRange.start, previewRange.end) <
-												56
-											}
-											stickyContent={
-												timedCardHeight(previewRange.start, previewRange.end) >=
-												56
-											}
+											dense={previewLayout.height < 56}
+											stickyContent={previewLayout.height >= 56}
 											onClick={() => {}}
 											onDragStart={() => {}}
 											onDragEnd={() => {}}
 										/>
 									</div>
 								) : null}
-								{layoutTimedItems(timed, key).map((layout) => {
-									const top =
-										((layout.start - HOUR_START * 60) / 60) * HOUR_HEIGHT;
-									const height = timedCardHeight(layout.start, layout.end);
+								{layoutTimedItems(timed, key, hourHeight).map((layout) => {
+									const { top, height } = layout;
 									return (
 										<div
 											key={layout.item.id}
@@ -2625,11 +2420,14 @@ function MonthView(
 		onVisibleDate: (date: string) => void;
 	},
 ) {
-	const { intlLocale } = useI18n();
+	const { t, intlLocale } = useI18n();
 
 	const { cursor, selectedDate, byDay, onCreate, onOpen, onVisibleDate } =
 		props;
 	const isMobile = useIsMobile();
+	const [agendaExpanded, setAgendaExpanded] = useState(false);
+	const selectedItems =
+		useRoutineDays(byDay, [parseDayKey(selectedDate)]).get(selectedDate) ?? [];
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const currentWeekRef = useRef<HTMLElement>(null);
 	const initialized = useRef(false);
@@ -2737,23 +2535,56 @@ function MonthView(
 				})}
 			</div>
 			{isMobile ? (
-				<div className="border-t bg-muted/20 p-3">
-					<div className="mb-2 flex items-center justify-between">
-						<div>
-							<h3 className="text-sm font-semibold">
+				<div
+					data-calendar-month-agenda
+					className="shrink-0 border-t bg-background"
+				>
+					<div className="flex min-h-11 items-center gap-2 px-3">
+						<button
+							type="button"
+							className="flex min-h-11 min-w-0 flex-1 items-center gap-2 text-left text-xs"
+							aria-expanded={agendaExpanded}
+							aria-controls="calendar-month-agenda-items"
+							aria-label={`${shortDayLabel(selectedDate, intlLocale)} ${t(agendaExpanded ? "접기" : "펼치기")}`}
+							onClick={() => setAgendaExpanded((expanded) => !expanded)}
+						>
+							<ChevronDown
+								className={cn(
+									"size-4 shrink-0 transition-transform duration-200 motion-reduce:transition-none",
+									!agendaExpanded && "rotate-180",
+								)}
+							/>
+							<span className="truncate font-medium">
 								{shortDayLabel(selectedDate, intlLocale)}
-							</h3>
-							<HolidayLabel date={selectedDate} />
-						</div>
+							</span>
+							<span className="shrink-0 text-muted-foreground">
+								{t("{0}개 항목", [selectedItems.length])}
+							</span>
+						</button>
 						<CalendarCreateButton date={selectedDate} onCreate={onCreate} />
 					</div>
-					<MobileAgenda
-						items={byDay.get(selectedDate) ?? []}
-						date={selectedDate}
-						onCreate={onCreate}
-						onOpen={onOpen}
-						compact
-					/>
+					<div
+						id="calendar-month-agenda-items"
+						aria-hidden={!agendaExpanded}
+						inert={!agendaExpanded}
+						className="grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none"
+						style={{
+							gridTemplateRows: agendaExpanded ? "1fr" : "0fr",
+							opacity: agendaExpanded ? 1 : 0,
+						}}
+					>
+						<div className="min-h-0 overflow-hidden">
+							<div className="max-h-[min(28dvh,220px)] overflow-y-auto overscroll-contain px-3 pb-3">
+								<MobileAgenda
+									items={selectedItems}
+									date={selectedDate}
+									onCreate={onCreate}
+									onOpen={onOpen}
+									compact
+								/>
+							</div>
+						</div>
+					</div>
 				</div>
 			) : null}
 		</div>

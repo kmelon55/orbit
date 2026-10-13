@@ -2,13 +2,39 @@ import { timedRangeForDay } from "./calendar-schedule";
 import type { OrbitItem } from "./schema";
 
 export const HOUR_HEIGHT = 120;
+export const MIN_HOUR_HEIGHT = 48;
+export const MAX_HOUR_HEIGHT = 240;
+export const MIN_TIMED_CARD_HEIGHT = 22;
 
-export function layoutTimedItems(items: OrbitItem[], dayKey: string) {
+export function clampHourHeight(height: number) {
+	return Math.min(MAX_HOUR_HEIGHT, Math.max(MIN_HOUR_HEIGHT, height));
+}
+
+// Keep the time under the gesture at the same position in the viewport.
+export function zoomedScrollTop(
+	scrollTop: number,
+	anchorOffset: number,
+	previousHeight: number,
+	nextHeight: number,
+) {
+	return Math.max(
+		0,
+		((scrollTop + anchorOffset) / previousHeight) * nextHeight - anchorOffset,
+	);
+}
+
+export function layoutTimedItems(
+	items: OrbitItem[],
+	dayKey: string,
+	hourHeight = HOUR_HEIGHT,
+) {
 	type Entry = {
 		item: OrbitItem;
 		start: number;
 		end: number;
 		label?: string;
+		top: number;
+		height: number;
 		column: number;
 		columns: number;
 	};
@@ -20,6 +46,11 @@ export function layoutTimedItems(items: OrbitItem[], dayKey: string) {
 				start: range.start,
 				end: range.end,
 				label: range.label,
+				top: (range.start / 60) * hourHeight,
+				height: Math.max(
+					MIN_TIMED_CARD_HEIGHT,
+					timedCardHeight(range.start, range.end, hourHeight),
+				),
 				column: 0,
 				columns: 1,
 			};
@@ -33,9 +64,9 @@ export function layoutTimedItems(items: OrbitItem[], dayKey: string) {
 		if (cluster.length === 0) return;
 		const columnEnds: number[] = [];
 		for (const entry of cluster) {
-			const available = columnEnds.findIndex((end) => end <= entry.start);
+			const available = columnEnds.findIndex((end) => end <= entry.top);
 			entry.column = available === -1 ? columnEnds.length : available;
-			columnEnds[entry.column] = entry.end;
+			columnEnds[entry.column] = entry.top + entry.height;
 		}
 		for (const entry of cluster) entry.columns = columnEnds.length;
 		result.push(...cluster);
@@ -43,15 +74,19 @@ export function layoutTimedItems(items: OrbitItem[], dayKey: string) {
 	}
 
 	for (const entry of entries) {
-		if (cluster.length > 0 && entry.start >= clusterEnd) flush();
+		if (cluster.length > 0 && entry.top >= clusterEnd) flush();
 		cluster.push(entry);
-		clusterEnd = Math.max(clusterEnd, entry.end);
+		clusterEnd = Math.max(clusterEnd, entry.top + entry.height);
 	}
 	flush();
 	return result;
 }
 
 // Keep the card's bounds proportional to its scheduled time, even at day boundaries.
-export function timedCardHeight(start: number, end: number) {
-	return ((end - start) / 60) * HOUR_HEIGHT;
+export function timedCardHeight(
+	start: number,
+	end: number,
+	hourHeight = HOUR_HEIGHT,
+) {
+	return ((end - start) / 60) * hourHeight;
 }
