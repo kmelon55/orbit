@@ -30,6 +30,7 @@ import {
 	isCalendarHeaderItem,
 } from "#/lib/orbit/calendar-layout";
 import {
+	type CalendarResizeEdge,
 	calendarMoveTime,
 	calendarResizeTime,
 	type CalendarDragTarget as DragTarget,
@@ -474,7 +475,10 @@ function CalendarEvent({
 	resizeEndKey?: string;
 	onClick: () => void;
 	onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void;
-	onResizeStart?: (event: React.PointerEvent<HTMLButtonElement>) => void;
+	onResizeStart?: (
+		event: React.PointerEvent<HTMLButtonElement>,
+		edge?: CalendarResizeEdge,
+	) => void;
 	onDragEnd: () => void;
 	dragging?: boolean;
 	dragOperation?: DragOperation;
@@ -500,6 +504,12 @@ function CalendarEvent({
 		onResizeStart &&
 			(item.type === "event" || item.type === "task") &&
 			(!endKey || !dayKey || (resizeEndKey ?? dayKey) === endKey),
+	);
+	const canResizeStart = Boolean(
+		!compact &&
+			onResizeStart &&
+			(item.type === "event" || item.type === "task") &&
+			(!dayKey || dayKey === startKey),
 	);
 	return (
 		<div
@@ -583,10 +593,20 @@ function CalendarEvent({
 					</span>
 				)}
 			</span>
+			{canResizeStart ? (
+				<button
+					type="button"
+					onPointerDown={(event) => onResizeStart?.(event, "start")}
+					onClick={(event) => event.stopPropagation()}
+					title={t("시작 시간 조정")}
+					aria-label={t("시작 시간 조정")}
+					className="absolute left-8 right-0 top-0 z-20 h-2 touch-none cursor-ns-resize"
+				/>
+			) : null}
 			{canResize ? (
 				<button
 					type="button"
-					onPointerDown={onResizeStart}
+					onPointerDown={(event) => onResizeStart?.(event, "end")}
 					onClick={(event) => event.stopPropagation()}
 					title={compact ? t("종료 날짜 조정") : t("종료 시간 조정")}
 					aria-label={compact ? t("종료 날짜 조정") : t("종료 시간 조정")}
@@ -676,6 +696,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 	};
 	const calendarRef = useRef<HTMLDivElement>(null);
 	const resizePointerRef = useRef<number | null>(null);
+	const resizeEdgeRef = useRef<CalendarResizeEdge>("end");
 	const [localItems, setLocalItems] = useState(snapshot.items);
 	const [draggingRoutine, setDraggingRoutine] = useState<OrbitItem | null>(
 		null,
@@ -923,12 +944,14 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 	function startResize(
 		item: OrbitItem,
 		event: React.PointerEvent<HTMLButtonElement>,
+		edge: CalendarResizeEdge = "end",
 	) {
 		if (event.button !== 0 || !event.isPrimary || isPendingItemId(item.id))
 			return;
 		event.preventDefault();
 		event.stopPropagation();
 		resizePointerRef.current = event.pointerId;
+		resizeEdgeRef.current = edge;
 		draggingRoutineRef.current = isCalendarRoutine(item) ? item : null;
 		setDraggingRoutine(draggingRoutineRef.current);
 		draggingIdRef.current = item.id;
@@ -965,7 +988,8 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 				? null
 				: current?.date === target.date &&
 						current.mode === target.mode &&
-						current.time === target.time
+						current.time === target.time &&
+						current.resizeEdge === target.resizeEdge
 					? current
 					: target,
 		);
@@ -1072,6 +1096,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 					return {
 						date,
 						mode: "time",
+						resizeEdge: resizeEdgeRef.current,
 						time: calendarResizeTime(
 							event.clientY,
 							rect.top,
@@ -1079,7 +1104,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 						),
 					};
 				}
-				return { date, mode: "keep-time" };
+				return { date, mode: "keep-time", resizeEdge: resizeEdgeRef.current };
 			}
 			return null;
 		}
@@ -1673,6 +1698,7 @@ function WeekView({
 	onResizeStart: (
 		item: OrbitItem,
 		event: React.PointerEvent<HTMLButtonElement>,
+		edge?: CalendarResizeEdge,
 	) => void;
 	onDragEnd: () => void;
 	onDragPreview: (target: DragTarget | null) => void;
@@ -2102,8 +2128,8 @@ function WeekView({
 											resizeEndKey={segment.endKey}
 											onClick={() => onOpen(segment.item)}
 											onDragStart={(event) => onDragStart(segment.item, event)}
-											onResizeStart={(event) =>
-												onResizeStart(segment.item, event)
+											onResizeStart={(event, edge) =>
+												onResizeStart(segment.item, event, edge)
 											}
 											onDragEnd={onDragEnd}
 											dragging={draggingId === segment.item.id}
@@ -2396,8 +2422,8 @@ function WeekView({
 												resizeEndKey={key}
 												onClick={() => onOpen(layout.item)}
 												onDragStart={(event) => onDragStart(layout.item, event)}
-												onResizeStart={(event) =>
-													onResizeStart(layout.item, event)
+												onResizeStart={(event, edge) =>
+													onResizeStart(layout.item, event, edge)
 												}
 												onDragEnd={onDragEnd}
 												dragging={draggingId === layout.item.id}
@@ -2634,6 +2660,7 @@ function MonthGrid({
 	onResizeStart: (
 		item: OrbitItem,
 		event: React.PointerEvent<HTMLButtonElement>,
+		edge?: CalendarResizeEdge,
 	) => void;
 	onDragEnd: () => void;
 	onDragPreview: (target: DragTarget | null) => void;
@@ -2831,8 +2858,8 @@ function MonthGrid({
 										resizeEndKey={segment.endKey}
 										onClick={() => onOpen(segment.item)}
 										onDragStart={(event) => onDragStart(segment.item, event)}
-										onResizeStart={(event) =>
-											onResizeStart(segment.item, event)
+										onResizeStart={(event, edge) =>
+											onResizeStart(segment.item, event, edge)
 										}
 										onDragEnd={onDragEnd}
 										dragging={draggingId === segment.item.id}

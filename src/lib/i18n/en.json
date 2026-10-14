@@ -72,6 +72,7 @@
 	"종일 계속": "All day (continued)",
 	"종료 날짜 조정": "Adjust end date",
 	"종료 시간 조정": "Adjust end time",
+	"시작 시간 조정": "Adjust start time",
 	"일정 길이를 저장하지 못해 원래대로 돌렸습니다.": "Could not save the duration. The original value was restored.",
 	"일정을 저장하지 못해 원래 위치로 돌렸습니다.": "Could not save the event. The original position was restored.",
 	"오늘": "Today",

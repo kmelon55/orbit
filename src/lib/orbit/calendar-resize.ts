@@ -1,10 +1,13 @@
 import { formatDayKey } from "./para";
 import type { OrbitItem } from "./schema";
 
+export type CalendarResizeEdge = "start" | "end";
+
 export type CalendarDragTarget = {
 	date: string;
 	mode: "time" | "all-day" | "keep-time";
 	time?: string;
+	resizeEdge?: CalendarResizeEdge;
 };
 function timeOf(value?: string) {
 	return value?.match(/T(\d{2}:\d{2})/)?.[1];
@@ -25,6 +28,42 @@ export function resizeCalendarItem(
 	const startKey = value.slice(0, 10);
 	const endKey = target.date < startKey ? startKey : target.date;
 	const startTime = timeOf(value);
+	if (target.resizeEdge === "start") {
+		if (!startTime) {
+			const end = item.end ?? value;
+			const start =
+				target.date > end.slice(0, 10) ? end.slice(0, 10) : target.date;
+			return {
+				...item,
+				start,
+				end,
+				due: item.type === "task" ? start : item.due,
+			};
+		}
+		// Keep the opposite edge fixed, including the displayed default duration.
+		const end =
+			item.end ??
+			dateTime(
+				new Date(
+					new Date(value).getTime() + (item.type === "task" ? 30 : 60) * 60_000,
+				),
+			);
+		const candidate = new Date(
+			`${target.date}T${target.mode === "time" && target.time ? target.time : startTime}:00`,
+		);
+		const endDate = new Date(end);
+		const start = dateTime(
+			candidate.getTime() < endDate.getTime()
+				? candidate
+				: new Date(endDate.getTime() - 30 * 60_000),
+		);
+		return {
+			...item,
+			start,
+			end,
+			due: item.type === "task" ? start : item.due,
+		};
+	}
 
 	if (!startTime || target.mode !== "time" || !target.time) {
 		const currentEndTime =
