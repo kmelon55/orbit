@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calendarRoutineItems, moveCalendarRoutine } from "./calendar-routines";
+import {
+	moveCalendarRoutine,
+	calendarRoutineItems as projectRoutineItems,
+} from "./calendar-routines";
 import { visibleDayKeys } from "./calendar-schedule";
 import {
 	applyRoutineMutation,
 	emptyRoutineData,
 	type Routine,
+	type RoutineData,
 	routineRecordKey,
 } from "./routines";
 
@@ -22,6 +26,14 @@ const routine: Routine = {
 	createdDay: "2026-10-05",
 };
 const data = { ...emptyRoutineData(), routines: [routine] };
+
+function calendarRoutineItems(
+	data: RoutineData,
+	days: string[],
+	now = new Date("2026-10-05T00:00:00Z"),
+) {
+	return projectRoutineItems(data, days, now);
+}
 
 test("planning one occurrence keeps defaults and completion history and can be reset", () => {
 	const planned = applyRoutineMutation(data, {
@@ -197,4 +209,94 @@ test("untimed moments remain all-day and timed routines carry through midnight",
 	);
 	assert.equal(night.end, "2026-10-06T00:20:00");
 	assert.deepEqual(visibleDayKeys(night), ["2026-10-05", "2026-10-06"]);
+});
+
+test("past open all-day routines disappear without changing records or future occurrences", () => {
+	const input: RoutineData = {
+		...data,
+		routines: [
+			{ ...routine, moment: "anytime", weekdays: [0, 1, 2, 3, 4, 5, 6] },
+		],
+	};
+	const before = structuredClone(input);
+	const items = calendarRoutineItems(
+		input,
+		["2026-10-05", "2026-10-06", "2026-10-07"],
+		new Date("2026-10-05T15:00:00Z"),
+	);
+	assert.deepEqual(
+		items.map((item) => item.start),
+		["2026-10-06", "2026-10-07"],
+	);
+	assert.deepEqual(input, before);
+	// The same instant is still October 5 in Los Angeles.
+	assert.equal(
+		calendarRoutineItems(
+			{
+				...input,
+				routines: [{ ...input.routines[0], timeZone: "America/Los_Angeles" }],
+			},
+			["2026-10-05"],
+			new Date("2026-10-05T15:00:00Z"),
+		).length,
+		1,
+	);
+});
+
+test("past all-day completion history and timed appointments remain visible", () => {
+	for (const status of ["done", "skipped"] as const) {
+		const input: RoutineData = {
+			...data,
+			routines: [{ ...routine, moment: "anytime" }],
+			records: {
+				[routineRecordKey(routine.id, "2026-10-05")]: {
+					routineId: routine.id,
+					day: "2026-10-05",
+					status,
+				},
+			},
+		};
+		assert.equal(
+			calendarRoutineItems(
+				input,
+				["2026-10-05"],
+				new Date("2026-10-07T00:00:00Z"),
+			)[0].routine.status,
+			status,
+		);
+	}
+	assert.equal(
+		calendarRoutineItems(data, ["2026-10-05"], new Date("2026-10-07T00:00:00Z"))
+			.length,
+		1,
+	);
+});
+
+test("all-day expiration follows rescheduled dates and keeps ongoing ranges", () => {
+	const input: RoutineData = {
+		...data,
+		routines: [{ ...routine, moment: "anytime" }],
+	};
+	const moved = applyRoutineMutation(input, {
+		action: "set-routine-schedule",
+		id: routine.id,
+		day: "2026-10-05",
+		schedule: { start: "2026-10-07", end: "2026-10-09" },
+	});
+	assert.equal(
+		calendarRoutineItems(
+			moved,
+			["2026-10-08"],
+			new Date("2026-10-08T00:00:00Z"),
+		)[0].routine.day,
+		"2026-10-05",
+	);
+	assert.equal(
+		calendarRoutineItems(
+			moved,
+			["2026-10-08"],
+			new Date("2026-10-10T00:00:00Z"),
+		).length,
+		0,
+	);
 });

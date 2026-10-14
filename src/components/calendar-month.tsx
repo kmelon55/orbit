@@ -57,6 +57,7 @@ import {
 	layoutTimedItems,
 	MIN_TIMED_CARD_HEIGHT,
 } from "#/lib/orbit/calendar-timed-layout";
+import { extendCalendarWindow } from "#/lib/orbit/calendar-window";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { itemColor } from "#/lib/orbit/item-colors";
 import { koreanHolidayName } from "#/lib/orbit/korean-holidays";
@@ -154,42 +155,55 @@ const CalendarTasks = createContext<ReturnType<typeof useTaskToggle> | null>(
 );
 
 const EMPTY_ROUTINES = emptyRoutineData();
-const CalendarRoutines = createContext<RoutineData>(EMPTY_ROUTINES);
+const CalendarRoutines = createContext({
+	data: EMPTY_ROUTINES,
+	now: new Date(),
+});
 
 function withRoutineDays(
 	byDay: Map<string, OrbitItem[]>,
 	data: RoutineData,
 	days: string[],
+	now: Date,
 ) {
 	const result = new Map(byDay);
+	const requested = new Set(days);
+	const additions = new Map<string, OrbitItem[]>();
 	// Include yesterday for routines whose duration crosses midnight.
 	const occurrenceDays = days.flatMap((day) => [
 		day,
 		formatDayKey(addDays(parseDayKey(day), -1)),
 	]);
-	for (const item of calendarRoutineItems(data, occurrenceDays)) {
+	for (const item of calendarRoutineItems(data, occurrenceDays, now)) {
 		for (const day of visibleDayKeys(item)) {
-			const existing = result.get(day) ?? [];
-			if (!existing.some((entry) => entry.id === item.id))
-				result.set(
-					day,
-					[...existing, item].sort((left, right) =>
-						(left.start ?? left.due ?? "").localeCompare(
-							right.start ?? right.due ?? "",
-						),
-					),
-				);
+			if (!requested.has(day)) continue;
+			const items = additions.get(day) ?? [];
+			items.push(item);
+			additions.set(day, items);
 		}
+	}
+	for (const [day, items] of additions) {
+		const entries = new Map(
+			[...(result.get(day) ?? []), ...items].map((item) => [item.id, item]),
+		);
+		result.set(
+			day,
+			[...entries.values()].sort((left, right) =>
+				(left.start ?? left.due ?? "").localeCompare(
+					right.start ?? right.due ?? "",
+				),
+			),
+		);
 	}
 	return result;
 }
 
 function useRoutineDays(byDay: Map<string, OrbitItem[]>, days: Date[]) {
-	const data = useContext(CalendarRoutines);
+	const { data, now } = useContext(CalendarRoutines);
 	const dayKeys = days.map((day) => formatDayKey(day)).join(",");
 	return useMemo(
-		() => withRoutineDays(byDay, data, dayKeys.split(",")),
-		[byDay, data, dayKeys],
+		() => withRoutineDays(byDay, data, dayKeys.split(","), now),
+		[byDay, data, dayKeys, now],
 	);
 }
 
@@ -747,6 +761,36 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 		dragOperation,
 		dragTarget,
 	]);
+	const [routineNow, setRoutineNow] = useState(() => new Date());
+	useEffect(() => {
+		const zones = [
+			...new Set(routineData.routines.map((routine) => routine.timeZone)),
+		];
+		const update = () => {
+			const now = new Date();
+			// Only invalidate projections when a routine's local date changes.
+			setRoutineNow((previous) =>
+				zones.some(
+					(zone) => routineToday(zone, previous) !== routineToday(zone, now),
+				)
+					? now
+					: previous,
+			);
+		};
+		update();
+		const interval = window.setInterval(update, 60_000);
+		window.addEventListener("focus", update);
+		document.addEventListener("visibilitychange", update);
+		return () => {
+			window.clearInterval(interval);
+			window.removeEventListener("focus", update);
+			document.removeEventListener("visibilitychange", update);
+		};
+	}, [routineData.routines]);
+	const routineContext = useMemo(
+		() => ({ data: routineData, now: routineNow }),
+		[routineData, routineNow],
+	);
 
 	useEffect(() => {
 		setLocalItems(snapshot.items);
@@ -857,12 +901,15 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 				),
 			);
 		}
-		return withRoutineDays(map, routineData, [
-			...gridDays(cursor).map((day) => formatDayKey(day)),
-			selectedDate,
-		]);
-	}, [dated, routineData, cursor, selectedDate]);
-	const selectedItems = byDay.get(selectedDate) ?? [];
+		return map;
+	}, [dated]);
+	const selectedItems = useMemo(
+		() =>
+			withRoutineDays(byDay, routineData, [selectedDate], routineNow).get(
+				selectedDate,
+			) ?? [],
+		[byDay, routineData, selectedDate, routineNow],
+	);
 
 	function openNew(
 		date = formatDayKey(cursor),
@@ -1145,7 +1192,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 	}, [draggingId, dragOperation]);
 
 	return (
-		<CalendarRoutines.Provider value={routineData}>
+		<CalendarRoutines.Provider value={routineContext}>
 			<div ref={calendarRef} className="h-full min-h-0 bg-muted/20 p-0 md:p-3">
 				<div className="orbit-card flex h-full min-h-0 flex-col overflow-hidden rounded-none border-x-0 bg-background shadow-none md:rounded-[var(--radius-xl)] md:border-x md:shadow-sm">
 					<header className="flex min-h-14 shrink-0 items-center gap-1.5 border-b border-border/60 px-2 sm:min-h-16 sm:gap-2 sm:px-4">
@@ -1770,7 +1817,11 @@ function WeekView({
 		},
 	});
 	const initialized = useRef(false);
-	const pendingPrepend = useRef<{ start: number; left: number } | null>(null);
+	const pendingShift = useRef<{
+		start: number;
+		end: number;
+		left: number;
+	} | null>(null);
 	const [viewportWidth, setViewportWidth] = useState(0);
 	const [range, setRange] = useState({ start: -7, end: 13 });
 	const columnWidth =
@@ -1790,9 +1841,12 @@ function WeekView({
 	useLayoutEffect(() => {
 		const element = scrollRef.current;
 		if (!element || viewportWidth === 0 || dayCount === 1) return;
-		if (pendingPrepend.current?.start === range.start) {
-			element.scrollLeft = pendingPrepend.current.left + 7 * columnWidth;
-			pendingPrepend.current = null;
+		if (
+			pendingShift.current?.start === range.start &&
+			pendingShift.current.end === range.end
+		) {
+			element.scrollLeft = pendingShift.current.left;
+			pendingShift.current = null;
 		} else if (!initialized.current) {
 			element.scrollLeft = -range.start * columnWidth;
 			initialized.current = true;
@@ -1805,7 +1859,7 @@ function WeekView({
 			`${element.scrollLeft}px`,
 		);
 		previousColumnWidth.current = columnWidth;
-	}, [columnWidth, viewportWidth, dayCount, range.start]);
+	}, [columnWidth, viewportWidth, dayCount, range.start, range.end]);
 	const [headerHeight, setHeaderHeight] = useState(80);
 	useLayoutEffect(() => {
 		const header = headerRef.current;
@@ -1879,7 +1933,7 @@ function WeekView({
 				}
 			}}
 			onScroll={(event) => {
-				if (dayCount === 1 || !initialized.current || pendingPrepend.current)
+				if (dayCount === 1 || !initialized.current || pendingShift.current)
 					return;
 				const element = event.currentTarget;
 				if (!CSS.supports("animation-timeline", "--calendar-week-x")) {
@@ -1890,17 +1944,20 @@ function WeekView({
 				}
 				const index = Math.floor((element.scrollLeft + 1) / columnWidth);
 				onVisibleDate(formatDayKey(addDays(start, range.start + index)));
-				if (element.scrollLeft < columnWidth * 2) {
-					pendingPrepend.current = {
-						start: range.start - 7,
-						left: element.scrollLeft,
+				const direction =
+					element.scrollLeft < columnWidth * 2
+						? -1
+						: element.scrollWidth - element.scrollLeft - element.clientWidth <
+								columnWidth * 2
+							? 1
+							: null;
+				if (direction) {
+					const next = extendCalendarWindow(range, direction, 7, 35);
+					pendingShift.current = {
+						...next,
+						left: element.scrollLeft + (range.start - next.start) * columnWidth,
 					};
-					setRange((current) => ({ ...current, start: current.start - 7 }));
-				} else if (
-					element.scrollWidth - element.scrollLeft - element.clientWidth <
-					columnWidth * 2
-				) {
-					setRange((current) => ({ ...current, end: current.end + 7 }));
+					setRange(next);
 				}
 			}}
 			className="relative min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain [touch-action:pan-x_pan-y] [overflow-anchor:none]"
@@ -2457,9 +2514,11 @@ function MonthView(
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const currentWeekRef = useRef<HTMLElement>(null);
 	const initialized = useRef(false);
-	const pendingPrepend = useRef<{
+	const pendingShift = useRef<{
 		start: number;
-		height: number;
+		end: number;
+		anchor: HTMLElement;
+		offset: number;
 		top: number;
 	} | null>(null);
 	const [viewportHeight, setViewportHeight] = useState(0);
@@ -2479,10 +2538,14 @@ function MonthView(
 	useLayoutEffect(() => {
 		const element = scrollRef.current;
 		if (!element) return;
-		if (pendingPrepend.current?.start === range.start) {
-			const previous = pendingPrepend.current;
-			element.scrollTop = previous.top + element.scrollHeight - previous.height;
-			pendingPrepend.current = null;
+		if (
+			pendingShift.current?.start === range.start &&
+			pendingShift.current.end === range.end
+		) {
+			const previous = pendingShift.current;
+			element.scrollTop =
+				previous.top + previous.anchor.offsetTop - previous.offset;
+			pendingShift.current = null;
 		} else if (
 			!initialized.current &&
 			viewportHeight > 0 &&
@@ -2491,7 +2554,7 @@ function MonthView(
 			element.scrollTop = currentWeekRef.current.offsetTop - 40;
 			initialized.current = true;
 		}
-	}, [range.start, viewportHeight]);
+	}, [range.start, range.end, viewportHeight]);
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
@@ -2500,7 +2563,7 @@ function MonthView(
 				data-calendar-month-scroll
 				className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none]"
 				onScroll={(event) => {
-					if (!initialized.current || pendingPrepend.current) return;
+					if (!initialized.current || pendingShift.current) return;
 					const element = event.currentTarget;
 					const top = element.getBoundingClientRect().top + 40;
 					const visibleWeek = Array.from(
@@ -2512,18 +2575,24 @@ function MonthView(
 								addDays(parseDayKey(visibleWeek.dataset.calendarWeek), 4),
 							),
 						);
-					if (element.scrollTop < 240) {
-						pendingPrepend.current = {
-							start: range.start - 6,
-							height: element.scrollHeight,
+					const direction =
+						element.scrollTop < 240
+							? -1
+							: element.scrollHeight -
+										element.scrollTop -
+										element.clientHeight <
+									240
+								? 1
+								: null;
+					if (direction && visibleWeek) {
+						const next = extendCalendarWindow(range, direction, 6, 22);
+						pendingShift.current = {
+							...next,
+							anchor: visibleWeek,
+							offset: visibleWeek.offsetTop,
 							top: element.scrollTop,
 						};
-						setRange((current) => ({ ...current, start: current.start - 6 }));
-					} else if (
-						element.scrollHeight - element.scrollTop - element.clientHeight <
-						240
-					) {
-						setRange((current) => ({ ...current, end: current.end + 6 }));
+						setRange(next);
 					}
 				}}
 			>

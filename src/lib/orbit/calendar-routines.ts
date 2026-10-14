@@ -7,6 +7,7 @@ import {
 	type RoutineData,
 	routineRecordKey,
 	routineStatus,
+	routineToday,
 } from "./routines";
 import type { OrbitItem } from "./schema";
 
@@ -44,7 +45,9 @@ export function moveCalendarRoutine(
 export function calendarRoutineItems(
 	data: RoutineData,
 	days: string[],
+	now = new Date(),
 ): CalendarRoutineItem[] {
+	const todayByZone = new Map<string, string>();
 	const plannedDays = Object.values(data.schedules ?? {})
 		.filter((schedule) =>
 			days.some(
@@ -78,6 +81,15 @@ export function calendarRoutineItems(
 			if (schedule) {
 				start = schedule.start;
 				end = schedule.end;
+			}
+			if (status === "open" && !start.includes("T")) {
+				let today = todayByZone.get(routine.timeZone);
+				if (!today) {
+					today = routineToday(routine.timeZone, now);
+					todayByZone.set(routine.timeZone, today);
+				}
+				// Use the effective end date so moved and ongoing occurrences stay visible.
+				if ((end ?? start).slice(0, 10) < today) return [];
 			}
 			return [
 				{
