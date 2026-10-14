@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { flattenFolderTree, indexFolderTree } from "./folder-tree";
 import { OptimisticItems } from "./optimistic-mutations";
 import type { OrbitItem, OrbitMutation, OrbitSnapshot } from "./schema";
 
@@ -33,6 +34,105 @@ function snapshot(items = [note]): OrbitSnapshot {
 		displayDate: { day: "1", month: "1", weekday: "", longLabel: "" },
 	};
 }
+
+test("filing an inbox note exposes its destination tree before refresh and rolls back on failure", () => {
+	const store = new OptimisticItems();
+	const source = snapshot();
+	const mutation: OrbitMutation = {
+		action: "file-item",
+		id: note.id,
+		input: { space: "project", folder: "work/notes" },
+	};
+	store.start("move", mutation, source);
+	const projected = store.project(source);
+	assert.equal(projected.counts.inbox, 0);
+	assert.deepEqual(
+		flattenFolderTree(
+			indexFolderTree(projected.items, projected.folders.project),
+			new Set(),
+			"",
+		).map((row) => row.key),
+		["folder:work", "folder:work/notes", "item:note"],
+	);
+	assert.deepEqual(
+		projected.folders.project.map(({ count, descendantCount }) => [
+			count,
+			descendantCount,
+		]),
+		[
+			[0, 1],
+			[1, 1],
+		],
+	);
+	store.reconcile(source);
+	assert.equal(store.project(source).folders.project.length, 2);
+	store.finish({ requestId: "move", mutation, phase: "failure" });
+	assert.equal(store.project(source), source);
+	assert.equal(source.items[0], note);
+	assert.deepEqual(source.folders.project, []);
+
+	store.start("retry", mutation, source);
+	const saved = { ...projected.items[0], updated: "2026-01-02" };
+	store.finish({
+		requestId: "retry",
+		mutation,
+		phase: "success",
+		result: saved,
+	});
+	store.reconcile(source);
+	assert.equal(store.project(source).folders.project[1].count, 1);
+	const refreshed = { ...projected, items: [saved] };
+	store.reconcile(refreshed);
+	assert.equal(store.project(refreshed), refreshed);
+});
+
+test("moving between folders updates both counts while preserving empty folders and metadata", () => {
+	const original = {
+		...note,
+		space: "project" as const,
+		folder: "old",
+		path: "projects/old/note.md",
+	};
+	const source = snapshot([original]);
+	source.folders.project = [
+		{
+			space: "project",
+			slug: "old",
+			name: "Old",
+			depth: 0,
+			color: "blue",
+			count: 1,
+			descendantCount: 1,
+		},
+	];
+	source.folders.area = [
+		{
+			space: "area",
+			slug: "new",
+			name: "New",
+			depth: 0,
+			color: "pink",
+			count: 0,
+			descendantCount: 0,
+		},
+	];
+	const store = new OptimisticItems();
+	const mutation: OrbitMutation = {
+		action: "file-item",
+		id: note.id,
+		input: { space: "area", folder: "new" },
+	};
+	store.start("move", mutation, source);
+	const projected = store.project(source);
+	assert.deepEqual(projected.folders.project, [
+		{ ...source.folders.project[0], count: 0, descendantCount: 0 },
+	]);
+	assert.deepEqual(projected.folders.area, [
+		{ ...source.folders.area[0], count: 1, descendantCount: 1 },
+	]);
+	store.finish({ requestId: "move", mutation, phase: "failure" });
+	assert.equal(store.project(source), source);
+});
 test("delete is immediate, stale refresh cannot resurrect it, failure restores only that item", () => {
 	const store = new OptimisticItems();
 	const source = snapshot();

@@ -1,5 +1,49 @@
-import { formatDayKey, isInboxItem } from "./para";
+import { folderAncestors } from "./folder-tree";
+import { folderOf, formatDayKey, isInboxItem } from "./para";
 import type { OrbitItem, OrbitSnapshot } from "./schema";
+
+function projectItemFolders(
+	folders: OrbitSnapshot["folders"],
+	items: OrbitItem[],
+): OrbitSnapshot["folders"] {
+	const result = { ...folders };
+	for (const space of ["project", "area", "resource", "archive"] as const) {
+		const bySlug = new Map(
+			(folders[space] ?? []).map((folder) => [
+				folder.slug,
+				{ ...folder, count: 0, descendantCount: 0 },
+			]),
+		);
+		for (const item of items) {
+			if (item.space !== space) continue;
+			const path = folderOf(item);
+			if (!path) continue;
+			for (const [depth, slug] of folderAncestors(path).entries()) {
+				let folder = bySlug.get(slug);
+				if (!folder) {
+					const parts = slug.split("/");
+					folder = {
+						space,
+						slug,
+						name: parts.at(-1) ?? slug,
+						parent: parts.slice(0, -1).join("/") || undefined,
+						depth,
+						color: "lime",
+						count: 0,
+						descendantCount: 0,
+					};
+					bySlug.set(slug, folder);
+				}
+				folder.descendantCount += 1;
+				if (slug === path) folder.count += 1;
+			}
+		}
+		result[space] = [...bySlug.values()].sort((a, b) =>
+			a.slug.localeCompare(b.slug, "ko"),
+		);
+	}
+	return result;
+}
 
 // Keep acknowledged writes visible until a refreshed snapshot has caught up.
 export function mergeSnapshotItems(
@@ -20,6 +64,8 @@ export function mergeSnapshotItems(
 	return {
 		...snapshot,
 		items,
+		// Folder trees must reflect the same local writes as the item list.
+		folders: projectItemFolders(snapshot.folders, items),
 		today: {
 			tasks: items
 				.filter(
