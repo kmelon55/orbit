@@ -637,7 +637,13 @@ function GoalDetail({
 	);
 }
 
-function WeekOutcome({ goal, disabled }: { goal: Goal; disabled: boolean }) {
+export function WeekOutcome({
+	goal,
+	disabled,
+}: {
+	goal: Goal;
+	disabled: boolean;
+}) {
 	const { t } = useI18n();
 	const { save } = useGoals();
 	const start = goalWeekStart(formatDayKey());
@@ -684,7 +690,6 @@ function WeekOutcome({ goal, disabled }: { goal: Goal; disabled: boolean }) {
 						autoFocus
 						aria-label={t("이번 주 결과")}
 						maxLength={1000}
-						placeholder={t("이번 주가 끝나면 무엇이 달라질까요?")}
 						value={outcome}
 						onChange={(e) => setOutcome(e.target.value)}
 					/>
@@ -699,9 +704,7 @@ function WeekOutcome({ goal, disabled }: { goal: Goal; disabled: boolean }) {
 						(!current || !goal.week?.outcome) && "text-muted-foreground",
 					)}
 				>
-					{current && goal.week?.outcome
-						? goal.week.outcome
-						: t("이번 주에 만들 결과 하나를 정하세요.")}
+					{current && goal.week?.outcome ? goal.week.outcome : "—"}
 				</p>
 			)}
 			{!current && goal.week?.outcome ? (

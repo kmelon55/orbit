@@ -186,7 +186,7 @@ export function GoalFocus() {
 	);
 }
 
-function GoalTaskPicker({
+export function GoalTaskPicker({
 	goal,
 	onClose,
 }: {

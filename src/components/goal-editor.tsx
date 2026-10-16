@@ -20,11 +20,15 @@ import { Textarea } from "./ui/textarea";
 export function GoalEditor({
 	goal,
 	parent,
+	defaultGroupName,
+	defaultProject,
 	onClose,
 	onSaved,
 }: {
 	goal?: Goal;
 	parent?: Goal;
+	defaultGroupName?: string;
+	defaultProject?: string;
 	onClose: () => void;
 	onSaved: (id: string) => void;
 }) {
@@ -33,6 +37,9 @@ export function GoalEditor({
 	const snapshot = useOrbitSnapshot();
 	const fieldId = useId();
 	const [title, setTitle] = useState(goal?.title ?? "");
+	const [projectName, setProjectName] = useState(
+		goal?.projectName ?? goal?.brand ?? defaultGroupName ?? "",
+	);
 	const [criteria, setCriteria] = useState(goal?.successCriteria ?? "");
 	const [description, setDescription] = useState(goal?.description ?? "");
 	const [date, setDate] = useState(goal?.targetDate ?? "");
@@ -40,7 +47,9 @@ export function GoalEditor({
 	const [current, setCurrent] = useState(String(goal?.metric?.current ?? 0));
 	const [target, setTarget] = useState(String(goal?.metric?.target ?? ""));
 	const [unit, setUnit] = useState(goal?.metric?.unit ?? "");
-	const [projects, setProjects] = useState(goal?.projectFolders ?? []);
+	const [projects, setProjects] = useState(
+		goal?.projectFolders ?? (defaultProject ? [defaultProject] : []),
+	);
 	const [taskIds, setTaskIds] = useState(goal?.itemIds ?? []);
 	const [query, setQuery] = useState("");
 	const tasks = snapshot.items.filter(
@@ -67,8 +76,8 @@ export function GoalEditor({
 								? t("세부 목표 추가")
 								: t("새 목표")}
 					</DialogTitle>
-					<DialogDescription>
-						{parent?.title ?? t("어떤 결과를 만들고 싶나요?")}
+					<DialogDescription className={parent ? undefined : "sr-only"}>
+						{parent?.title ?? t("목표")}
 					</DialogDescription>
 				</DialogHeader>
 				<form
@@ -89,6 +98,8 @@ export function GoalEditor({
 											),
 									}),
 							title: title.trim(),
+							projectName: projectName.trim() || undefined,
+							brand: undefined,
 							description,
 							successCriteria: criteria.trim(),
 							targetDate: date || undefined,
@@ -111,6 +122,38 @@ export function GoalEditor({
 						onClose();
 					}}
 				>
+					{!parent && !goal?.parentId ? (
+						<div className="space-y-2">
+							<label
+								className="text-sm font-medium"
+								htmlFor={`${fieldId}-project-name`}
+							>
+								{t("프로젝트")}
+							</label>
+							<Input
+								id={`${fieldId}-project-name`}
+								list={`${fieldId}-project-names`}
+								maxLength={120}
+								value={projectName}
+								onChange={(event) => setProjectName(event.target.value)}
+							/>
+							<datalist id={`${fieldId}-project-names`}>
+								{[
+									...new Set([
+										...goals.flatMap((g) => {
+											const name = g.projectName ?? g.brand;
+											return name ? [name] : [];
+										}),
+										...snapshot.folders.project
+											.filter((f) => !f.parent)
+											.map((f) => f.name),
+									]),
+								].map((name) => (
+									<option key={name} value={name} />
+								))}
+							</datalist>
+						</div>
+					) : null}
 					<div className="space-y-2">
 						<label className="text-sm font-medium" htmlFor={`${fieldId}-title`}>
 							{t("목표")}
@@ -120,7 +163,6 @@ export function GoalEditor({
 							autoFocus
 							required
 							maxLength={160}
-							placeholder={t("예: 첫 유료 고객 10명 확보")}
 							value={title}
 							onChange={(e) => setTitle(e.target.value)}
 						/>
@@ -136,7 +178,6 @@ export function GoalEditor({
 							id={`${fieldId}-criteria`}
 							maxLength={1000}
 							rows={2}
-							placeholder={t("어떻게 되면 달성한 건가요?")}
 							value={criteria}
 							onChange={(e) => setCriteria(e.target.value)}
 						/>
@@ -209,7 +250,6 @@ export function GoalEditor({
 									<Input
 										id={`${fieldId}-unit`}
 										maxLength={30}
-										placeholder={t("명, 회, 원")}
 										value={unit}
 										onChange={(e) => setUnit(e.target.value)}
 									/>
