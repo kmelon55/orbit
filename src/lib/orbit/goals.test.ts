@@ -10,6 +10,7 @@ import {
 } from "./assistant.server";
 import { goalInputSchema } from "./assistant-schema";
 import { closeOrbitDatabases } from "./database";
+import { goalAttention, goalProjectGroups, goalTasks } from "./goal-portfolio";
 import {
 	focusedGoal,
 	type GoalInput,
@@ -36,6 +37,179 @@ function fixture() {
 }
 const save = (input: GoalInput) =>
 	mutateAssistant({ action: "goal", input: goalInputSchema.parse(input) });
+
+test("project goals preserve legacy labels, measurable milestones and task links through edits and restart", async () => {
+	const f = fixture();
+	try {
+		const task = await createOrbitItem({
+			type: "task",
+			title: "Complete a workout",
+			body: "",
+			space: "inbox",
+		});
+		assert.ok(task);
+		let state = await save({
+			title: "Build strength",
+			brand: "Training",
+			targetDate: "2026-12-31",
+			metric: { current: 2, target: 10, unit: "sessions" },
+			week: { start: "2026-10-11", outcome: "Complete the training schedule" },
+		});
+		const root = state.goals[0];
+		state = await save({
+			title: "Finish the first training block",
+			parentId: root.id,
+			targetDate: "2026-10-20",
+			itemIds: [task.id],
+		});
+		assert.deepEqual(goalAttention(root, state.goals, "2026-10-16"), []);
+		assert.deepEqual(
+			goalTasks(root, state.goals, [task]).map((item) => item.id),
+			[task.id],
+		);
+		await save({
+			...goalInput(root),
+			projectName: "몸 만들기",
+			brand: undefined,
+		});
+		closeOrbitDatabases();
+		state = await loadAssistantState();
+		const updated = state.goals.find((goal) => goal.id === root.id);
+		assert.ok(updated);
+		assert.equal(updated.projectName, "몸 만들기");
+		assert.equal(updated.brand, undefined);
+		assert.deepEqual(updated.metric, root.metric);
+		assert.equal(goalProjectGroups(state.goals, [])[0].name, "몸 만들기");
+		assert.equal(goalProjectGroups(state.goals, [])[0].goals.length, 1);
+		assert.deepEqual(goalAttention(updated, state.goals, "2026-10-23"), [
+			"실행 단계 기한 지남",
+			"이번 주 계획 없음",
+		]);
+		assert.deepEqual(
+			goalAttention(
+				{ ...updated, status: "paused" },
+				state.goals,
+				"2026-10-23",
+			),
+			[],
+		);
+	} finally {
+		f.finish();
+	}
+});
+
+test("project grouping preserves legacy labels and unassigned goals without crossing folder boundaries", () => {
+	const makeGoal = (id: string, projectFolders: string[], brand?: string) => ({
+		...goalInputSchema.parse({ title: id, projectFolders, brand }),
+		id,
+		revision: 1,
+		createdAt: "2026-10-16",
+		updatedAt: "2026-10-16",
+	});
+	const roots = [
+		makeGoal("nested", ["Draft/launch"]),
+		makeGoal("similar", ["Drafting"]),
+		makeGoal("explicit", ["Draft"], "Other"),
+		makeGoal("unassigned", []),
+	];
+	const folders = [
+		{
+			space: "project" as const,
+			name: "Draft",
+			slug: "Draft",
+			depth: 0,
+			count: 0,
+			descendantCount: 0,
+			color: "slate" as const,
+		},
+	];
+	const before = structuredClone(roots);
+	const groups = goalProjectGroups(roots, folders);
+	assert.deepEqual(
+		groups
+			.find((group) => group.name === "Draft")
+			?.goals.map((goal) => goal.id),
+		["nested"],
+	);
+	assert.deepEqual(
+		groups
+			.find((group) => group.name === "Other")
+			?.goals.map((goal) => goal.id),
+		["explicit"],
+	);
+	assert.deepEqual(
+		groups
+			.find((group) => group.key === "unassigned")
+			?.goals.map((goal) => goal.id),
+		["similar", "unassigned"],
+	);
+	assert.deepEqual(roots, before);
+});
+
+test("backward plans preserve legacy goals and survive restart, weekly edits, and export", async () => {
+	const f = fixture();
+	try {
+		const legacy = (
+			await save({ title: "Existing project", description: "Keep my notes" })
+		).goals[0];
+		const roadmap = {
+			anchorDate: "2026-10-16",
+			middleYears: 6 as const,
+			steps: {
+				decade: { outcome: "A meaningful life", reason: "My direction" },
+				middle: {
+					outcome: "A strong foundation",
+					reason: "Supports the vision",
+				},
+				year: {
+					outcome: "A sustainable practice",
+					reason: "Build the foundation",
+				},
+				half: {
+					outcome: "Evidence of progress",
+					reason: "Check the direction",
+				},
+				month: {
+					outcome: "First experiment",
+					reason: "Learn before committing",
+				},
+			},
+		};
+		let state = await save({ title: "My mission", roadmap });
+		const mission = state.goals.find((goal) => goal.roadmap);
+		assert.ok(mission);
+		state = await save({
+			...goalInput(mission),
+			week: { start: "2026-10-11", outcome: "Finish the experiment" },
+		});
+		await assert.rejects(
+			save({ ...goalInput(mission), title: "Stale mission" }),
+			/변경/,
+		);
+		closeOrbitDatabases();
+		state = await loadAssistantState();
+		assert.deepEqual(
+			state.goals.find((goal) => goal.id === legacy.id),
+			legacy,
+		);
+		assert.deepEqual(
+			state.goals.find((goal) => goal.id === mission.id)?.roadmap,
+			roadmap,
+		);
+		assert.equal(
+			state.goals.find((goal) => goal.id === mission.id)?.week?.outcome,
+			"Finish the experiment",
+		);
+		const exported = path.join(f.parent, "roadmap-export");
+		await exportOrbitDirectory(exported);
+		closeOrbitDatabases();
+		process.env.ORBIT_VAULT_DIR = path.join(f.parent, "roadmap-import");
+		await importOrbitDirectory(exported);
+		assert.deepEqual((await loadAssistantState()).goals, state.goals);
+	} finally {
+		f.finish();
+	}
+});
 
 test("focus is exclusive per level, completion clears focus, and stale edits cannot overwrite goals", async () => {
 	const f = fixture();
@@ -70,6 +244,54 @@ test("focus is exclusive per level, completion clears focus, and stale edits can
 		);
 		state = await save({ ...goalInput(second), status: "paused" });
 		assert.equal(focusedGoal(state.goals), undefined);
+	} finally {
+		f.finish();
+	}
+});
+
+test("milestone completion can be undone without changing the goal metric, and stale undo preserves later edits", async () => {
+	const f = fixture();
+	try {
+		let state = await save({
+			title: "Training",
+			metric: { current: 2, target: 10, unit: "sessions" },
+		});
+		const root = state.goals[0];
+		state = await save({
+			title: "First block",
+			parentId: root.id,
+			horizon: "milestone",
+			focused: true,
+		});
+		const original = state.goals.find((goal) => goal.parentId === root.id);
+		assert.ok(original);
+		state = await save({ ...goalInput(original), status: "done" });
+		const completed = state.goals.find((goal) => goal.id === original.id);
+		assert.ok(completed);
+		assert.equal(completed.focused, false);
+		state = await save({
+			...goalInput(completed),
+			status: original.status,
+			focused: original.focused,
+		});
+		const restored = state.goals.find((goal) => goal.id === original.id);
+		assert.ok(restored);
+		assert.equal(restored.status, "active");
+		assert.equal(restored.focused, true);
+		assert.deepEqual(
+			state.goals.find((goal) => goal.id === root.id)?.metric,
+			root.metric,
+		);
+		state = await save({ ...goalInput(restored), title: "Updated block" });
+		await assert.rejects(
+			save({ ...goalInput(completed), status: "active" }),
+			/변경/,
+		);
+		assert.equal(
+			(await loadAssistantState()).goals.find((goal) => goal.id === original.id)
+				?.title,
+			"Updated block",
+		);
 	} finally {
 		f.finish();
 	}

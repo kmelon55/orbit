@@ -1,0 +1,116 @@
+import type { Goal } from "./assistant-schema";
+import { goalWeekStart } from "./goals";
+import type { OrbitFolder, OrbitItem } from "./schema";
+
+export type GoalProjectGroup = {
+	key: string;
+	name: string;
+	folders: string[];
+	goals: Goal[];
+};
+
+export function goalProjectGroups(
+	goals: Goal[],
+	folders: OrbitFolder[],
+): GoalProjectGroup[] {
+	const groups = new Map<string, GoalProjectGroup>();
+	const rootFolders = folders.filter((folder) => !folder.parent);
+	for (const folder of rootFolders) {
+		const key = `project:${folder.name}`;
+		const group = groups.get(key) ?? {
+			key,
+			name: folder.name,
+			folders: [],
+			goals: [],
+		};
+		group.folders.push(folder.slug);
+		groups.set(key, group);
+	}
+	for (const goal of goals.filter((goal) => !goal.parentId && !goal.roadmap)) {
+		const projectName = goal.projectName ?? goal.brand;
+		const names = projectName
+			? [projectName]
+			: [
+					...new Set(
+						rootFolders
+							.filter((folder) =>
+								goal.projectFolders.some(
+									(slug) =>
+										slug === folder.slug || slug.startsWith(`${folder.slug}/`),
+								),
+							)
+							.map((folder) => folder.name),
+					),
+				];
+		for (const name of names.length ? names : [""]) {
+			const key = name ? `project:${name}` : "unassigned";
+			const group = groups.get(key) ?? { key, name, folders: [], goals: [] };
+			group.goals.push(goal);
+			groups.set(key, group);
+		}
+	}
+	return [...groups.values()].sort(
+		(a, b) =>
+			Number(a.key === "unassigned") - Number(b.key === "unassigned") ||
+			a.name.localeCompare(b.name),
+	);
+}
+
+export function goalMilestones(goal: Goal, goals: Goal[]) {
+	return goals
+		.filter((item) => item.parentId === goal.id)
+		.sort(
+			(a, b) =>
+				Number(a.status === "done") - Number(b.status === "done") ||
+				(a.targetDate ?? "9999").localeCompare(b.targetDate ?? "9999") ||
+				a.createdAt.localeCompare(b.createdAt),
+		);
+}
+
+export function goalAttention(goal: Goal, goals: Goal[], day: string) {
+	if (goal.status !== "active") return [];
+	const steps = goalMilestones(goal, goals);
+	const issues: string[] = [];
+	if (goal.targetDate && goal.targetDate < day) issues.push("목표 기한 지남");
+	if (
+		steps.some(
+			(step) =>
+				step.status === "active" && step.targetDate && step.targetDate < day,
+		)
+	)
+		issues.push("실행 단계 기한 지남");
+	if (!goal.targetDate) issues.push("기한 미정");
+	if (!goal.metric && !goal.successCriteria?.trim())
+		issues.push("달성 기준 없음");
+	if (!steps.some((step) => step.status === "active"))
+		issues.push("다음 단계 없음");
+	if (goal.week?.start !== goalWeekStart(day) || !goal.week.outcome.trim())
+		issues.push("이번 주 계획 없음");
+	return issues;
+}
+
+export function goalTasks(goal: Goal, goals: Goal[], items: OrbitItem[]) {
+	const family = [goal, ...goalMilestones(goal, goals)];
+	const ids = new Set(family.flatMap((item) => item.itemIds));
+	const folders = new Set(family.flatMap((item) => item.projectFolders));
+	return items
+		.filter(
+			(item) =>
+				item.type === "task" &&
+				item.space !== "archive" &&
+				item.status !== "cancelled" &&
+				(ids.has(item.id) ||
+					[...folders].some(
+						(folder) =>
+							item.project === folder ||
+							(item.space === "project" &&
+								(item.folder === folder ||
+									item.folder?.startsWith(`${folder}/`))),
+					)),
+		)
+		.sort(
+			(a, b) =>
+				Number(a.status === "done") - Number(b.status === "done") ||
+				(a.due ?? "9999").localeCompare(b.due ?? "9999"),
+		);
+}

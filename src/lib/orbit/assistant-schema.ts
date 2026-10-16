@@ -52,12 +52,35 @@ export const sourceSchema = z
 		observedAt: z.iso.datetime({ offset: true }),
 	})
 	.strict();
+const roadmapStepSchema = z
+	.object({
+		outcome: z.string().trim().max(1000),
+		reason: z.string().trim().max(1000).default(""),
+	})
+	.strict();
+export const goalRoadmapSchema = z
+	.object({
+		anchorDate: daySchema,
+		middleYears: z.union([z.literal(5), z.literal(6)]).default(5),
+		steps: z
+			.object({
+				decade: roadmapStepSchema.optional(),
+				middle: roadmapStepSchema.optional(),
+				year: roadmapStepSchema.optional(),
+				half: roadmapStepSchema.optional(),
+				month: roadmapStepSchema.optional(),
+			})
+			.strict(),
+	})
+	.strict();
 export const goalInputSchema = z
 	.object({
 		id: assistantId.optional(),
 		expectedRevision: z.number().int().min(1).optional(),
 		title,
 		description: z.string().max(12000).default(""),
+		brand: z.string().trim().min(1).max(120).optional(),
+		projectName: z.string().trim().min(1).max(120).optional(),
 		horizon: z.enum(["long_term", "quarter", "milestone"]).default("long_term"),
 		parentId: assistantId.optional(),
 		status: z.enum(["active", "done", "paused"]).default("active"),
@@ -75,6 +98,7 @@ export const goalInputSchema = z
 			.strict()
 			.optional(),
 		focused: z.boolean().optional(),
+		roadmap: goalRoadmapSchema.optional(),
 		week: z
 			.object({
 				start: daySchema,
@@ -171,6 +195,9 @@ const goalPatchSchema = z
 		successCriteria: goalInputSchema.shape.successCriteria,
 		metric: goalInputSchema.shape.metric.nullable(),
 		focused: goalInputSchema.shape.focused,
+		brand: goalInputSchema.shape.brand.nullable(),
+		projectName: goalInputSchema.shape.projectName.nullable(),
+		roadmap: goalInputSchema.shape.roadmap.nullable(),
 		week: goalInputSchema.shape.week.nullable(),
 		today: goalInputSchema.shape.today.nullable(),
 	})
