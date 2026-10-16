@@ -996,5 +996,12 @@
 	"저장하고 닫기": "Save and close",
 	"메일은 발송됐지만 초안 정리에 실패했습니다.": "Mail was sent, but the draft could not be removed.",
 	"다른 창에서 초안이 변경되거나 삭제되었습니다. 내용을 복사한 뒤 초안을 다시 열어 주세요.": "This draft was changed or deleted in another window. Copy your edits before reopening it.",
-	"초안 이어 쓰기": "Continue draft"
+	"초안 이어 쓰기": "Continue draft",
+	"폴더 내용 보기": "View folder contents",
+	"이 폴더 선택": "Select this folder",
+	"내용이 없습니다.": "No content.",
+	"빈 폴더": "Empty folder",
+	"일치하는 폴더나 노트가 없습니다.": "No matching folders or notes.",
+	"미리보기": "Preview",
+	"노트 더 보기 ({0})": "Show more notes ({0})"
 }
