@@ -1,6 +1,12 @@
 import { useId, useState } from "react";
 import type { Goal } from "#/lib/orbit/assistant-schema";
-import { type GoalInput, goalInput, goalWeekStart } from "#/lib/orbit/goals";
+import {
+	type GoalInput,
+	goalDepth,
+	goalDescendants,
+	goalInput,
+	goalWeekStart,
+} from "#/lib/orbit/goals";
 import { formatDayKey } from "#/lib/orbit/para";
 import { useGoals } from "./goal-provider";
 import { useI18n } from "./locale-provider";
@@ -44,6 +50,23 @@ export function GoalEditor({
 	const { save, busy, goals } = useGoals();
 	const snapshot = useOrbitSnapshot();
 	const fieldId = useId();
+	const [parentId, setParentId] = useState(goal?.parentId ?? parent?.id ?? "");
+	const descendants = goal ? goalDescendants(goal, goals) : [];
+	const excluded = new Set([goal?.id, ...descendants.map((item) => item.id)]);
+	const subtreeHeight = goal
+		? Math.max(
+				1,
+				...descendants.map(
+					(item) => goalDepth(item, goals) - goalDepth(goal, goals) + 1,
+				),
+			)
+		: 1;
+	const parents = goals.filter(
+		(item) =>
+			!item.roadmap &&
+			!excluded.has(item.id) &&
+			goalDepth(item, goals) + subtreeHeight <= 3,
+	);
 	const [title, setTitle] = useState(goal?.title ?? "");
 	const [projectName, setProjectName] = useState(
 		goal?.projectName ?? goal?.brand ?? defaultGroupName ?? "",
@@ -104,15 +127,21 @@ export function GoalEditor({
 							...(goal
 								? goalInput(goal)
 								: {
-										parentId: parent?.id,
-										horizon: parent ? "milestone" : "quarter",
+										parentId: parentId || undefined,
+										horizon: parentId ? "milestone" : "quarter",
 										focused:
-											!parent &&
+											!parentId &&
 											!goals.some(
 												(g) =>
 													g.focused && !g.parentId && g.status === "active",
 											),
 									}),
+							parentId: parentId || undefined,
+							horizon: parentId
+								? "milestone"
+								: goal?.horizon === "long_term"
+									? "long_term"
+									: "quarter",
 							title: title.trim(),
 							projectName: projectName.trim() || undefined,
 							brand: undefined,
@@ -144,6 +173,63 @@ export function GoalEditor({
 						onClose();
 					}}
 				>
+					<div className="space-y-2">
+						<label
+							className="text-sm font-medium"
+							htmlFor={`${fieldId}-parent`}
+						>
+							{t("상위 목표")}
+						</label>
+						<Select
+							value={parentId || "none"}
+							onValueChange={(value) =>
+								setParentId(value === "none" ? "" : value)
+							}
+						>
+							<SelectTrigger id={`${fieldId}-parent`}>
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="none">{t("독립 목표")}</SelectItem>
+								{parents.map((item) => (
+									<SelectItem key={item.id} value={item.id}>
+										{item.parentId ? "↳ " : ""}
+										{item.title}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+					</div>
+					<div className="space-y-2">
+						<label
+							className="text-sm font-medium"
+							htmlFor={`${fieldId}-project-name`}
+						>
+							{t("프로젝트")}
+						</label>
+						<Input
+							id={`${fieldId}-project-name`}
+							list={`${fieldId}-project-names`}
+							maxLength={120}
+							value={projectName}
+							onChange={(event) => setProjectName(event.target.value)}
+						/>
+						<datalist id={`${fieldId}-project-names`}>
+							{[
+								...new Set([
+									...goals.flatMap((g) => {
+										const name = g.projectName ?? g.brand;
+										return name ? [name] : [];
+									}),
+									...snapshot.folders.project
+										.filter((f) => !f.parent)
+										.map((f) => f.name),
+								]),
+							].map((name) => (
+								<option key={name} value={name} />
+							))}
+						</datalist>
+					</div>
 					<div className="space-y-2">
 						<label className="text-sm font-medium" htmlFor={`${fieldId}-title`}>
 							{t("목표")}
@@ -337,38 +423,6 @@ export function GoalEditor({
 								: ""}
 						</summary>
 						<div className="mt-3 space-y-3">
-							{!parent && !goal?.parentId ? (
-								<div className="space-y-2">
-									<label
-										className="text-sm font-medium"
-										htmlFor={`${fieldId}-project-name`}
-									>
-										{t("프로젝트")}
-									</label>
-									<Input
-										id={`${fieldId}-project-name`}
-										list={`${fieldId}-project-names`}
-										maxLength={120}
-										value={projectName}
-										onChange={(event) => setProjectName(event.target.value)}
-									/>
-									<datalist id={`${fieldId}-project-names`}>
-										{[
-											...new Set([
-												...goals.flatMap((g) => {
-													const name = g.projectName ?? g.brand;
-													return name ? [name] : [];
-												}),
-												...snapshot.folders.project
-													.filter((f) => !f.parent)
-													.map((f) => f.name),
-											]),
-										].map((name) => (
-											<option key={name} value={name} />
-										))}
-									</datalist>
-								</div>
-							) : null}
 							{snapshot.folders.project.length > 0 ? (
 								<div className="max-h-36 space-y-2 overflow-y-auto">
 									{snapshot.folders.project.map((folder) => (

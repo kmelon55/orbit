@@ -15,7 +15,7 @@ import {
 	Trash2,
 	X,
 } from "lucide-react";
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import type { Goal } from "#/lib/orbit/assistant-schema";
 import { mutateOrbit } from "#/lib/orbit/functions";
@@ -26,12 +26,18 @@ import {
 	goalProjectGroups,
 	goalTasks,
 } from "#/lib/orbit/goal-portfolio";
-import { goalInput, goalWeekStart } from "#/lib/orbit/goals";
+import {
+	goalDepth,
+	goalInput,
+	goalRoot,
+	goalWeekStart,
+} from "#/lib/orbit/goals";
 import { formatDayKey } from "#/lib/orbit/para";
 import type { OrbitItem } from "#/lib/orbit/schema";
 import { cn } from "#/lib/utils";
-import { GoalCalendar, GoalMap } from "./goal-board";
+import { GoalCalendar } from "./goal-board";
 import { GoalEditor } from "./goal-editor";
+import { GoalMap } from "./goal-map";
 import { GoalMetricHistory, GoalMetricSummary } from "./goal-metric";
 import { useGoals } from "./goal-provider";
 import { GoalWorkspace as RoadmapWorkspace } from "./goal-roadmap";
@@ -41,6 +47,11 @@ import { useOrbitSnapshot } from "./orbit-snapshot-provider";
 import { ScheduleEditor } from "./schedule-editor";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
+import {
+	Collapsible,
+	CollapsibleContent,
+	CollapsibleTrigger,
+} from "./ui/collapsible";
 import {
 	Dialog,
 	DialogContent,
@@ -89,7 +100,7 @@ export function GoalWorkspace() {
 	const [editor, setEditor] = useState<Editor | null>(null);
 	const [deleting, setDeleting] = useState<Goal | null>(null);
 	const [roadmap, setRoadmap] = useState(false);
-	const [view, setView] = useState<"map" | "calendar" | "list">("list");
+	const [view, setView] = useState<"map" | "calendar" | "list">("map");
 	const day = formatDayKey();
 	const roots = state.goals.filter((goal) => !goal.parentId && !goal.roadmap);
 	const groups = goalProjectGroups(state.goals, snapshot.folders.project);
@@ -144,8 +155,9 @@ export function GoalWorkspace() {
 	const detail = state.goals.find((goal) => goal.id === selected);
 	const completedSteps = state.goals.filter(
 		(goal) =>
+			goal.parentId &&
 			goal.status === "done" &&
-			scopedGoals.some((root) => goal.parentId === root.id),
+			scopedGoals.some((root) => goalRoot(goal, state.goals)?.id === root.id),
 	).length;
 	return (
 		<div className="h-full overflow-y-auto bg-background">
@@ -282,111 +294,124 @@ export function GoalWorkspace() {
 						))}
 					</div>
 				</div>
-				{state.loading ? (
-					<output className="block py-8 text-sm text-muted-foreground">
-						{t("불러오는 중…")}
-					</output>
-				) : view === "map" ? (
-					<GoalMap
-						groups={boardGroups}
-						goals={state.goals}
-						busy={state.busy}
-						onOpen={(goal) => setSelected(goal.id)}
-						onAdd={create}
-						onToggle={async (goal) => {
-							const result = await state.save({
-								...goalInput(goal),
-								status: goal.status === "done" ? "active" : "done",
-							});
-							const saved = result?.find((item) => item.id === goal.id);
-							if (saved && goal.status !== "done")
-								toast.success(t("단계 완료"), {
-									description: goal.title,
-									action: {
-										label: t("실행 취소"),
-										onClick: () => {
-											void state.save({
-												...goalInput(saved),
-												status: goal.status,
-												focused: goal.focused,
-											});
-										},
-									},
+				<div key={view} className="orbit-goal-view">
+					{state.loading ? (
+						<output className="block py-8 text-sm text-muted-foreground">
+							{t("불러오는 중…")}
+						</output>
+					) : view === "map" ? (
+						<GoalMap
+							groups={boardGroups}
+							projectGroups={groups}
+							goals={state.goals}
+							busy={state.busy}
+							onOpen={(goal) => setSelected(goal.id)}
+							onAddContribution={(goal, group) =>
+								setEditor({
+									parent: goal,
+									defaultGroupName: group?.name,
+									defaultProject:
+										group?.folders.length === 1 ? group.folders[0] : undefined,
+								})
+							}
+							onToggle={async (goal) => {
+								const result = await state.save({
+									...goalInput(goal),
+									status: goal.status === "done" ? "active" : "done",
 								});
-						}}
-						onCreateStep={async (goal, title, date) =>
-							Boolean(
-								await state.save({
-									title,
-									parentId: goal.id,
-									horizon: "milestone",
-									status: "active",
-									targetDate: date || undefined,
-									projectFolders: [],
-									itemIds: [],
-									description: "",
-									importance: 3,
-								}),
-							)
-						}
-						onEdit={(goal) => setEditor({ goal })}
-					/>
-				) : view === "calendar" ? (
-					<GoalCalendar
-						groups={boardGroups}
-						goals={state.goals}
-						onOpen={(goal) => setSelected(goal.id)}
-					/>
-				) : (
-					<div className="overflow-x-auto rounded-lg border">
-						<div className="min-w-[780px]">
-							<div
-								className={cn(
-									goalColumns,
-									"border-b px-3 py-2 text-xs text-muted-foreground",
-								)}
-							>
-								<span>{t("목표")}</span>
-								<span>{t("기한")}</span>
-								<span>{t("실제 성과")}</span>
-								<span>{t("다음 단계")}</span>
-								<span>{t("이번 주")}</span>
-							</div>
-							{scopedGoals
-								.filter((goal) => matches(goal))
-								.map((goal) => (
-									<Fragment key={goal.id}>
-										<GoalRow
-											goal={goal}
-											projectLabels={groups
-												.filter((group) =>
-													group.goals.some((item) => item.id === goal.id),
-												)
-												.map((group) => group.name)
-												.filter(Boolean)}
-											selected={selected === goal.id}
-											onSelect={() =>
-												setSelected(selected === goal.id ? undefined : goal.id)
-											}
-										/>
-										{selected === goal.id ? (
-											<GoalExecution
-												goal={goal}
-												onEdit={(goal) => setEditor({ goal })}
-												onAdd={() => setEditor({ parent: goal })}
-												onDelete={setDeleting}
-											/>
-										) : null}
-									</Fragment>
-								))}
-							{!scopedGoals.some((goal) => matches(goal)) ? (
-								<div className="px-3 py-6 text-sm text-muted-foreground">
-									{t("목표 없음")}
+								const saved = result?.find((item) => item.id === goal.id);
+								if (saved && goal.status !== "done")
+									toast.success(t("단계 완료"), {
+										description: goal.title,
+										action: {
+											label: t("실행 취소"),
+											onClick: () => {
+												void state.save({
+													...goalInput(saved),
+													status: goal.status,
+													focused: goal.focused,
+												});
+											},
+										},
+									});
+							}}
+							onCreateStep={async (goal, title, date) =>
+								Boolean(
+									await state.save({
+										title,
+										parentId: goal.id,
+										horizon: "milestone",
+										status: "active",
+										targetDate: date || undefined,
+										projectFolders: [],
+										itemIds: [],
+										description: "",
+										importance: 3,
+									}),
+								)
+							}
+							onEdit={(goal) => setEditor({ goal })}
+						/>
+					) : view === "calendar" ? (
+						<GoalCalendar
+							groups={boardGroups}
+							goals={state.goals}
+							onOpen={(goal) => setSelected(goal.id)}
+						/>
+					) : (
+						<div className="overflow-x-auto rounded-lg border">
+							<div className="min-w-[780px]">
+								<div
+									className={cn(
+										goalColumns,
+										"border-b px-3 py-2 text-xs text-muted-foreground",
+									)}
+								>
+									<span>{t("목표")}</span>
+									<span>{t("기한")}</span>
+									<span>{t("실제 성과")}</span>
+									<span>{t("다음 단계")}</span>
+									<span>{t("이번 주")}</span>
 								</div>
-							) : null}
+								{scopedGoals
+									.filter((goal) => matches(goal))
+									.map((goal) => (
+										<Collapsible
+											key={goal.id}
+											open={selected === goal.id}
+											onOpenChange={(open) =>
+												setSelected(open ? goal.id : undefined)
+											}
+										>
+											<GoalRow
+												goal={goal}
+												projectLabels={groups
+													.filter((group) =>
+														group.goals.some((item) => item.id === goal.id),
+													)
+													.map((group) => group.name)
+													.filter(Boolean)}
+												selected={selected === goal.id}
+											/>
+											<CollapsibleContent className="orbit-goal-disclosure">
+												<GoalExecution
+													goal={goal}
+													onEdit={(goal) => setEditor({ goal })}
+													onAdd={() => setEditor({ parent: goal })}
+													onDelete={setDeleting}
+												/>
+											</CollapsibleContent>
+										</Collapsible>
+									))}
+								{!scopedGoals.some((goal) => matches(goal)) ? (
+									<div className="px-3 py-6 text-sm text-muted-foreground">
+										{t("목표 없음")}
+									</div>
+								) : null}
+							</div>
 						</div>
-					</div>
-				)}
+					)}
+				</div>
 			</div>
 			{view !== "list" && detail && !editor && !deleting ? (
 				<Dialog
@@ -421,7 +446,14 @@ export function GoalWorkspace() {
 					{...editor}
 					onClose={() => setEditor(null)}
 					onSaved={(id) => {
-						setSelected(editor.parent?.id ?? editor.goal?.parentId ?? id);
+						const target = state.goals.find((goal) => goal.id === id);
+						setSelected(
+							view === "list"
+								? target
+									? goalRoot(target, state.goals)?.id
+									: id
+								: undefined,
+						);
 						setFilter(editor.goal?.status ?? "active");
 						setProject("all");
 					}}
@@ -441,12 +473,10 @@ function GoalRow({
 	goal,
 	projectLabels,
 	selected,
-	onSelect,
 }: {
 	goal: Goal;
 	projectLabels: string[];
 	selected: boolean;
-	onSelect: () => void;
 }) {
 	const { t } = useI18n();
 	const { goals } = useGoals();
@@ -458,73 +488,73 @@ function GoalRow({
 	const issues = goalAttention(goal, goals, day);
 	const week = goal.week?.start === goalWeekStart(day) ? goal.week.outcome : "";
 	return (
-		<button
-			type="button"
-			aria-expanded={selected}
-			onClick={onSelect}
-			className={cn(
-				goalColumns,
-				"w-full border-b border-border/60 px-3 py-3 text-left text-xs transition-colors last:border-0",
-				selected ? "bg-primary/[0.045]" : "hover:bg-muted/30",
-			)}
-		>
-			<span className="flex min-w-0 items-center gap-2">
-				<ChevronDown
-					className={cn(
-						"size-3.5 shrink-0 text-muted-foreground transition-transform",
-						!selected && "-rotate-90",
-					)}
-				/>
-				<span className="min-w-0">
-					<span
-						className="block truncate text-sm font-medium"
-						title={goal.title}
-					>
-						{goal.title}
-					</span>
-					{projectLabels.length ? (
-						<span
-							className="mt-1 block truncate text-[11px] text-muted-foreground"
-							title={projectLabels.join(" · ")}
-						>
-							{projectLabels.join(" · ")}
-						</span>
-					) : null}
-					<span className="mt-1 block text-[11px] text-muted-foreground">
-						{t("실행 {0}/{1} 단계", [
-							steps.filter((step) => step.status === "done").length,
-							steps.length,
-						])}
-					</span>
-				</span>
-				{issues.length ? (
-					<span
-						className="shrink-0 text-amber-600 dark:text-amber-400"
-						title={issues.map((issue) => t(issue)).join(" · ")}
-					>
-						<AlertCircle className="size-3.5" />
-						<span className="sr-only">{t("점검 필요")}</span>
-					</span>
-				) : null}
-			</span>
-			<span
+		<CollapsibleTrigger asChild>
+			<button
+				type="button"
 				className={cn(
-					"tabular-nums",
-					goal.status === "active" && goal.targetDate && goal.targetDate < day
-						? "text-amber-600 dark:text-amber-400"
-						: "text-muted-foreground",
+					goalColumns,
+					"w-full border-b border-border/60 px-3 py-3 text-left text-xs transition-colors last:border-0",
+					selected ? "bg-primary/[0.045]" : "hover:bg-muted/30",
 				)}
 			>
-				{goal.targetDate || "—"}
-			</span>
-			<GoalMetricSummary goal={goal} />
-			<span className="truncate" title={next?.title}>
-				{next?.title || "—"}
-			</span>
-			<span className="truncate text-muted-foreground" title={week}>
-				{week || "—"}
-			</span>
-		</button>
+				<span className="flex min-w-0 items-center gap-2">
+					<ChevronDown
+						className={cn(
+							"size-3.5 shrink-0 text-muted-foreground motion-safe:transition-transform motion-safe:duration-200",
+							!selected && "-rotate-90",
+						)}
+					/>
+					<span className="min-w-0">
+						<span
+							className="block truncate text-sm font-medium"
+							title={goal.title}
+						>
+							{goal.title}
+						</span>
+						{projectLabels.length ? (
+							<span
+								className="mt-1 block truncate text-[11px] text-muted-foreground"
+								title={projectLabels.join(" · ")}
+							>
+								{projectLabels.join(" · ")}
+							</span>
+						) : null}
+						<span className="mt-1 block text-[11px] text-muted-foreground">
+							{t("실행 {0}/{1} 단계", [
+								steps.filter((step) => step.status === "done").length,
+								steps.length,
+							])}
+						</span>
+					</span>
+					{issues.length ? (
+						<span
+							className="shrink-0 text-amber-600 dark:text-amber-400"
+							title={issues.map((issue) => t(issue)).join(" · ")}
+						>
+							<AlertCircle className="size-3.5" />
+							<span className="sr-only">{t("점검 필요")}</span>
+						</span>
+					) : null}
+				</span>
+				<span
+					className={cn(
+						"tabular-nums",
+						goal.status === "active" && goal.targetDate && goal.targetDate < day
+							? "text-amber-600 dark:text-amber-400"
+							: "text-muted-foreground",
+					)}
+				>
+					{goal.targetDate || "—"}
+				</span>
+				<GoalMetricSummary goal={goal} />
+				<span className="truncate" title={next?.title}>
+					{next?.title || "—"}
+				</span>
+				<span className="truncate text-muted-foreground" title={week}>
+					{week || "—"}
+				</span>
+			</button>
+		</CollapsibleTrigger>
 	);
 }
 
@@ -598,7 +628,12 @@ function GoalExecution({
 								{steps.length}
 							</span>
 						</h5>
-						<Button variant="ghost" size="sm" disabled={busy} onClick={onAdd}>
+						<Button
+							variant="ghost"
+							size="sm"
+							disabled={busy || goalDepth(goal, goals) >= 3}
+							onClick={onAdd}
+						>
 							<Plus className="size-3.5" />
 							{t("단계 추가")}
 						</Button>
@@ -663,7 +698,7 @@ function GoalExecution({
 							</div>
 						))}
 					</div>
-					{!steps.length ? (
+					{!steps.length && goalDepth(goal, goals) < 3 ? (
 						<button
 							type="button"
 							disabled={busy}

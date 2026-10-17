@@ -4,7 +4,12 @@ import { useId, useState } from "react";
 import { toast } from "sonner";
 import type { Goal } from "#/lib/orbit/assistant-schema";
 import { mutateOrbit } from "#/lib/orbit/functions";
-import { focusedGoal, goalInput, goalWeekStart } from "#/lib/orbit/goals";
+import {
+	focusedGoal,
+	goalDescendants,
+	goalInput,
+	goalWeekStart,
+} from "#/lib/orbit/goals";
 import { formatDayKey } from "#/lib/orbit/para";
 import { cn } from "#/lib/utils";
 import { useGoals } from "./goal-provider";
@@ -212,7 +217,7 @@ export function GoalTaskPicker({
 			: [],
 	);
 	const [query, setQuery] = useState("");
-	const related = [goal, ...goals.filter((g) => g.parentId === goal.id)];
+	const related = [goal, ...goalDescendants(goal, goals)];
 	function linked(item: (typeof available)[number]) {
 		return related.some(
 			(g) =>

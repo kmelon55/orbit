@@ -1,7 +1,6 @@
 import {
 	ArrowRight,
 	Check,
-	ChevronDown,
 	ChevronLeft,
 	ChevronRight,
 	Flag,
@@ -10,7 +9,7 @@ import {
 	Trophy,
 	X,
 } from "lucide-react";
-import { type CSSProperties, useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { Goal } from "#/lib/orbit/assistant-schema";
 import {
 	goalCalendarDays,
@@ -27,149 +26,33 @@ import { cn } from "#/lib/utils";
 import { GoalMetricSummary } from "./goal-metric";
 import { useI18n } from "./locale-provider";
 import { Button } from "./ui/button";
+import {
+	Collapsible,
+	CollapsibleContent,
+	CollapsibleTrigger,
+} from "./ui/collapsible";
 import { Input } from "./ui/input";
 
 const colors = ["#8b8ef8", "#38bca2", "#e5a654", "#dd82b2", "#63a9e6"];
 const lightColors = ["#6562c7", "#147d68", "#986117", "#b0447b", "#2875af"];
-function projectColor(key: string, light = false) {
+export function projectColor(key: string, light = false) {
 	let hash = 0;
 	for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
 	return (light ? lightColors : colors)[hash % colors.length];
 }
 const focusStyle =
 	"outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
-type BoardProps = {
+export type BoardProps = {
 	groups: GoalProjectGroup[];
 	goals: Goal[];
 	busy: boolean;
 	onOpen: (goal: Goal) => void;
-	onAdd: (group: GoalProjectGroup) => void;
 	onCreateStep: (goal: Goal, title: string, date: string) => Promise<boolean>;
 	onEdit: (goal: Goal) => void;
 	onToggle: (goal: Goal) => void;
 };
 
-export function GoalMap(props: BoardProps) {
-	const { t } = useI18n();
-	const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-	const { groups, goals, busy, onAdd } = props;
-	return (
-		<div className="space-y-3">
-			{groups
-				.filter((group) => group.goals.length)
-				.map((group) => {
-					const color = "var(--goal-color)";
-					const closed = collapsed.has(group.key);
-					return (
-						<section
-							key={group.key}
-							className="overflow-hidden rounded-xl border bg-card shadow-xs [--goal-color:var(--goal-color-light)] dark:[--goal-color:var(--goal-color-dark)]"
-							style={
-								{
-									"--goal-color-light": projectColor(group.key, true),
-									"--goal-color-dark": projectColor(group.key),
-								} as CSSProperties
-							}
-						>
-							<div className="flex items-center justify-between gap-3 bg-muted/20 px-4 py-2">
-								<button
-									type="button"
-									aria-expanded={!closed}
-									onClick={() =>
-										setCollapsed((previous) => {
-											const next = new Set(previous);
-											if (next.has(group.key)) next.delete(group.key);
-											else next.add(group.key);
-											return next;
-										})
-									}
-									className={cn(
-										"flex min-w-0 items-center gap-2.5 rounded py-1 text-left",
-										focusStyle,
-									)}
-								>
-									<ChevronDown
-										className={cn(
-											"size-3.5 shrink-0 text-muted-foreground transition-transform",
-											closed && "-rotate-90",
-										)}
-									/>
-									<span
-										className="size-2 shrink-0 rounded-full"
-										style={{ background: color }}
-									/>
-									<h3 className="truncate text-sm font-semibold">
-										{group.name || t("미분류")}
-									</h3>
-									<span className="text-xs tabular-nums text-muted-foreground">
-										{group.goals.length}
-									</span>
-								</button>
-								<Button
-									variant="ghost"
-									size="icon-sm"
-									disabled={busy}
-									aria-label={t("{0} 목표 추가", [group.name || t("미분류")])}
-									onClick={() => onAdd(group)}
-								>
-									<Plus className="size-3.5" />
-								</Button>
-							</div>
-							<div hidden={closed}>
-								{group.goals.map((goal) => (
-									<GoalLane
-										key={goal.id}
-										{...props}
-										goal={goal}
-										steps={goals
-											.filter((step) => step.parentId === goal.id)
-											.sort(
-												(a, b) =>
-													(a.targetDate ?? "9999").localeCompare(
-														b.targetDate ?? "9999",
-													) || a.createdAt.localeCompare(b.createdAt),
-											)}
-										color={color}
-									/>
-								))}
-							</div>
-						</section>
-					);
-				})}
-			<div className="flex flex-wrap gap-2 pt-1">
-				{groups
-					.filter((group) => !group.goals.length)
-					.map((group) => (
-						<button
-							key={group.key}
-							type="button"
-							disabled={busy}
-							onClick={() => onAdd(group)}
-							className={cn(
-								"flex items-center gap-2 rounded-lg border border-dashed px-3 py-2.5 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-50",
-								focusStyle,
-							)}
-							aria-label={t("{0} 목표 추가", [group.name || t("미분류")])}
-						>
-							<span
-								className="size-1.5 rounded-full"
-								style={{ background: projectColor(group.key) }}
-							/>
-							{group.name || t("미분류")}
-							<Plus className="size-3" />
-						</button>
-					))}
-			</div>
-			{!groups.length ? (
-				<p className="py-8 text-center text-sm text-muted-foreground">
-					{t("목표 없음")}
-				</p>
-			) : null}
-		</div>
-	);
-}
-
-function GoalLane({
+export function GoalLane({
 	goal,
 	steps,
 	color,
@@ -178,7 +61,13 @@ function GoalLane({
 	onEdit,
 	onToggle,
 	onCreateStep,
-}: BoardProps & { goal: Goal; steps: Goal[]; color: string }) {
+	endpointLabel,
+}: BoardProps & {
+	goal: Goal;
+	steps: Goal[];
+	color: string;
+	endpointLabel?: string;
+}) {
 	const { t } = useI18n();
 	const [adding, setAdding] = useState(false);
 	const addButton = useRef<HTMLButtonElement>(null);
@@ -192,172 +81,191 @@ function GoalLane({
 		addButton.current?.focus();
 	}
 	return (
-		<article className="border-t border-border/60">
-			<div className="grid gap-5 px-5 py-5 lg:grid-cols-[210px_minmax(0,1fr)]">
-				<div className="min-w-0">
-					<button
-						type="button"
-						onClick={() => onOpen(goal)}
-						className={cn(
-							"group flex w-full items-start gap-3 rounded-md text-left",
-							focusStyle,
-						)}
-					>
-						<ProgressRing
-							done={done}
-							total={steps.length}
-							complete={goal.status === "done"}
-							color={color}
-						/>
-						<div className="min-w-0 pt-1">
-							<h4
-								className="line-clamp-2 break-words text-sm font-semibold leading-5 group-hover:underline"
-								title={goal.title}
-							>
-								{goal.title}
-							</h4>
-							<div className="mt-1.5 text-[11px] text-muted-foreground">
-								{goal.status === "done"
-									? t("목표 달성")
-									: goal.status === "paused"
-										? t("보류")
-										: steps.length
-											? t("{0}/{1} 단계 완료", [done, steps.length])
-											: t("진행 중")}
-							</div>
-						</div>
-					</button>
-					{goal.metric ? (
+		<Collapsible open={adding} onOpenChange={setAdding} asChild>
+			<article className="border-t border-border/60">
+				<div className="grid gap-5 px-5 py-5 lg:grid-cols-[210px_minmax(0,1fr)]">
+					<div className="min-w-0">
 						<button
 							type="button"
-							disabled={busy}
-							onClick={() => onEdit(goal)}
-							aria-label={t("현재 수치 수정")}
+							onClick={() => onOpen(goal)}
 							className={cn(
-								"mt-3 ml-[60px] rounded text-left text-base font-semibold tabular-nums hover:underline",
+								"group flex w-full items-start gap-3 rounded-md text-left",
 								focusStyle,
 							)}
 						>
-							<span className="mb-1 block text-xs font-normal text-muted-foreground">
-								{t("실제 성과")}
-							</span>
-							<GoalMetricSummary goal={goal} />
+							<ProgressRing
+								done={done}
+								total={steps.length}
+								complete={goal.status === "done"}
+								color={color}
+							/>
+							<div className="min-w-0 pt-1">
+								<h4
+									className="line-clamp-2 break-words text-sm font-semibold leading-5 group-hover:underline"
+									title={goal.title}
+								>
+									{goal.title}
+								</h4>
+								<div className="mt-1.5 text-[11px] text-muted-foreground">
+									{goal.status === "done"
+										? t("목표 달성")
+										: goal.status === "paused"
+											? t("보류")
+											: steps.length
+												? t("{0}/{1} 단계 완료", [done, steps.length])
+												: t("진행 중")}
+								</div>
+							</div>
 						</button>
-					) : null}
-				</div>
-				<div className="min-w-0 overflow-x-auto px-1 pt-1 pb-2">
-					<div className="flex min-w-full items-start">
-						{steps.map((step, index) => (
-							<StageNode
-								key={step.id}
-								step={step}
-								index={index}
-								current={next?.id === step.id}
-								busy={busy}
-								onEdit={onEdit}
-								onToggle={onToggle}
-							/>
-						))}
-						<div
-							className={cn(
-								"relative flex-1",
-								steps.length ? "min-w-20" : "min-w-[160px]",
-							)}
-						>
-							<div
-								aria-hidden="true"
-								className="absolute left-4 right-0 top-4 border-t border-dashed border-border"
-							/>
+						{goal.metric ? (
 							<button
-								ref={addButton}
 								type="button"
 								disabled={busy}
-								aria-expanded={adding}
-								onClick={() => {
-									if (adding) closeComposer();
-									else setAdding(true);
-								}}
+								onClick={() => onEdit(goal)}
+								aria-label={t("현재 수치 수정")}
 								className={cn(
-									"group relative rounded-md text-left text-muted-foreground hover:text-foreground disabled:opacity-50",
+									"mt-3 ml-[60px] rounded text-left text-base font-semibold tabular-nums hover:underline",
+									focusStyle,
+								)}
+							>
+								<span className="mb-1 block text-xs font-normal text-muted-foreground">
+									{t("실제 성과")}
+								</span>
+								<GoalMetricSummary goal={goal} />
+							</button>
+						) : null}
+					</div>
+					<div className="min-w-0 overflow-x-auto px-1 pt-1 pb-2">
+						<div className="flex min-w-full items-start">
+							{steps.map((step, index) => (
+								<StageNode
+									key={step.id}
+									step={step}
+									index={index}
+									current={next?.id === step.id}
+									busy={busy}
+									onEdit={onEdit}
+									onToggle={onToggle}
+								/>
+							))}
+							<div
+								className={cn(
+									"relative flex-1",
+									steps.length ? "min-w-20" : "min-w-[160px]",
+								)}
+							>
+								<div
+									aria-hidden="true"
+									className="absolute left-4 right-0 top-4 border-t border-dashed border-border"
+								/>
+								<CollapsibleTrigger asChild>
+									<button
+										ref={addButton}
+										type="button"
+										disabled={busy}
+										className={cn(
+											"group relative rounded-md text-left text-muted-foreground hover:text-foreground disabled:opacity-50",
+											focusStyle,
+										)}
+									>
+										<span
+											className={cn(
+												"mb-2.5 flex size-8 items-center justify-center rounded-full border border-dashed bg-card transition-colors group-hover:border-[var(--goal-color)] group-hover:text-[var(--goal-color)]",
+												!steps.length &&
+													"border-[var(--goal-color)]/50 text-[var(--goal-color)]",
+											)}
+										>
+											<Plus
+												className={cn(
+													"size-4 motion-safe:transition-transform motion-safe:duration-200",
+													adding && "rotate-45",
+												)}
+											/>
+										</span>
+										<span className="pr-3 text-xs">
+											{t(steps.length ? "단계 추가" : "첫 단계")}
+										</span>
+									</button>
+								</CollapsibleTrigger>
+							</div>
+							<button
+								type="button"
+								disabled={busy || goal.status === "paused"}
+								aria-pressed={
+									endpointLabel ? goal.status === "done" : undefined
+								}
+								aria-label={
+									endpointLabel
+										? t(goal.status === "done" ? "{0} 다시 열기" : "{0} 완료", [
+												goal.title,
+											])
+										: undefined
+								}
+								onClick={() => (endpointLabel ? onToggle(goal) : onOpen(goal))}
+								className={cn(
+									"relative min-w-[100px] max-w-[150px] rounded-md text-left",
 									focusStyle,
 								)}
 							>
 								<span
 									className={cn(
-										"mb-2.5 flex size-8 items-center justify-center rounded-full border border-dashed bg-card transition-colors group-hover:border-[var(--goal-color)] group-hover:text-[var(--goal-color)]",
-										!steps.length &&
-											"border-[var(--goal-color)]/50 text-[var(--goal-color)]",
+										"mb-2.5 flex size-8 items-center justify-center rounded-full border",
+										goal.status === "done"
+											? "border-amber-400/40 bg-amber-400/15 text-amber-500"
+											: done > 0 && done === steps.length
+												? "border-[var(--goal-color)]/50 bg-[var(--goal-color)]/10 text-[var(--goal-color)]"
+												: "border-border bg-muted/50 text-muted-foreground",
 									)}
 								>
-									<Plus className="size-4" />
+									<Trophy className="size-4" />
 								</span>
-								<span className="pr-3 text-xs">
-									{t(steps.length ? "단계 추가" : "첫 단계")}
+								<span className="block text-xs font-medium">
+									{goal.status === "done"
+										? t("목표 달성")
+										: (endpointLabel ?? t("최종 목표"))}
 								</span>
+								<span className="mt-1.5 block text-[11px] text-muted-foreground">
+									{goal.targetDate || t("기한 미정")}
+								</span>
+								{goal.targetDate && goal.status === "active" ? (
+									<Deadline date={goal.targetDate} today={today} />
+								) : null}
 							</button>
 						</div>
-						<button
-							type="button"
-							onClick={() => onOpen(goal)}
-							className={cn(
-								"relative min-w-[100px] max-w-[150px] rounded-md text-left",
-								focusStyle,
-							)}
-						>
-							<span
-								className={cn(
-									"mb-2.5 flex size-8 items-center justify-center rounded-full border",
-									goal.status === "done"
-										? "border-amber-400/40 bg-amber-400/15 text-amber-500"
-										: done > 0 && done === steps.length
-											? "border-[var(--goal-color)]/50 bg-[var(--goal-color)]/10 text-[var(--goal-color)]"
-											: "border-border bg-muted/50 text-muted-foreground",
-								)}
-							>
-								<Trophy className="size-4" />
-							</span>
-							<span className="block text-xs font-medium">
-								{t(goal.status === "done" ? "목표 달성" : "최종 목표")}
-							</span>
-							<span className="mt-1.5 block text-[11px] text-muted-foreground">
-								{goal.targetDate || t("기한 미정")}
-							</span>
-							{goal.targetDate && goal.status === "active" ? (
-								<Deadline date={goal.targetDate} today={today} />
-							) : null}
-						</button>
 					</div>
 				</div>
-			</div>
-			{adding ? (
-				<StageComposer
-					busy={busy}
-					onClose={closeComposer}
-					onSave={async (title, date) => {
-						const saved = await onCreateStep(goal, title, date);
-						if (saved) closeComposer();
-					}}
-				/>
-			) : null}
-			{week ? (
-				<button
-					type="button"
-					onClick={() => onOpen(goal)}
-					className={cn(
-						"flex w-full items-center gap-3 border-t border-border/50 bg-muted/15 px-5 py-2.5 text-left text-xs hover:bg-muted/30",
-						focusStyle,
-					)}
-				>
-					<span className="shrink-0 text-muted-foreground">{t("이번 주")}</span>
-					<span className="truncate">{week}</span>
-					<ArrowRight className="ml-auto size-3.5 shrink-0 text-muted-foreground" />
-				</button>
-			) : null}
-		</article>
+				<CollapsibleContent className="orbit-goal-disclosure">
+					<StageComposer
+						busy={busy}
+						onClose={closeComposer}
+						onSave={async (title, date) => {
+							const saved = await onCreateStep(goal, title, date);
+							if (saved) closeComposer();
+						}}
+					/>
+				</CollapsibleContent>
+				{week ? (
+					<button
+						type="button"
+						onClick={() => onOpen(goal)}
+						className={cn(
+							"flex w-full items-center gap-3 border-t border-border/50 bg-muted/15 px-5 py-2.5 text-left text-xs hover:bg-muted/30",
+							focusStyle,
+						)}
+					>
+						<span className="shrink-0 text-muted-foreground">
+							{t("이번 주")}
+						</span>
+						<span className="truncate">{week}</span>
+						<ArrowRight className="ml-auto size-3.5 shrink-0 text-muted-foreground" />
+					</button>
+				) : null}
+			</article>
+		</Collapsible>
 	);
 }
 
-function StageNode({
+export function StageNode({
 	step,
 	index,
 	current,
@@ -468,7 +376,7 @@ function StageNode({
 	);
 }
 
-function StageComposer({
+export function StageComposer({
 	busy,
 	onSave,
 	onClose,
@@ -578,7 +486,7 @@ function Deadline({ date, today }: { date: string; today: string }) {
 	);
 }
 
-function ProgressRing({
+export function ProgressRing({
 	done,
 	total,
 	complete,

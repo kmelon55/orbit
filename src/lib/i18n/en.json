@@ -1135,5 +1135,14 @@
 	"모든 목표": "All goals",
 	"프로젝트 없음": "No project",
 	"프로젝트 필터": "Filter by project",
-	"목표로 돌아가기": "Back to goals"
+	"목표로 돌아가기": "Back to goals",
+	"상위 목표": "Parent goal",
+	"독립 목표": "Independent goal",
+	"프로젝트 목표": "Project outcome",
+	"프로젝트 목표 추가": "Add project outcome",
+	"다른 프로젝트": "Another project",
+	"공통 단계": "Shared stages",
+	"{0}/{1} 결과 완료": "{0}/{1} outcomes complete",
+	"{0} 펼치기 또는 접기": "Expand or collapse {0}",
+	"목표는 전체 목표, 프로젝트 목표, 마일스톤의 세 단계까지만 만들 수 있습니다.": "Goals support three levels: overall goal, project outcome, and milestone."
 }
