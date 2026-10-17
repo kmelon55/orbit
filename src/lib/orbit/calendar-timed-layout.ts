@@ -60,23 +60,35 @@ export function layoutTimedItems(
 	let cluster: Entry[] = [];
 	let clusterEnd = -1;
 
-	function flush() {
+	function flush(nextTop?: number) {
 		if (cluster.length === 0) return;
-		const columnEnds: number[] = [];
+		const columnLast: Entry[] = [];
 		for (const entry of cluster) {
-			const available = columnEnds.findIndex((end) => end <= entry.top);
-			entry.column = available === -1 ? columnEnds.length : available;
-			columnEnds[entry.column] = entry.top + entry.height;
+			// Collision detection must not depend on zoom or minimum card height.
+			const available = columnLast.findIndex((last) => last.end <= entry.start);
+			entry.column = available === -1 ? columnLast.length : available;
+			const previous = columnLast[entry.column];
+			if (previous) {
+				previous.height = Math.min(previous.height, entry.top - previous.top);
+			}
+			columnLast[entry.column] = entry;
 		}
-		for (const entry of cluster) entry.columns = columnEnds.length;
+		// Preserve readable minimum heights only where there is room before the
+		// next card, including the next cluster whose columns may have other widths.
+		if (nextTop !== undefined) {
+			for (const entry of columnLast) {
+				entry.height = Math.min(entry.height, nextTop - entry.top);
+			}
+		}
+		for (const entry of cluster) entry.columns = columnLast.length;
 		result.push(...cluster);
 		cluster = [];
 	}
 
 	for (const entry of entries) {
-		if (cluster.length > 0 && entry.top >= clusterEnd) flush();
+		if (cluster.length > 0 && entry.start >= clusterEnd) flush(entry.top);
 		cluster.push(entry);
-		clusterEnd = Math.max(clusterEnd, entry.top + entry.height);
+		clusterEnd = Math.max(clusterEnd, entry.end);
 	}
 	flush();
 	return result;

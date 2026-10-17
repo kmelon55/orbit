@@ -111,7 +111,7 @@ test("zoom limits density and keeps scrolling within the start of the day", () =
 	assert.equal(zoomedScrollTop(0, 200, 120, 48), 0);
 });
 
-test("zoomed-out short cards keep a readable row without covering the next card", () => {
+test("zoomed-out consecutive cards stay full width without covering the next card", () => {
 	const entries = layoutTimedItems(
 		[
 			task("a", "09:00", "09:15"),
@@ -123,7 +123,7 @@ test("zoomed-out short cards keep a readable row without covering the next card"
 	);
 	assert.deepEqual(
 		entries.map((entry) => entry.height),
-		[22, 22, 22],
+		[12, 12, 22],
 	);
 	assert.deepEqual(
 		entries.map((entry) => entry.top),
@@ -131,15 +131,87 @@ test("zoomed-out short cards keep a readable row without covering the next card"
 	);
 	assert.deepEqual(
 		entries.map((entry) => entry.column),
-		[0, 1, 0],
+		[0, 0, 0],
 	);
 	assert.deepEqual(
 		entries.map((entry) => entry.columns),
-		[2, 2, 2],
+		[1, 1, 1],
 	);
 	assert.equal(entries[0].start, 540);
 	assert.equal(entries[0].end, 555);
 	assert.equal(entries[0].label, "09:00–09:15");
+});
+
+test("touching schedules keep the same columns at fractional zoom levels", () => {
+	const items = [
+		task("a", "09:05", "09:35"),
+		task("b", "09:35", "10:05"),
+		task("c", "10:05", "10:06"),
+		task("d", "10:07", "10:08"),
+	];
+	for (const height of [
+		48,
+		80,
+		120,
+		175.5,
+		240,
+		...Array.from({ length: 193 }, (_, i) => 48 + i * 0.997),
+	]) {
+		const entries = layoutTimedItems(items, "2026-10-11", height);
+		assert.deepEqual(
+			entries.map((entry) => entry.columns),
+			[1, 1, 1, 1],
+		);
+		assert.deepEqual(
+			entries.map((entry) => entry.column),
+			[0, 0, 0, 0],
+		);
+		for (let i = 1; i < entries.length; i++) {
+			assert.ok(
+				entries[i - 1].top + entries[i - 1].height <= entries[i].top + 1e-9,
+			);
+		}
+	}
+});
+
+test("real overlaps and reused columns remain stable across zoom levels", () => {
+	const items = [
+		task("a", "09:00", "10:00"),
+		task("b", "09:05", "09:10"),
+		task("c", "09:10", "09:15"),
+		task("d", "10:00", "10:01"),
+	];
+	for (const height of [48, 80, 120, 175.5, 240]) {
+		const entries = layoutTimedItems(items, "2026-10-11", height);
+		assert.deepEqual(
+			entries.map((entry) => entry.columns),
+			[2, 2, 2, 1],
+		);
+		assert.deepEqual(
+			entries.map((entry) => entry.column),
+			[0, 1, 1, 0],
+		);
+		assert.ok(entries[1].top + entries[1].height <= entries[2].top + 1e-9);
+	}
+});
+
+test("minimum card heights do not cover a following cluster with wider cards", () => {
+	const entries = layoutTimedItems(
+		[
+			task("a", "09:00", "09:05"),
+			task("b", "09:00", "09:10"),
+			task("c", "09:10", "09:15"),
+		],
+		"2026-10-11",
+		48,
+	);
+	assert.deepEqual(
+		entries.map((entry) => entry.columns),
+		[2, 2, 1],
+	);
+	for (const entry of entries.slice(0, 2)) {
+		assert.ok(entry.top + entry.height <= entries[2].top + 1e-9);
+	}
 });
 
 test("short cards near midnight retain the actual start position at minimum zoom", () => {
