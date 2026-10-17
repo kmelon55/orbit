@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import type { Goal } from "#/lib/orbit/assistant-schema";
-import { type GoalInput, goalInput } from "#/lib/orbit/goals";
+import { type GoalInput, goalInput, goalWeekStart } from "#/lib/orbit/goals";
+import { formatDayKey } from "#/lib/orbit/para";
 import { useGoals } from "./goal-provider";
 import { useI18n } from "./locale-provider";
 import { useOrbitSnapshot } from "./orbit-snapshot-provider";
@@ -15,6 +16,13 @@ import {
 	DialogTitle,
 } from "./ui/dialog";
 import { Input } from "./ui/input";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "./ui/select";
 import { Textarea } from "./ui/textarea";
 
 export function GoalEditor({
@@ -44,9 +52,17 @@ export function GoalEditor({
 	const [description, setDescription] = useState(goal?.description ?? "");
 	const [date, setDate] = useState(goal?.targetDate ?? "");
 	const [numeric, setNumeric] = useState(Boolean(goal?.metric));
-	const [current, setCurrent] = useState(String(goal?.metric?.current ?? 0));
+	const [current, setCurrent] = useState(String(goal?.metric?.current ?? ""));
 	const [target, setTarget] = useState(String(goal?.metric?.target ?? ""));
 	const [unit, setUnit] = useState(goal?.metric?.unit ?? "");
+	const [measuredAt, setMeasuredAt] = useState(goal?.metric?.measuredAt ?? "");
+	const [measurementDateEdited, setMeasurementDateEdited] = useState(false);
+	const [period, setPeriod] = useState<"point" | "week" | "month">(
+		goal?.metric?.period ?? "point",
+	);
+	const [periodStart, setPeriodStart] = useState(
+		goal?.metric?.periodStart ?? "",
+	);
 	const [projects, setProjects] = useState(
 		goal?.projectFolders ?? (defaultProject ? [defaultProject] : []),
 	);
@@ -105,7 +121,13 @@ export function GoalEditor({
 							targetDate: date || undefined,
 							metric: numeric
 								? {
-										current: Number(current),
+										current: current.trim() ? Number(current) : null,
+										measuredAt: current.trim()
+											? measuredAt || undefined
+											: undefined,
+										period: period === "point" ? undefined : period,
+										periodStart:
+											period === "point" ? undefined : periodStart || undefined,
 										target: Number(target),
 										unit: unit.trim(),
 									}
@@ -122,38 +144,6 @@ export function GoalEditor({
 						onClose();
 					}}
 				>
-					{!parent && !goal?.parentId ? (
-						<div className="space-y-2">
-							<label
-								className="text-sm font-medium"
-								htmlFor={`${fieldId}-project-name`}
-							>
-								{t("프로젝트")}
-							</label>
-							<Input
-								id={`${fieldId}-project-name`}
-								list={`${fieldId}-project-names`}
-								maxLength={120}
-								value={projectName}
-								onChange={(event) => setProjectName(event.target.value)}
-							/>
-							<datalist id={`${fieldId}-project-names`}>
-								{[
-									...new Set([
-										...goals.flatMap((g) => {
-											const name = g.projectName ?? g.brand;
-											return name ? [name] : [];
-										}),
-										...snapshot.folders.project
-											.filter((f) => !f.parent)
-											.map((f) => f.name),
-									]),
-								].map((name) => (
-									<option key={name} value={name} />
-								))}
-							</datalist>
-						</div>
-					) : null}
 					<div className="space-y-2">
 						<label className="text-sm font-medium" htmlFor={`${fieldId}-title`}>
 							{t("목표")}
@@ -205,54 +195,136 @@ export function GoalEditor({
 							{t("숫자로 성과 기록")}
 						</label>
 						{numeric ? (
-							<div className="grid grid-cols-3 gap-2">
-								<div className="space-y-1.5">
-									<label
-										className="text-sm font-medium"
-										htmlFor={`${fieldId}-current`}
-									>
-										{t("현재")}
-									</label>
-									<Input
-										id={`${fieldId}-current`}
-										type="number"
-										min={0}
-										step="any"
-										required
-										value={current}
-										onChange={(e) => setCurrent(e.target.value)}
-									/>
+							<div className="space-y-3">
+								<div className="grid grid-cols-3 gap-2">
+									<div className="space-y-1.5">
+										<label
+											className="text-sm font-medium"
+											htmlFor={`${fieldId}-current`}
+										>
+											{t("현재")}
+										</label>
+										<Input
+											id={`${fieldId}-current`}
+											type="number"
+											step="any"
+											placeholder={t("미측정")}
+											value={current}
+											onChange={(e) => {
+												setCurrent(e.target.value);
+												if (!measurementDateEdited)
+													setMeasuredAt(e.target.value ? formatDayKey() : "");
+											}}
+										/>
+									</div>
+									<div className="space-y-1.5">
+										<label
+											className="text-sm font-medium"
+											htmlFor={`${fieldId}-target`}
+										>
+											{t("목표값")}
+										</label>
+										<Input
+											id={`${fieldId}-target`}
+											type="number"
+											min={0.000001}
+											step="any"
+											required
+											value={target}
+											onChange={(e) => setTarget(e.target.value)}
+										/>
+									</div>
+									<div className="space-y-1.5">
+										<label
+											className="text-sm font-medium"
+											htmlFor={`${fieldId}-unit`}
+										>
+											{t("단위")}
+										</label>
+										<Input
+											id={`${fieldId}-unit`}
+											maxLength={30}
+											value={unit}
+											onChange={(e) => setUnit(e.target.value)}
+										/>
+									</div>
 								</div>
-								<div className="space-y-1.5">
-									<label
-										className="text-sm font-medium"
-										htmlFor={`${fieldId}-target`}
-									>
-										{t("목표값")}
-									</label>
-									<Input
-										id={`${fieldId}-target`}
-										type="number"
-										min={0.000001}
-										step="any"
-										required
-										value={target}
-										onChange={(e) => setTarget(e.target.value)}
-									/>
-								</div>
-								<div className="space-y-1.5">
-									<label
-										className="text-sm font-medium"
-										htmlFor={`${fieldId}-unit`}
-									>
-										{t("단위")}
-									</label>
-									<Input
-										id={`${fieldId}-unit`}
-										maxLength={30}
-										value={unit}
-										onChange={(e) => setUnit(e.target.value)}
-									/>
+								<div className="flex flex-wrap items-end gap-3">
+									<div className="min-w-32 space-y-1.5">
+										<label className="text-sm" htmlFor={`${fieldId}-period`}>
+											{t("측정 단위")}
+										</label>
+										<Select
+											value={period}
+											onValueChange={(value) => {
+												setPeriod(value as "point" | "week" | "month");
+												const day = measuredAt || formatDayKey();
+												setPeriodStart(
+													value === "month"
+														? `${day.slice(0, 7)}-01`
+														: value === "week"
+															? goalWeekStart(day)
+															: "",
+												);
+											}}
+										>
+											<SelectTrigger id={`${fieldId}-period`}>
+												<SelectValue />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value="point">{t("시점 수치")}</SelectItem>
+												<SelectItem value="week">{t("주간 실적")}</SelectItem>
+												<SelectItem value="month">{t("월간 실적")}</SelectItem>
+											</SelectContent>
+										</Select>
+									</div>
+									{period !== "point" ? (
+										<div className="space-y-1.5">
+											<label
+												className="text-sm"
+												htmlFor={`${fieldId}-period-start`}
+											>
+												{t("실적 기간")}
+											</label>
+											<Input
+												id={`${fieldId}-period-start`}
+												type={period === "month" ? "month" : "date"}
+												value={
+													period === "month"
+														? periodStart.slice(0, 7)
+														: periodStart
+												}
+												onChange={(event) =>
+													setPeriodStart(
+														event.target.value
+															? period === "month"
+																? `${event.target.value}-01`
+																: goalWeekStart(event.target.value)
+															: "",
+													)
+												}
+											/>
+										</div>
+									) : null}
+
+									<div className="space-y-1.5">
+										<label
+											className="text-sm"
+											htmlFor={`${fieldId}-measured-at`}
+										>
+											{t("측정일")}
+										</label>
+										<Input
+											id={`${fieldId}-measured-at`}
+											type="date"
+											disabled={!current.trim()}
+											value={measuredAt}
+											onChange={(event) => {
+												setMeasuredAt(event.target.value);
+												setMeasurementDateEdited(true);
+											}}
+										/>
+									</div>
 								</div>
 							</div>
 						) : null}
@@ -265,6 +337,38 @@ export function GoalEditor({
 								: ""}
 						</summary>
 						<div className="mt-3 space-y-3">
+							{!parent && !goal?.parentId ? (
+								<div className="space-y-2">
+									<label
+										className="text-sm font-medium"
+										htmlFor={`${fieldId}-project-name`}
+									>
+										{t("프로젝트")}
+									</label>
+									<Input
+										id={`${fieldId}-project-name`}
+										list={`${fieldId}-project-names`}
+										maxLength={120}
+										value={projectName}
+										onChange={(event) => setProjectName(event.target.value)}
+									/>
+									<datalist id={`${fieldId}-project-names`}>
+										{[
+											...new Set([
+												...goals.flatMap((g) => {
+													const name = g.projectName ?? g.brand;
+													return name ? [name] : [];
+												}),
+												...snapshot.folders.project
+													.filter((f) => !f.parent)
+													.map((f) => f.name),
+											]),
+										].map((name) => (
+											<option key={name} value={name} />
+										))}
+									</datalist>
+								</div>
+							) : null}
 							{snapshot.folders.project.length > 0 ? (
 								<div className="max-h-36 space-y-2 overflow-y-auto">
 									{snapshot.folders.project.map((folder) => (

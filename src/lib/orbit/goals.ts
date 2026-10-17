@@ -9,6 +9,7 @@ export function goalInput(goal: Goal): GoalInput {
 		revision,
 		createdAt: _created,
 		updatedAt: _updated,
+		metricHistory: _history,
 		expectedRevision: _expected,
 		...input
 	} = goal;
@@ -28,7 +29,7 @@ export function focusedGoal(goals: Goal[]) {
 }
 
 export function goalPercent(goal: Goal) {
-	return goal.metric
+	return goal.metric && goal.metric.current !== null
 		? Math.min(
 				100,
 				Math.max(0, (goal.metric.current / goal.metric.target) * 100),

@@ -73,6 +73,22 @@ export const goalRoadmapSchema = z
 			.strict(),
 	})
 	.strict();
+export const goalMetricSchema = z
+	.object({
+		current: z.number().finite().nullable(),
+		target: z.number().finite().positive(),
+		unit: z.string().trim().max(30),
+		measuredAt: daySchema.optional(),
+		period: z.enum(["week", "month"]).optional(),
+		periodStart: daySchema.optional(),
+	})
+	.strict();
+export const goalMeasurementSchema = goalMetricSchema.extend({
+	current: z.number().finite(),
+	revision: z.number().int().min(1),
+	recordedAt: z.iso.datetime({ offset: true }),
+});
+
 export const goalInputSchema = z
 	.object({
 		id: assistantId.optional(),
@@ -89,14 +105,7 @@ export const goalInputSchema = z
 		projectFolders: z.array(z.string().min(1).max(500)).max(50).default([]),
 		itemIds: z.array(z.string().min(1).max(200)).max(500).default([]),
 		successCriteria: z.string().trim().max(1000).optional(),
-		metric: z
-			.object({
-				current: z.number().finite().min(0),
-				target: z.number().finite().positive(),
-				unit: z.string().trim().max(30),
-			})
-			.strict()
-			.optional(),
+		metric: goalMetricSchema.optional(),
 		focused: z.boolean().optional(),
 		roadmap: goalRoadmapSchema.optional(),
 		week: z
@@ -303,6 +312,7 @@ export type Goal = z.infer<typeof goalInputSchema> & {
 	revision: number;
 	createdAt: string;
 	updatedAt: string;
+	metricHistory?: z.infer<typeof goalMeasurementSchema>[];
 };
 export type Briefing = z.infer<typeof briefingInputSchema> & {
 	id: string;
@@ -377,6 +387,7 @@ export const assistantRecordSchemas = {
 	goal: goalInputSchema.omit({ expectedRevision: true }).extend({
 		id: assistantId,
 		revision: z.number().int().min(1),
+		metricHistory: z.array(goalMeasurementSchema).optional(),
 		...timestamps,
 	}),
 	briefing: briefingInputSchema.extend({

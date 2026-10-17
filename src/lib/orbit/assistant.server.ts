@@ -18,6 +18,7 @@ import {
 	recommendationInputSchema,
 } from "./assistant-schema";
 import { databaseFor, sha256, withDatabase } from "./database";
+import { recordGoalMeasurement } from "./goal-metrics";
 import { goalTasks } from "./goal-portfolio";
 import { goalInput } from "./goals";
 import type { OrbitItem } from "./schema";
@@ -191,6 +192,7 @@ async function saveGoal(input: z.input<typeof goalInputSchema>) {
 	const { expectedRevision: _, ...values } = parsed;
 	return write("goal", {
 		...values,
+		metricHistory: recordGoalMeasurement(existing, parsed.metric, now),
 		focused: parsed.status === "active" && Boolean(parsed.focused),
 		id,
 		revision: (existing?.revision ?? 0) + 1,

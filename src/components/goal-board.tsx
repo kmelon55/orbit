@@ -24,6 +24,7 @@ import {
 import { goalWeekStart } from "#/lib/orbit/goals";
 import { formatDayKey } from "#/lib/orbit/para";
 import { cn } from "#/lib/utils";
+import { GoalMetricSummary } from "./goal-metric";
 import { useI18n } from "./locale-provider";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -237,10 +238,10 @@ function GoalLane({
 								focusStyle,
 							)}
 						>
-							{goal.metric.current.toLocaleString()}
-							<span className="ml-1 text-[11px] font-normal text-muted-foreground">
-								/ {goal.metric.target.toLocaleString()} {goal.metric.unit}
+							<span className="mb-1 block text-xs font-normal text-muted-foreground">
+								{t("실제 성과")}
 							</span>
+							<GoalMetricSummary goal={goal} />
 						</button>
 					) : null}
 				</div>

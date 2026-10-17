@@ -8,7 +8,6 @@ import {
 	Circle,
 	Ellipsis,
 	Flag,
-	FolderKanban,
 	List,
 	Pencil,
 	Plus,
@@ -33,6 +32,7 @@ import type { OrbitItem } from "#/lib/orbit/schema";
 import { cn } from "#/lib/utils";
 import { GoalCalendar, GoalMap } from "./goal-board";
 import { GoalEditor } from "./goal-editor";
+import { GoalMetricHistory, GoalMetricSummary } from "./goal-metric";
 import { useGoals } from "./goal-provider";
 import { GoalWorkspace as RoadmapWorkspace } from "./goal-roadmap";
 import { WeekOutcome } from "./goal-workspace";
@@ -56,6 +56,13 @@ import {
 	DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { Input } from "./ui/input";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "./ui/select";
 
 type Filter = "active" | "attention" | "week" | "paused" | "done";
 const filterLabels: Record<Filter, string> = {
@@ -82,7 +89,7 @@ export function GoalWorkspace() {
 	const [editor, setEditor] = useState<Editor | null>(null);
 	const [deleting, setDeleting] = useState<Goal | null>(null);
 	const [roadmap, setRoadmap] = useState(false);
-	const [view, setView] = useState<"map" | "calendar" | "list">("map");
+	const [view, setView] = useState<"map" | "calendar" | "list">("list");
 	const day = formatDayKey();
 	const roots = state.goals.filter((goal) => !goal.parentId && !goal.roadmap);
 	const groups = goalProjectGroups(state.goals, snapshot.folders.project);
@@ -118,7 +125,7 @@ export function GoalWorkspace() {
 					variant="ghost"
 					onClick={() => setRoadmap(false)}
 				>
-					{t("프로젝트별 목표로 돌아가기")}
+					{t("목표로 돌아가기")}
 				</Button>
 				<RoadmapWorkspace />
 			</div>
@@ -225,22 +232,31 @@ export function GoalWorkspace() {
 								</button>
 							))}
 						</div>
-						<select
-							aria-label={t("프로젝트 선택")}
+						<Select
 							value={project}
-							onChange={(event) => {
-								setProject(event.target.value);
+							onValueChange={(value) => {
+								setProject(value);
 								setSelected(undefined);
 							}}
-							className="h-8 max-w-full rounded-md border bg-background px-2 text-sm"
 						>
-							<option value="all">{t("전체 프로젝트")}</option>
-							{groups.map((group) => (
-								<option key={group.key} value={group.key}>
-									{group.name || t("미분류")}
-								</option>
-							))}
-						</select>
+							<SelectTrigger
+								size="sm"
+								className="max-w-52"
+								aria-label={t("프로젝트 필터")}
+							>
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="all">{t("모든 목표")}</SelectItem>
+								{groups
+									.filter((group) => group.goals.length)
+									.map((group) => (
+										<SelectItem key={group.key} value={group.key}>
+											{group.name || t("프로젝트 없음")}
+										</SelectItem>
+									))}
+							</SelectContent>
+						</Select>
 					</div>
 					<div className="flex flex-wrap gap-1">
 						{(Object.keys(filterLabels) as Filter[]).map((value) => (
@@ -332,68 +348,38 @@ export function GoalWorkspace() {
 							>
 								<span>{t("목표")}</span>
 								<span>{t("기한")}</span>
-								<span>{t("현재 / 목표")}</span>
+								<span>{t("실제 성과")}</span>
 								<span>{t("다음 단계")}</span>
 								<span>{t("이번 주")}</span>
 							</div>
-							{visibleGroups.map((group) => (
-								<section key={group.key}>
-									<div className="flex h-10 items-center justify-between gap-3 border-b bg-muted/25 px-3">
-										<div className="flex min-w-0 items-center gap-2">
-											<FolderKanban className="size-3.5 shrink-0 text-muted-foreground" />
-											<h3 className="truncate text-xs font-semibold">
-												{group.name || t("미분류")}
-											</h3>
-											{group.folders.length === 1 ? (
-												<Link
-													to="/projects/$folder"
-													params={{ folder: group.folders[0] }}
-													aria-label={t("프로젝트")}
-													className="text-muted-foreground hover:text-foreground"
-												>
-													<ArrowUpRight className="size-3" />
-												</Link>
-											) : null}
-										</div>
-										<Button
-											variant="ghost"
-											size="icon-sm"
-											aria-label={t("{0} 목표 추가", [
-												group.name || t("미분류"),
-											])}
-											title={t("목표 추가")}
-											disabled={state.busy}
-											onClick={() => create(group)}
-										>
-											<Plus className="size-3.5" />
-										</Button>
-									</div>
-									{group.goals
-										.filter((goal) => matches(goal))
-										.map((goal) => (
-											<Fragment key={goal.id}>
-												<GoalRow
-													goal={goal}
-													selected={selected === goal.id}
-													onSelect={() =>
-														setSelected(
-															selected === goal.id ? undefined : goal.id,
-														)
-													}
-												/>
-												{selected === goal.id ? (
-													<GoalExecution
-														goal={goal}
-														onEdit={(goal) => setEditor({ goal })}
-														onAdd={() => setEditor({ parent: goal })}
-														onDelete={setDeleting}
-													/>
-												) : null}
-											</Fragment>
-										))}
-								</section>
-							))}
-							{!visibleGroups.length ? (
+							{scopedGoals
+								.filter((goal) => matches(goal))
+								.map((goal) => (
+									<Fragment key={goal.id}>
+										<GoalRow
+											goal={goal}
+											projectLabels={groups
+												.filter((group) =>
+													group.goals.some((item) => item.id === goal.id),
+												)
+												.map((group) => group.name)
+												.filter(Boolean)}
+											selected={selected === goal.id}
+											onSelect={() =>
+												setSelected(selected === goal.id ? undefined : goal.id)
+											}
+										/>
+										{selected === goal.id ? (
+											<GoalExecution
+												goal={goal}
+												onEdit={(goal) => setEditor({ goal })}
+												onAdd={() => setEditor({ parent: goal })}
+												onDelete={setDeleting}
+											/>
+										) : null}
+									</Fragment>
+								))}
+							{!scopedGoals.some((goal) => matches(goal)) ? (
 								<div className="px-3 py-6 text-sm text-muted-foreground">
 									{t("목표 없음")}
 								</div>
@@ -453,10 +439,12 @@ const goalColumns =
 
 function GoalRow({
 	goal,
+	projectLabels,
 	selected,
 	onSelect,
 }: {
 	goal: Goal;
+	projectLabels: string[];
 	selected: boolean;
 	onSelect: () => void;
 }) {
@@ -487,8 +475,27 @@ function GoalRow({
 						!selected && "-rotate-90",
 					)}
 				/>
-				<span className="truncate text-sm font-medium" title={goal.title}>
-					{goal.title}
+				<span className="min-w-0">
+					<span
+						className="block truncate text-sm font-medium"
+						title={goal.title}
+					>
+						{goal.title}
+					</span>
+					{projectLabels.length ? (
+						<span
+							className="mt-1 block truncate text-[11px] text-muted-foreground"
+							title={projectLabels.join(" · ")}
+						>
+							{projectLabels.join(" · ")}
+						</span>
+					) : null}
+					<span className="mt-1 block text-[11px] text-muted-foreground">
+						{t("실행 {0}/{1} 단계", [
+							steps.filter((step) => step.status === "done").length,
+							steps.length,
+						])}
+					</span>
 				</span>
 				{issues.length ? (
 					<span
@@ -510,11 +517,7 @@ function GoalRow({
 			>
 				{goal.targetDate || "—"}
 			</span>
-			<span className="truncate tabular-nums">
-				{goal.metric
-					? `${goal.metric.current.toLocaleString()} / ${goal.metric.target.toLocaleString()} ${goal.metric.unit}`
-					: "—"}
-			</span>
+			<GoalMetricSummary goal={goal} />
 			<span className="truncate" title={next?.title}>
 				{next?.title || "—"}
 			</span>
@@ -558,6 +561,25 @@ function GoalExecution({
 					<GoalMenu goal={goal} onEdit={onEdit} onDelete={onDelete} />
 				</div>
 			</div>
+			{goal.metric || goal.metricHistory?.length ? (
+				<section className="mb-5 rounded-lg border bg-background p-4">
+					<div className="mb-3 flex items-center justify-between gap-3">
+						<h5 className="text-sm font-medium">{t("실제 성과")}</h5>
+						<Button
+							size="sm"
+							variant="ghost"
+							disabled={busy}
+							onClick={() => onEdit(goal)}
+						>
+							{t("성과 기록")}
+						</Button>
+					</div>
+					<div className="grid gap-3 sm:grid-cols-2">
+						<GoalMetricSummary goal={goal} />
+						<GoalMetricHistory goal={goal} />
+					</div>
+				</section>
+			) : null}
 			{goal.successCriteria ? (
 				<div className="mb-5 border-l-2 border-primary/25 pl-3">
 					<p className="mb-1 text-xs text-muted-foreground">{t("달성 기준")}</p>

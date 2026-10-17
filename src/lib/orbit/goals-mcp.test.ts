@@ -736,3 +736,83 @@ test("MCP advertises and round-trips roadmap and project edits without losing ot
 		f.finish();
 	}
 });
+
+test("MCP accepts unmeasured and negative outcomes and records history once per approved measurement", async () => {
+	const f = fixture();
+	const server = createAssistantMcpServer(["read", "write", "apply"], true);
+	const client = new Client({ name: "goal-measurement-test", version: "1" });
+	const [a, b] = InMemoryTransport.createLinkedPair();
+	await server.connect(a);
+	await client.connect(b);
+	try {
+		const call = async (name: string, args: Record<string, unknown>) =>
+			decode(await client.callTool({ name, arguments: args }));
+		const create = await call("orbit_propose_action", {
+			requestKey: "measure-create",
+			title: "Profit",
+			reason: "Requested",
+			action: {
+				kind: "create-goal",
+				input: {
+					title: "Profit",
+					metric: { current: null, target: 1000, unit: "만원" },
+				},
+			},
+		});
+		const created = await call("orbit_decide_recommendations", {
+			decision: "apply",
+			selections: [
+				{
+					id: create.recommendation.id,
+					revision: create.recommendation.revision,
+				},
+			],
+		});
+		const id = created.results[0].resultGoalId;
+		let context = await call("orbit_assistant_context", { date: "2026-10-17" });
+		assert.equal(context.goals[0].metric.current, null);
+		assert.equal(context.goals[0].metricPercent, null);
+		assert.deepEqual(context.goals[0].metricHistory, []);
+		const goal = await call("orbit_assistant_record", { kind: "goals", id });
+		const proposed = await call("orbit_propose_action", {
+			requestKey: "measure-loss",
+			title: "Record loss",
+			reason: "Confirmed result",
+			action: {
+				kind: "update-goal",
+				goalId: id,
+				expectedRevision: goal.revision,
+				patch: {
+					metric: {
+						...goal.metric,
+						current: -200,
+						measuredAt: "2026-10-17",
+						period: "month",
+						periodStart: "2026-09-01",
+					},
+				},
+			},
+		});
+		assert.equal((await loadAssistantState()).goals[0].metric?.current, null);
+		const selection = {
+			decision: "apply",
+			selections: [
+				{
+					id: proposed.recommendation.id,
+					revision: proposed.recommendation.revision,
+				},
+			],
+		};
+		await call("orbit_decide_recommendations", selection);
+		await call("orbit_decide_recommendations", selection);
+		context = await call("orbit_assistant_context", { date: "2026-10-17" });
+		assert.equal(context.goals[0].metric.current, -200);
+		assert.equal(context.goals[0].metricHistoryTotal, 1);
+		assert.equal(context.goals[0].metricHistory[0].periodStart, "2026-09-01");
+		assert.deepEqual(context.goals[0].taskProgress, { completed: 0, total: 0 });
+	} finally {
+		await client.close();
+		await server.close();
+		f.finish();
+	}
+});

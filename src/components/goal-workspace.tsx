@@ -187,8 +187,10 @@ export function GoalWorkspace() {
 											<div className="mt-3">
 												<GoalProgress goal={goal} />
 												<span className="mt-1.5 block text-xs tabular-nums text-muted-foreground">
-													{goal.metric.current.toLocaleString()} /{" "}
-													{goal.metric.target.toLocaleString()}{" "}
+													{goal.metric.current === null
+														? t("미측정")
+														: goal.metric.current.toLocaleString()}{" "}
+													/ {goal.metric.target.toLocaleString()}{" "}
 													{goal.metric.unit}
 												</span>
 											</div>
@@ -441,7 +443,9 @@ function GoalDetail({
 								{t("목표 성과")}
 							</p>
 							<span className="text-3xl font-semibold tabular-nums tracking-tight">
-								{goal.metric.current.toLocaleString()}
+								{goal.metric.current === null
+									? t("미측정")
+									: goal.metric.current.toLocaleString()}
 							</span>
 							<span className="ml-2 text-sm text-muted-foreground">
 								/ {goal.metric.target.toLocaleString()} {goal.metric.unit}
