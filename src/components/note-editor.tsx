@@ -8,6 +8,7 @@ import {
 import { uploadConfig, uploadPlugin } from "@milkdown/kit/plugin/upload";
 import { clearTextInCurrentBlockCommand } from "@milkdown/kit/preset/commonmark";
 import { TextSelection } from "@milkdown/kit/prose/state";
+import { $inputRule } from "@milkdown/kit/utils";
 import {
 	forwardRef,
 	memo,
@@ -35,6 +36,7 @@ import {
 import { useNoteVimPreference } from "@/hooks/use-note-vim-preference";
 import { deleteEmptyParagraphAfterMedia } from "@/lib/orbit/note-block-editing";
 import { isNoteMediaFile, uploadNoteMedia } from "@/lib/orbit/note-media";
+import { createNoteTaskListInputRule } from "@/lib/orbit/note-task-list";
 import {
 	createNoteVimController,
 	createNoteVimCursorPlugin,
@@ -468,6 +470,7 @@ const NoteEditorInner = forwardRef<NoteEditorHandle, NoteEditorProps>(
 				}));
 			});
 			crepe.editor.use([
+				$inputRule(createNoteTaskListInputRule),
 				orbitCanvasLocale,
 				...orbitVideoRemark,
 				...orbitVideoSchema,
