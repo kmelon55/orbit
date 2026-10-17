@@ -234,9 +234,12 @@ test("focus is exclusive per level, completion clears focus, and stale edits can
 		);
 		const child = state.goals.find((g) => g.title === "Step B");
 		assert.ok(child);
+		state = await save({ title: "Milestone", parentId: child.id });
+		const milestone = state.goals.find((goal) => goal.parentId === child.id);
+		assert.ok(milestone);
 		await assert.rejects(
-			save({ title: "Too deep", parentId: child.id }),
-			/두 단계/,
+			save({ title: "Too deep", parentId: milestone.id }),
+			/세 단계/,
 		);
 		await assert.rejects(
 			save({ ...goalInput(second), parentId: child.id }),
@@ -244,6 +247,39 @@ test("focus is exclusive per level, completion clears focus, and stale edits can
 		);
 		state = await save({ ...goalInput(second), status: "paused" });
 		assert.equal(focusedGoal(state.goals), undefined);
+	} finally {
+		f.finish();
+	}
+});
+
+test("moving goal trees preserves descendants and rejects a fourth level without changing saved relationships", async () => {
+	const f = fixture();
+	try {
+		let state = await save({ title: "Overall" });
+		const root = state.goals[0];
+		state = await save({ title: "Project" });
+		let project = state.goals.find((goal) => goal.title === "Project");
+		assert.ok(project);
+		state = await save({ title: "Milestone", parentId: project.id });
+		const step = state.goals.find((goal) => goal.title === "Milestone");
+		assert.ok(step);
+		state = await save({ ...goalInput(project), parentId: root.id });
+		project = state.goals.find((goal) => goal.id === project?.id);
+		assert.ok(project);
+		assert.equal(
+			state.goals.find((goal) => goal.id === step.id)?.parentId,
+			project.id,
+		);
+		state = await save({ title: "Other project", parentId: root.id });
+		const other = state.goals.find((goal) => goal.title === "Other project");
+		assert.ok(other);
+		await assert.rejects(
+			save({ ...goalInput(project), parentId: other.id }),
+			/세 단계/,
+		);
+		assert.deepEqual((await loadAssistantState()).goals, state.goals);
+		closeOrbitDatabases();
+		assert.deepEqual((await loadAssistantState()).goals, state.goals);
 	} finally {
 		f.finish();
 	}

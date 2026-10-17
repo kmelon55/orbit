@@ -6,8 +6,12 @@ import {
 } from "./assistant.server";
 import { contextInputSchema, daySchema } from "./assistant-schema";
 import { goalMetricChange } from "./goal-metrics";
-import { goalMapProgress, goalProjectGroups } from "./goal-portfolio";
-import { focusedGoal, goalPercent, goalWeekStart } from "./goals";
+import {
+	goalContributions,
+	goalMapProgress,
+	goalProjectGroups,
+} from "./goal-portfolio";
+import { focusedGoal, goalPercent, goalRoot, goalWeekStart } from "./goals";
 import type { OrbitItem } from "./schema";
 import { getOrbitItem, listOrbitItems } from "./store";
 
@@ -122,7 +126,10 @@ export async function compactAssistantContext(
 			.map((g) => g.id),
 	);
 	// Include every stage of active goals so completed and paused work stays visible.
-	const goals = c.goals.filter((g) => activeRootIds.has(g.parentId ?? g.id));
+	const goals = c.goals.filter((g) =>
+		activeRootIds.has(goalRoot(g, c.goals)?.id ?? ""),
+	);
+	const projects = goalProjectGroups(goals, c.projects);
 	return {
 		date: c.date,
 		timezone: c.timezone,
@@ -160,6 +167,14 @@ export async function compactAssistantContext(
 			brand: g.brand ?? null,
 			roadmap: g.roadmap ?? null,
 			parentId: g.parentId ?? null,
+			rootGoalId: goalRoot(g, c.goals)?.id ?? null,
+			contributions:
+				!g.parentId && !g.roadmap
+					? goalContributions(g, c.goals, projects).map((lane) => ({
+							projectKeys: lane.projects.map((project) => project.key),
+							goalIds: lane.goals.map((goal) => goal.id),
+						}))
+					: [],
 			focused: Boolean(g.focused),
 			targetDate: g.targetDate ?? null,
 			successCriteria: g.successCriteria ?? "",
@@ -183,6 +198,6 @@ export async function compactAssistantContext(
 		overdue: c.overdue.map(itemSummary),
 		completedThisWeek: c.completedThisWeek.map(itemSummary),
 		guidance:
-			"Use focusedGoalId as the chosen main goal. goalProjects matches the project groups in the Goals UI; roadmap goals are separate backward plans. goals includes active roots and all their stages, including done and paused stages: respect status and do not propose completed stages again. Read orbit_assistant_records for done or paused root goals. milestoneProgress is the Goals map's stage completion count and percent, with nextMilestoneId; a done goal displays 100 percent. taskProgress counts linked tasks excluding archived/cancelled tasks; progress is its legacy alias. Neither measures business results: metric is the separately recorded outcome. metric.current=null means unmeasured, not zero; negative values are valid. measuredAt is the measurement date; period (week/month) and periodStart identify the reporting period separately. metricPercent and metricChange derive from recorded values, never task completion. metricHistory contains the last 12 server-recorded measurements; read the full goal for older history. Do not invent values or dates. Roadmap steps are planning horizons, not nested milestones or completion measurements. Goal weekly plans start Sunday (goalWeekStart), while briefing weeks start Monday (weekStart). Compare goal.week.start and goal.today.date to the current period; never silently carry stale plans forward. Read a goal record for details before proposing edits with its expectedRevision. Nested roadmap, week, today and metric patch fields replace the whole object: preserve their other values when editing. Use existing task IDs for daily focus; do not duplicate tasks or move their deadlines merely to focus on them. Search and read relevant notes or past briefings for additional context.",
+			"Use focusedGoalId as the chosen main goal. The Goals map shows each root goal once, with its contributions underneath. rootGoalId resolves all three hierarchy levels. contributions groups direct outcomes by projectKeys without duplicating shared outcomes. goalProjects is the project filter index, and its goalIds reference shared root records; roadmap goals are separate backward plans. goals includes active roots and all their stages, including done and paused stages: respect status and do not propose completed stages again. Read orbit_assistant_records for done or paused root goals. milestoneProgress is the Goals map's stage completion count and percent, with nextMilestoneId; a done goal displays 100 percent. taskProgress counts linked tasks excluding archived/cancelled tasks; progress is its legacy alias. Neither measures business results: metric is the separately recorded outcome. metric.current=null means unmeasured, not zero; negative values are valid. measuredAt is the measurement date; period (week/month) and periodStart identify the reporting period separately. metricPercent and metricChange derive from recorded values, never task completion. metricHistory contains the last 12 server-recorded measurements; read the full goal for older history. Do not invent values or dates. Roadmap steps are planning horizons, not nested milestones or completion measurements. Goal weekly plans start Sunday (goalWeekStart), while briefing weeks start Monday (weekStart). Compare goal.week.start and goal.today.date to the current period; never silently carry stale plans forward. Read a goal record for details before proposing edits with its expectedRevision. Nested roadmap, week, today and metric patch fields replace the whole object: preserve their other values when editing. Use existing task IDs for daily focus; do not duplicate tasks or move their deadlines merely to focus on them. Search and read relevant notes or past briefings for additional context.",
 	};
 }

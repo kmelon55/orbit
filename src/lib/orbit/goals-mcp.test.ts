@@ -402,14 +402,40 @@ test("read-only and proposal-only clients cannot apply goal edits; milestone hie
 		);
 		const child = applied.goals.find((g) => g.parentId === root.id);
 		assert.ok(child);
+		const nested = await propose("nested", {
+			kind: "create-goal",
+			input: { title: "Project milestone", parentId: child.id },
+		});
+		const nestedRec = nested.recommendations.find(
+			(item) => item.requestKey === "nested",
+		);
+		assert.ok(nestedRec);
+		const nestedApplied = await mutateAssistantWithScopes(
+			{
+				action: "decide",
+				input: {
+					decision: "apply",
+					selections: [{ id: nestedRec.id, revision: nestedRec.revision }],
+				},
+			},
+			["orbit.read", "orbit.apply"],
+		);
+		const milestone = nestedApplied.goals.find(
+			(goal) => goal.parentId === child.id,
+		);
+		assert.ok(milestone);
 		await assert.rejects(
-			propose("nested", {
+			propose("too-deep", {
 				kind: "create-goal",
-				input: { title: "Too deep", parentId: child.id },
+				input: { title: "Too deep", parentId: milestone.id },
 			}),
-			/두 단계/,
+			/세 단계/,
 		);
 		const context = await compactAssistantContext({ date: "2026-10-12" });
+		assert.equal(
+			context.goals.find((goal) => goal.id === milestone.id)?.rootGoalId,
+			root.id,
+		);
 		assert.equal(
 			context.goals.find((g) => g.id === child.id)?.parentId,
 			root.id,

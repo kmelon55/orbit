@@ -1,5 +1,5 @@
 import type { Goal } from "./assistant-schema";
-import { goalWeekStart } from "./goals";
+import { goalDescendants, goalWeekStart } from "./goals";
 import type { OrbitFolder, OrbitItem } from "./schema";
 
 export type GoalProjectGroup = {
@@ -27,21 +27,13 @@ export function goalProjectGroups(
 		groups.set(key, group);
 	}
 	for (const goal of goals.filter((goal) => !goal.parentId && !goal.roadmap)) {
-		const projectName = goal.projectName ?? goal.brand;
-		const names = projectName
-			? [projectName]
-			: [
-					...new Set(
-						rootFolders
-							.filter((folder) =>
-								goal.projectFolders.some(
-									(slug) =>
-										slug === folder.slug || slug.startsWith(`${folder.slug}/`),
-								),
-							)
-							.map((folder) => folder.name),
-					),
-				];
+		const names = [
+			...new Set(
+				[goal, ...goalDescendants(goal, goals)].flatMap((item) =>
+					goalProjectNames(item, [...groups.values()]),
+				),
+			),
+		];
 		for (const name of names.length ? names : [""]) {
 			const key = name ? `project:${name}` : "unassigned";
 			const group = groups.get(key) ?? { key, name, folders: [], goals: [] };
@@ -54,6 +46,84 @@ export function goalProjectGroups(
 			Number(a.key === "unassigned") - Number(b.key === "unassigned") ||
 			a.name.localeCompare(b.name),
 	);
+}
+
+function goalProjectNames(goal: Goal, groups: GoalProjectGroup[]) {
+	const name = goal.projectName ?? goal.brand;
+	if (name) return [name];
+	return groups
+		.filter((group) =>
+			group.folders.some((folder) =>
+				goal.projectFolders.some(
+					(slug) => slug === folder || slug.startsWith(`${folder}/`),
+				),
+			),
+		)
+		.map((group) => group.name);
+}
+
+export type GoalContribution = {
+	key: string;
+	projects: GoalProjectGroup[];
+	goals: Goal[];
+};
+
+// A shared result has one lane even when several projects contribute to it.
+export function goalContributions(
+	goal: Goal,
+	goals: Goal[],
+	groups: GoalProjectGroup[],
+): GoalContribution[] {
+	const lanes = new Map<string, GoalContribution>();
+	const ownNames = goalProjectNames(goal, groups);
+	function lane(names: string[]) {
+		const sorted = [...new Set(names)].sort();
+		const key = JSON.stringify(sorted);
+		let entry = lanes.get(key);
+		if (!entry) {
+			entry = {
+				key,
+				projects: sorted.map(
+					(name) =>
+						groups.find((group) => group.name === name) ?? {
+							key: `project:${name}`,
+							name,
+							folders: [],
+							goals: [],
+						},
+				),
+				goals: [],
+			};
+			lanes.set(key, entry);
+		}
+		return entry;
+	}
+	for (const child of goalMilestones(goal, goals)) {
+		const names = goalProjectNames(child, groups);
+		lane(names).goals.push(child);
+	}
+	for (const name of ownNames) {
+		if (
+			![...lanes.values()].some((entry) =>
+				entry.projects.some((project) => project.name === name),
+			)
+		)
+			lane([name]);
+	}
+	if (!lanes.size) lane([]);
+	return [...lanes.values()].sort(
+		(a, b) =>
+			Number(!a.projects.length) - Number(!b.projects.length) ||
+			a.key.localeCompare(b.key),
+	);
+}
+
+export function goalMapRoots(groups: GoalProjectGroup[]) {
+	return [
+		...new Map(
+			groups.flatMap((group) => group.goals).map((goal) => [goal.id, goal]),
+		).values(),
+	];
 }
 
 export function goalMilestones(goal: Goal, goals: Goal[]) {
@@ -94,7 +164,7 @@ export function goalAttention(goal: Goal, goals: Goal[], day: string) {
 	const issues: string[] = [];
 	if (goal.targetDate && goal.targetDate < day) issues.push("목표 기한 지남");
 	if (
-		steps.some(
+		goalDescendants(goal, goals).some(
 			(step) =>
 				step.status === "active" && step.targetDate && step.targetDate < day,
 		)
@@ -111,7 +181,7 @@ export function goalAttention(goal: Goal, goals: Goal[], day: string) {
 }
 
 export function goalTasks(goal: Goal, goals: Goal[], items: OrbitItem[]) {
-	const family = [goal, ...goalMilestones(goal, goals)];
+	const family = [goal, ...goalDescendants(goal, goals)];
 	const ids = new Set(family.flatMap((item) => item.itemIds));
 	const folders = new Set(family.flatMap((item) => item.projectFolders));
 	return items

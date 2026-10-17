@@ -142,12 +142,17 @@ async function prepareGoal(input: z.input<typeof goalInputSchema>) {
 	}
 	const snapshot = await getOrbitSnapshot();
 	const goals = list("goal");
-	if (parsed.parentId && (!existing || existing.parentId !== parsed.parentId)) {
-		if (
-			read("goal", parsed.parentId)?.parentId ||
-			goals.some((g) => g.parentId === id)
-		)
-			fail("goal_depth", "목표는 두 단계까지만 만들 수 있습니다.");
+	// Validate the whole moved subtree, including when an existing goal is reparented.
+	const subtree = [{ id, depth: visited.size }];
+	for (let index = 0; index < subtree.length; index++) {
+		const entry = subtree[index];
+		if (entry.depth > 3)
+			fail(
+				"goal_depth",
+				"목표는 전체 목표, 프로젝트 목표, 마일스톤의 세 단계까지만 만들 수 있습니다.",
+			);
+		for (const child of goals.filter((goal) => goal.parentId === entry.id))
+			subtree.push({ id: child.id, depth: entry.depth + 1 });
 	}
 	for (const taskId of same(parsed.today, existing?.today)
 		? []

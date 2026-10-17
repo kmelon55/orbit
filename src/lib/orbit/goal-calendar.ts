@@ -1,4 +1,5 @@
 import type { Goal } from "./assistant-schema";
+import { goalRoot } from "./goals";
 
 export function goalCalendarDays(month: string) {
 	const [year, number] = month.split("-").map(Number);
@@ -24,7 +25,7 @@ export function goalCalendarEntries(roots: Goal[], goals: Goal[]) {
 	const unique = new Map(roots.map((goal) => [goal.id, goal]));
 	return goals
 		.flatMap((goal) => {
-			const root = unique.get(goal.parentId ?? goal.id);
+			const root = unique.get(goalRoot(goal, goals)?.id ?? "");
 			return root ? [{ goal, root }] : [];
 		})
 		.sort(
