@@ -18,6 +18,7 @@ import {
 	recommendationInputSchema,
 } from "./assistant-schema";
 import { databaseFor, sha256, withDatabase } from "./database";
+import { goalTasks } from "./goal-portfolio";
 import { goalInput } from "./goals";
 import type { OrbitItem } from "./schema";
 import {
@@ -521,27 +522,6 @@ function addDays(day: string, days: number) {
 	d.setUTCDate(d.getUTCDate() + days);
 	return d.toISOString().slice(0, 10);
 }
-function goalTasks(goal: Goal, goals: Goal[], items: OrbitItem[]): OrbitItem[] {
-	const related = new Set([goal.id]);
-	for (let i = 0; i < goals.length; i++)
-		for (const child of goals)
-			if (child.parentId && related.has(child.parentId)) related.add(child.id);
-	const descendants = goals.filter((g) => related.has(g.id));
-	return items.filter(
-		(i) =>
-			i.type === "task" &&
-			descendants.some(
-				(g) =>
-					g.itemIds.includes(i.id) ||
-					g.projectFolders.some(
-						(f) =>
-							(i.space === "project" &&
-								(i.folder === f || i.folder?.startsWith(`${f}/`))) ||
-							i.project === f,
-					),
-			),
-	);
-}
 export function assistantContext(
 	input: z.input<typeof contextInputSchema>,
 	canRead: (item: OrbitItem) => boolean = () => true,
@@ -571,7 +551,7 @@ export function assistantContext(
 				...goal,
 				progress: {
 					completed: linked.filter((i) => i.status === "done").length,
-					total: linked.filter((i) => i.status !== "cancelled").length,
+					total: linked.length,
 				},
 				linkedTaskIds: linked.map((i) => i.id),
 			};

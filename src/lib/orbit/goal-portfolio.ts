@@ -67,6 +67,27 @@ export function goalMilestones(goal: Goal, goals: Goal[]) {
 		);
 }
 
+export function goalMapProgress(goal: Goal, goals: Goal[]) {
+	const steps = goalMilestones(goal, goals);
+	const completed = steps.filter((step) => step.status === "done").length;
+	const next =
+		goal.status === "active"
+			? (steps.find((step) => step.status === "active" && step.focused) ??
+				steps.find((step) => step.status === "active"))
+			: undefined;
+	return {
+		completed,
+		total: steps.length,
+		percent:
+			goal.status === "done"
+				? 100
+				: steps.length
+					? Math.round((completed / steps.length) * 100)
+					: 0,
+		nextMilestoneId: next?.id ?? null,
+	};
+}
+
 export function goalAttention(goal: Goal, goals: Goal[], day: string) {
 	if (goal.status !== "active") return [];
 	const steps = goalMilestones(goal, goals);

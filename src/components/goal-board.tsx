@@ -17,7 +17,10 @@ import {
 	goalCalendarEntries,
 	shiftGoalMonth,
 } from "#/lib/orbit/goal-calendar";
-import type { GoalProjectGroup } from "#/lib/orbit/goal-portfolio";
+import {
+	type GoalProjectGroup,
+	goalMapProgress,
+} from "#/lib/orbit/goal-portfolio";
 import { goalWeekStart } from "#/lib/orbit/goals";
 import { formatDayKey } from "#/lib/orbit/para";
 import { cn } from "#/lib/utils";
@@ -178,12 +181,8 @@ function GoalLane({
 	const { t } = useI18n();
 	const [adding, setAdding] = useState(false);
 	const addButton = useRef<HTMLButtonElement>(null);
-	const done = steps.filter((step) => step.status === "done").length;
-	const next =
-		goal.status === "active"
-			? (steps.find((step) => step.status === "active" && step.focused) ??
-				steps.find((step) => step.status === "active"))
-			: undefined;
+	const { completed: done, nextMilestoneId } = goalMapProgress(goal, steps);
+	const next = steps.find((step) => step.id === nextMilestoneId);
 	const today = formatDayKey();
 	const week =
 		goal.week?.start === goalWeekStart(today) ? goal.week.outcome : "";

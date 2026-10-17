@@ -19,9 +19,19 @@ import {
 	recommendationInputSchema,
 } from "./assistant-schema";
 import { closeOrbitDatabases } from "./database";
+import {
+	goalMapProgress,
+	goalProjectGroups,
+	goalTasks,
+} from "./goal-portfolio";
 import { goalInput } from "./goals";
 import { exportOrbitDirectory, importOrbitDirectory } from "./storage-transfer";
-import { createOrbitItem, getOrbitItem, listOrbitItems } from "./store";
+import {
+	createOrbitItem,
+	fileOrbitItem,
+	getOrbitItem,
+	listOrbitItems,
+} from "./store";
 
 function fixture() {
 	const previous = process.env.ORBIT_VAULT_DIR;
@@ -413,6 +423,316 @@ test("read-only and proposal-only clients cannot apply goal edits; milestone hie
 			0,
 		);
 	} finally {
+		f.finish();
+	}
+});
+
+test("MCP context matches project maps, includes completed stages and separates stage, task and outcome progress", async () => {
+	const f = fixture();
+	const server = createAssistantMcpServer(["read"], true);
+	const client = new Client({ name: "goal-map-test", version: "1" });
+	const [a, b] = InMemoryTransport.createLinkedPair();
+	await server.connect(a);
+	await client.connect(b);
+	try {
+		const save = async (input: z.input<typeof goalInputSchema>) => {
+			const state = await mutateAssistant({
+				action: "goal",
+				input: goalInputSchema.parse(input),
+			});
+			const goal = state.goals.find((g) => g.title === input.title);
+			assert.ok(goal);
+			return goal;
+		};
+		const taskIds: string[] = [];
+		for (const status of ["open", "done", "cancelled", "archived"] as const) {
+			const task = await createOrbitItem({
+				type: "task",
+				title: status,
+				body: "",
+				space: "inbox",
+			});
+			assert.ok(task);
+			await fileOrbitItem(task.id, {
+				space: status === "archived" ? "archive" : "inbox",
+				status: status === "archived" ? "done" : status,
+			});
+			taskIds.push(task.id);
+		}
+		const root = await save({
+			title: "Launch",
+			projectName: "Orbit",
+			metric: { current: 3, target: 10, unit: "users" },
+			focused: true,
+			itemIds: taskIds,
+		});
+		const done = await save({
+			title: "Finished stage",
+			parentId: root.id,
+			status: "done",
+			targetDate: "2026-10-01",
+		});
+		const paused = await save({
+			title: "Paused stage",
+			parentId: root.id,
+			status: "paused",
+			targetDate: "2026-10-02",
+		});
+		await save({
+			title: "Earlier stage",
+			parentId: root.id,
+			targetDate: "2026-10-03",
+		});
+		const next = await save({
+			title: "Focused stage",
+			parentId: root.id,
+			focused: true,
+			targetDate: "2026-10-20",
+		});
+		const legacy = await save({ title: "Legacy project", brand: "Legacy" });
+		const hidden = await save({ title: "Paused root", status: "paused" });
+		await save({ title: "Hidden child", parentId: hidden.id });
+		const completedRoot = await save({
+			title: "Finished root",
+			status: "done",
+		});
+		const roadmap = {
+			anchorDate: "2026-10-17",
+			middleYears: 5 as const,
+			steps: { year: { outcome: "Annual plan", reason: "Why" } },
+		};
+		const plan = await save({ title: "Mission", roadmap });
+		const context = decode(
+			await client.callTool({
+				name: "orbit_assistant_context",
+				arguments: { date: "2026-10-17" },
+			}),
+		);
+		const state = await loadAssistantState();
+		const summary = context.goals.find((g: { id: string }) => g.id === root.id);
+		assert.equal(summary.projectName, "Orbit");
+		assert.equal(summary.status, "active");
+		assert.deepEqual(summary.milestoneProgress, {
+			completed: 1,
+			total: 4,
+			percent: 25,
+			nextMilestoneId: next.id,
+		});
+		assert.deepEqual(
+			summary.milestoneProgress,
+			goalMapProgress(root, state.goals),
+		);
+		assert.deepEqual(summary.taskProgress, { completed: 1, total: 2 });
+		assert.deepEqual(summary.progress, summary.taskProgress);
+		assert.deepEqual(
+			new Set(summary.linkedTaskIds),
+			new Set(
+				goalTasks(root, state.goals, await listOrbitItems()).map(
+					(task) => task.id,
+				),
+			),
+		);
+		assert.deepEqual(summary.metric, root.metric);
+		assert.equal(
+			context.goals.find((g: { id: string }) => g.id === done.id).status,
+			"done",
+		);
+		assert.equal(
+			context.goals.find((g: { id: string }) => g.id === paused.id).status,
+			"paused",
+		);
+		assert.equal(
+			context.goals.find((g: { id: string }) => g.id === legacy.id).projectName,
+			"Legacy",
+		);
+		assert.deepEqual(
+			context.goals.find((g: { id: string }) => g.id === plan.id).roadmap,
+			roadmap,
+		);
+		assert.ok(
+			!context.goals.some(
+				(g: { id: string; parentId: string }) =>
+					g.id === hidden.id ||
+					g.parentId === hidden.id ||
+					g.id === completedRoot.id,
+			),
+		);
+		assert.deepEqual(
+			context.goalProjects,
+			goalProjectGroups(
+				state.goals.filter((g) => !g.parentId && g.status === "active"),
+				[],
+			).map((group) => ({
+				key: group.key,
+				name: group.name,
+				folders: group.folders,
+				goalIds: group.goals.map((g) => g.id),
+			})),
+		);
+		const records = decode(
+			await client.callTool({
+				name: "orbit_assistant_records",
+				arguments: { kind: "goals", limit: 100 },
+			}),
+		);
+		assert.equal(
+			records.records.find((g: { id: string }) => g.id === completedRoot.id)
+				.state,
+			"done",
+		);
+		assert.equal(
+			records.records.find((g: { id: string }) => g.id === plan.id).hasRoadmap,
+			true,
+		);
+		assert.equal(
+			records.records.find((g: { id: string }) => g.id === legacy.id)
+				.projectName,
+			"Legacy",
+		);
+		assert.equal(
+			records.records.find((g: { id: string }) => g.id === done.id).parentId,
+			root.id,
+		);
+		await save({ ...goalInput(next), status: "done" });
+		assert.equal(
+			goalMapProgress(root, (await loadAssistantState()).goals).completed,
+			2,
+		);
+		await save({ ...goalInput(root), status: "done" });
+		const finished = (await loadAssistantState()).goals.find(
+			(g) => g.id === root.id,
+		);
+		assert.ok(finished);
+		assert.equal(goalMapProgress(finished, state.goals).percent, 100);
+		assert.equal(goalMapProgress(finished, state.goals).nextMilestoneId, null);
+	} finally {
+		await client.close();
+		await server.close();
+		f.finish();
+	}
+});
+
+test("MCP advertises and round-trips roadmap and project edits without losing other planning horizons", async () => {
+	const f = fixture();
+	const server = createAssistantMcpServer(["read", "write", "apply"], true);
+	const client = new Client({ name: "goal-roadmap-test", version: "1" });
+	const [a, b] = InMemoryTransport.createLinkedPair();
+	await server.connect(a);
+	await client.connect(b);
+	try {
+		const { tools } = await client.listTools();
+		const tool = tools.find((tool) => tool.name === "orbit_propose_action");
+		assert.match(JSON.stringify(tool?.inputSchema), /projectName/);
+		assert.match(JSON.stringify(tool?.inputSchema), /roadmap/);
+		assert.match(tool?.description ?? "", /replaced as a whole/);
+		assert.match(
+			tools.find((tool) => tool.name === "orbit_assistant_context")
+				?.description ?? "",
+			/milestoneProgress/,
+		);
+		let sequence = 0;
+		const apply = async (action: z.input<typeof proposalActionSchema>) => {
+			const proposed = decode(
+				await client.callTool({
+					name: "orbit_propose_action",
+					arguments: {
+						requestKey: `roadmap-${++sequence}`,
+						title: "Plan",
+						reason: "User-reviewed plan",
+						action,
+					},
+				}),
+			);
+			return decode(
+				await client.callTool({
+					name: "orbit_decide_recommendations",
+					arguments: {
+						decision: "apply",
+						selections: [
+							{
+								id: proposed.recommendation.id,
+								revision: proposed.recommendation.revision,
+							},
+						],
+					},
+				}),
+			);
+		};
+		const read = async (id: string) =>
+			decode(
+				await client.callTool({
+					name: "orbit_assistant_record",
+					arguments: { kind: "goals", id },
+				}),
+			);
+		const roadmap = {
+			anchorDate: "2026-10-17",
+			middleYears: 6 as const,
+			steps: {
+				decade: { outcome: "Mission outcome", reason: "Purpose" },
+				middle: { outcome: "Six-year outcome", reason: "Path" },
+				year: { outcome: "Annual outcome", reason: "First year" },
+				half: { outcome: "Half-year outcome", reason: "First half" },
+				month: { outcome: "Monthly outcome", reason: "First month" },
+			},
+		};
+		const created = await apply({
+			kind: "create-goal",
+			input: {
+				title: "Mission",
+				description: "Keep my note",
+				projectName: "Orbit",
+				roadmap,
+			},
+		});
+		const id = created.results[0].resultGoalId;
+		let goal = await read(id);
+		assert.deepEqual(goal.roadmap, roadmap);
+		await apply({
+			kind: "update-goal",
+			goalId: id,
+			expectedRevision: goal.revision,
+			patch: { projectName: "New project" },
+		});
+		goal = await read(id);
+		assert.deepEqual(goal.roadmap, roadmap);
+		const updatedRoadmap = {
+			...goal.roadmap,
+			steps: {
+				...goal.roadmap.steps,
+				month: { outcome: "Revised month", reason: "New evidence" },
+			},
+		};
+		await apply({
+			kind: "update-goal",
+			goalId: id,
+			expectedRevision: goal.revision,
+			patch: { roadmap: updatedRoadmap },
+		});
+		goal = await read(id);
+		assert.deepEqual(goal.roadmap, updatedRoadmap);
+		assert.equal(goal.projectName, "New project");
+		assert.equal(goal.description, "Keep my note");
+		const context = decode(
+			await client.callTool({
+				name: "orbit_assistant_context",
+				arguments: { date: "2026-10-17" },
+			}),
+		);
+		assert.deepEqual(context.goals[0].roadmap, updatedRoadmap);
+		await apply({
+			kind: "update-goal",
+			goalId: id,
+			expectedRevision: goal.revision,
+			patch: { roadmap: null, projectName: null },
+		});
+		goal = await read(id);
+		assert.equal(goal.roadmap, undefined);
+		assert.equal(goal.projectName, undefined);
+		assert.equal(goal.description, "Keep my note");
+	} finally {
+		await client.close();
+		await server.close();
 		f.finish();
 	}
 });
