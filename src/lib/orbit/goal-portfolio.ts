@@ -68,6 +68,17 @@ export type GoalContribution = {
 	goals: Goal[];
 };
 
+// Folder links also belong to legacy milestones for task rollups. They alone
+// must not turn a dated execution step into another project outcome.
+export function isGoalProjectOutcome(goal: Goal, goals: Goal[]) {
+	return Boolean(
+		goal.projectName ||
+			goal.brand ||
+			goals.some((step) => step.parentId === goal.id) ||
+			(goal.horizon !== "milestone" && goal.projectFolders.length),
+	);
+}
+
 // A shared result has one lane even when several projects contribute to it.
 export function goalContributions(
 	goal: Goal,
@@ -99,7 +110,9 @@ export function goalContributions(
 		return entry;
 	}
 	for (const child of goalMilestones(goal, goals)) {
-		const names = goalProjectNames(child, groups);
+		const names = isGoalProjectOutcome(child, goals)
+			? goalProjectNames(child, groups)
+			: [];
 		lane(names).goals.push(child);
 	}
 	for (const name of ownNames) {

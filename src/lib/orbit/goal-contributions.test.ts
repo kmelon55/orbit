@@ -7,6 +7,7 @@ import {
 	goalMapRoots,
 	goalProjectGroups,
 	goalTasks,
+	isGoalProjectOutcome,
 } from "./goal-portfolio";
 import { goalDepth, goalDescendants, goalRoot } from "./goals";
 import type { OrbitFolder, OrbitItem } from "./schema";
@@ -28,6 +29,60 @@ const folders: OrbitFolder[] = ["A", "B"].map((name) => ({
 	descendantCount: 0,
 	color: "slate",
 }));
+
+test("legacy business milestones keep task links while project outcomes form lanes", () => {
+	const root = make("business", { projectFolders: ["A", "B"] });
+	const project = make("project-result", {
+		parentId: root.id,
+		horizon: "milestone",
+		projectName: "A",
+		projectFolders: ["A"],
+	});
+	const execution = make("first-sale", {
+		parentId: project.id,
+		horizon: "milestone",
+	});
+	const closing = make("closing", {
+		parentId: root.id,
+		horizon: "milestone",
+		projectFolders: ["A", "B"],
+		itemIds: ["closing-task"],
+	});
+	const goals = [root, project, execution, closing];
+	const before = structuredClone(goals);
+	const groups = goalProjectGroups(goals, folders);
+	const lanes = goalContributions(root, goals, groups);
+	assert.equal(isGoalProjectOutcome(project, goals), true);
+	assert.equal(isGoalProjectOutcome(closing, goals), false);
+	assert.deepEqual(
+		lanes.find((lane) => lane.goals.includes(closing))?.projects,
+		[],
+	);
+	assert.deepEqual(
+		lanes
+			.find((lane) => lane.goals.includes(project))
+			?.projects.map((p) => p.name),
+		["A"],
+	);
+	assert.deepEqual(
+		goalTasks(closing, goals, [
+			{
+				id: "closing-task",
+				type: "task",
+				space: "inbox",
+				status: "open",
+			} as OrbitItem,
+		]).map((task) => task.id),
+		["closing-task"],
+	);
+	assert.deepEqual(
+		goalCalendarEntries([root], goals)
+			.map(({ goal }) => goal.id)
+			.sort(),
+		goals.map((goal) => goal.id).sort(),
+	);
+	assert.deepEqual(goals, before);
+});
 
 test("one overall goal has parallel project outcomes, shared stages, and a unique shared-project result", () => {
 	const root = make("profit", { projectFolders: ["A", "B"] });

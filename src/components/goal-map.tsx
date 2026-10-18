@@ -8,6 +8,7 @@ import {
 	goalMapProgress,
 	goalMapRoots,
 	goalMilestones,
+	isGoalProjectOutcome,
 } from "#/lib/orbit/goal-portfolio";
 import { cn } from "#/lib/utils";
 import {
@@ -203,12 +204,8 @@ function Contribution(
 ) {
 	const { t } = useI18n();
 	const { goal, goals, lane, busy, onAddContribution } = props;
-	const outcomes = lane.goals.filter(
-		(child) =>
-			child.projectName ||
-			child.brand ||
-			child.projectFolders.length ||
-			goals.some((step) => step.parentId === child.id),
+	const outcomes = lane.goals.filter((child) =>
+		isGoalProjectOutcome(child, goals),
 	);
 	const outcomeIds = new Set(outcomes.map((child) => child.id));
 	const steps = lane.goals.filter((child) => !outcomeIds.has(child.id));
