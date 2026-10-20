@@ -5,6 +5,7 @@ export type MutationReceipt = {
 	itemId: string;
 	title: string;
 	message: string;
+	silent?: boolean;
 };
 export type UndoResult = {
 	itemId: string;

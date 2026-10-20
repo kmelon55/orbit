@@ -1316,6 +1316,13 @@ export function withItemUndo<T>(
 				itemId,
 				title: afterItem?.title ?? beforeItem?.title ?? "",
 				message: itemMutationMessage(data, beforeItem, afterItem),
+				silent: Boolean(
+					beforeItem &&
+						afterItem &&
+						beforeItem.type === afterItem.type &&
+						beforeItem.space === afterItem.space &&
+						beforeItem.folder === afterItem.folder,
+				),
 			},
 		};
 	});

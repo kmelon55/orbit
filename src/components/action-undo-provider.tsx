@@ -66,10 +66,11 @@ export function ActionUndoProvider({ children }: { children: ReactNode }) {
 					);
 				},
 			});
+			if (receipt.silent) return;
 			toast.success(t(receipt.message), {
 				id: receipt.id,
 				description: receipt.title,
-				duration: 10000,
+				duration: 4000,
 				action: {
 					label: t("되돌리기"),
 					onClick: (event) => {
