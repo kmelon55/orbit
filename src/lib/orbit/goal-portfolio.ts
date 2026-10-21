@@ -1,6 +1,7 @@
 import type { Goal } from "./assistant-schema";
 import { goalDescendants, goalWeekStart } from "./goals";
 import type { OrbitFolder, OrbitItem } from "./schema";
+import { normalizeSearchText } from "./search-text";
 
 export type GoalProjectGroup = {
 	key: string;
@@ -16,10 +17,15 @@ export function goalProjectGroups(
 	const groups = new Map<string, GoalProjectGroup>();
 	const rootFolders = folders.filter((folder) => !folder.parent);
 	for (const folder of rootFolders) {
-		const key = `project:${folder.name}`;
+		const name =
+			[...groups.values()].find(
+				(group) =>
+					normalizeSearchText(group.name) === normalizeSearchText(folder.name),
+			)?.name ?? folder.name;
+		const key = `project:${name}`;
 		const group = groups.get(key) ?? {
 			key,
-			name: folder.name,
+			name,
 			folders: [],
 			goals: [],
 		};
@@ -50,7 +56,13 @@ export function goalProjectGroups(
 
 function goalProjectNames(goal: Goal, groups: GoalProjectGroup[]) {
 	const name = goal.projectName ?? goal.brand;
-	if (name) return [name];
+	if (name)
+		return [
+			groups.find(
+				(group) =>
+					normalizeSearchText(group.name) === normalizeSearchText(name),
+			)?.name ?? name,
+		];
 	return groups
 		.filter((group) =>
 			group.folders.some((folder) =>

@@ -189,3 +189,23 @@ test("grandchild task links roll up while metric measurements remain independent
 	assert.equal(root.metric?.current, 12);
 	assert.equal(root.status, "active");
 });
+
+test("project lanes reuse folder identity despite case and spacing in goal names", () => {
+	const projectFolders = ["Draft", "draft"].map((name) => ({
+		...folders[0],
+		name,
+		slug: name,
+	}));
+	const goals = [
+		make("a", { projectName: "DRAFT" }),
+		make("b", { projectName: "D r a f t" }),
+	];
+	const groups = goalProjectGroups(goals, projectFolders);
+	assert.equal(groups.length, 1);
+	assert.equal(groups[0].name, "Draft");
+	assert.deepEqual(groups[0].folders, ["Draft", "draft"]);
+	assert.deepEqual(
+		groups[0].goals.map((goal) => goal.id),
+		["a", "b"],
+	);
+});

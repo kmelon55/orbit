@@ -39,6 +39,7 @@ import {
 	updateFolderInputSchema,
 	updateNoteInputSchema,
 } from "./schema";
+import { normalizeSearchText } from "./search-text";
 import {
 	planTreeMove,
 	remapTreeOrder,
@@ -152,7 +153,37 @@ async function existingFolderPath(
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 	}
-	return normalizeFolderPath(value);
+	// Resolve each segment against existing paths before slugging a new segment.
+	// Imported folders can retain spaces/case; new items must reuse that identity.
+	const folders = await listNestedFolders(
+		path.join(vaultRoot, folderRoot(space)),
+	);
+	const resolved: string[] = [];
+	for (const segment of parts) {
+		const parent = resolved.join("/");
+		const siblings = folders.filter((folder) => {
+			const segments = folder.split("/");
+			return segments.slice(0, -1).join("/") === parent;
+		});
+		const exactSegment = siblings.find(
+			(folder) => folder.split("/").at(-1) === segment,
+		);
+		const matches = siblings.filter((folder) => {
+			const name = folder.split("/").at(-1) ?? "";
+			return (
+				normalizeSearchText(name) === normalizeSearchText(segment) ||
+				toVaultSlug(name) === toVaultSlug(segment)
+			);
+		});
+		if (!exactSegment && matches.length > 1)
+			throw new Error(
+				"같은 이름의 폴더가 여러 개 있습니다. 정확한 폴더를 선택해 주세요.",
+			);
+		resolved.push(
+			(exactSegment ?? matches[0])?.split("/").at(-1) ?? toVaultSlug(segment),
+		);
+	}
+	return resolved.join("/");
 }
 
 function folderRoot(space: "project" | "area" | "resource" | "archive") {
@@ -700,7 +731,12 @@ export async function createOrbitItem(input: CreateItemInput) {
 	const now = new Date().toISOString();
 	const id = randomUUID();
 	const folder = parsed.folder
-		? normalizeFolderPath(parsed.folder) || undefined
+		? (parsed.space === "project" ||
+			parsed.space === "area" ||
+			parsed.space === "resource" ||
+			parsed.space === "archive"
+				? await existingFolderPath(vaultRoot, parsed.space, parsed.folder)
+				: normalizeFolderPath(parsed.folder)) || undefined
 		: undefined;
 	const relativeDir = destinationDir(parsed.space, folder);
 	const directory = path.join(vaultRoot, relativeDir);
@@ -740,11 +776,13 @@ export async function createOrbitItem(input: CreateItemInput) {
 export async function createOrbitFolder(input: CreateFolderInput) {
 	const parsed = createFolderInputSchema.parse(input);
 	const vaultRoot = await ensureVault();
-	const name = toVaultSlug(parsed.name);
-	const parent = parsed.parent
-		? normalizeFolderPath(parsed.parent) || undefined
-		: undefined;
-	const slug = parent ? `${parent}/${name}` : name;
+	const segment = parsed.name.replace(/[\\/]+/g, "-");
+	const requested = parsed.parent ? `${parsed.parent}/${segment}` : segment;
+	const slug = await existingFolderPath(vaultRoot, parsed.space, requested);
+	const segments = splitVaultObjectKey(slug);
+	const name = segments.at(-1) ?? slug;
+	const parent =
+		segments.length > 1 ? segments.slice(0, -1).join("/") : undefined;
 	const directory = path.join(
 		vaultRoot,
 		folderRoot(parsed.space),
@@ -765,7 +803,11 @@ export async function createOrbitFolder(input: CreateFolderInput) {
 		name,
 		parent,
 		depth: splitVaultObjectKey(slug).length - 1,
-		color: parsed.color ?? DEFAULT_FOLDER_COLOR,
+		color:
+			parsed.color ??
+			(await readFolderMetadata(vaultRoot)).folders[parsed.space]?.[slug]
+				?.color ??
+			DEFAULT_FOLDER_COLOR,
 		count: 0,
 		descendantCount: 0,
 	};
