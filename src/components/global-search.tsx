@@ -112,6 +112,7 @@ export function GlobalSearch({ snapshot }: { snapshot: OrbitSnapshot }) {
 	function close() {
 		flushSync(() => {
 			setOpen(false);
+			setDirectAsk(null);
 			setQuery("");
 			setActive(0);
 			setMode("search");
@@ -226,6 +227,7 @@ export function GlobalSearch({ snapshot }: { snapshot: OrbitSnapshot }) {
 					onOpenChange={(value) => {
 						setOpen(value);
 						if (!value) {
+							setDirectAsk(null);
 							setQuery("");
 							setActive(0);
 							setMode("search");
@@ -430,6 +432,7 @@ export function GlobalSearch({ snapshot }: { snapshot: OrbitSnapshot }) {
 							directAsk={directAsk}
 							inputRef={aiInputRef}
 							onOpenSource={openSource}
+							onNavigate={close}
 						/>
 					</DialogContent>
 				</Dialog>

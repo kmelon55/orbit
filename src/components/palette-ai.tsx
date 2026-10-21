@@ -11,7 +11,9 @@ import {
 	X,
 } from "lucide-react";
 import {
+	lazy,
 	type RefObject,
+	Suspense,
 	useCallback,
 	useEffect,
 	useMemo,
@@ -38,6 +40,10 @@ import { AiModelSelector } from "@/components/ai-model-selector";
 import { useI18n } from "@/components/locale-provider";
 import { Input } from "@/components/ui/input";
 
+const AiMessage = lazy(() =>
+	import("./ai-message").then((module) => ({ default: module.AiMessage })),
+);
+
 const icons = {
 	note: FileText,
 	task: ListTodo,
@@ -59,6 +65,7 @@ export function PaletteAi({
 	directAsk,
 	inputRef,
 	onOpenSource,
+	onNavigate,
 }: {
 	active: boolean;
 	snapshot: OrbitSnapshot;
@@ -66,6 +73,7 @@ export function PaletteAi({
 	directAsk: { id: string; question: string } | null;
 	inputRef: RefObject<HTMLInputElement | null>;
 	onOpenSource: (source: AiSource) => void;
+	onNavigate: () => void;
 }) {
 	const { t, intlLocale, errorText } = useI18n();
 
@@ -458,6 +466,7 @@ export function PaletteAi({
 				/>
 				<button
 					type="button"
+					disabled={busy}
 					onClick={() => {
 						setChat(null);
 						setQuestion("");
@@ -496,6 +505,7 @@ export function PaletteAi({
 								<button
 									key={entry.id}
 									type="button"
+									disabled={busy}
 									onClick={() => void openChat(entry.id)}
 									className="rounded-lg px-3 py-2 text-left hover:bg-muted"
 								>
@@ -518,13 +528,30 @@ export function PaletteAi({
 								key={message.id}
 								className={
 									message.role === "user"
-										? "ml-10 rounded-xl bg-muted p-3"
-										: "mr-4 rounded-xl border p-3"
+										? "min-w-0 ml-10 rounded-xl bg-muted p-3"
+										: "min-w-0 mr-4 rounded-xl border p-3"
 								}
 							>
-								<p className="whitespace-pre-wrap text-sm leading-6">
-									{message.content}
-								</p>
+								{message.role === "assistant" ? (
+									<Suspense
+										fallback={
+											<p className="whitespace-pre-wrap break-words text-sm leading-6">
+												{message.content}
+											</p>
+										}
+									>
+										<AiMessage
+											content={message.content}
+											sources={message.sources}
+											onOpenSource={onOpenSource}
+											onNavigate={onNavigate}
+										/>
+									</Suspense>
+								) : (
+									<p className="whitespace-pre-wrap break-words text-sm leading-6">
+										{message.content}
+									</p>
+								)}
 								{message.status === "pending" ? (
 									<p className="mt-2 text-xs text-muted-foreground">
 										{t("응답 확인 중 · 기록을 다시 열어 상태를 확인하세요.")}
