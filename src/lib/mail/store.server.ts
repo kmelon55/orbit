@@ -14,6 +14,11 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import {
+	normalizeSearchText,
+	searchSnippet,
+	searchTerms,
+} from "../orbit/search-text";
 import type {
 	BlockedSender,
 	MailAccount,
@@ -223,12 +228,7 @@ export class MailStore {
 			);
 	}
 	searchMessages(query: string, limit = 20): MailMessage[] {
-		const terms = query
-			.normalize("NFKC")
-			.toLocaleLowerCase()
-			.trim()
-			.split(/\s+/)
-			.filter(Boolean);
+		const terms = searchTerms(query);
 		if (!terms.length) return [];
 		const dataVersion = (
 			this.db.prepare("PRAGMA data_version").get() as { data_version: number }
@@ -268,14 +268,14 @@ export class MailStore {
 						: null;
 					const bodyText =
 						cached?.version === 2 ? (cached.hidden?.text ?? "") : "";
-					const body = bodyText.normalize("NFKC").toLocaleLowerCase();
-					const subject = message.subject.normalize("NFKC").toLocaleLowerCase();
-					const people = [...message.from, ...message.to, ...message.cc]
-						.map((person) => `${person.name} ${person.address}`)
-						.join(" ")
-						.normalize("NFKC")
-						.toLocaleLowerCase();
-					const text = `${subject} ${people} ${message.snippet.normalize("NFKC").toLocaleLowerCase()} ${body}`;
+					const body = normalizeSearchText(bodyText);
+					const subject = normalizeSearchText(message.subject);
+					const people = normalizeSearchText(
+						[...message.from, ...message.to, ...message.cc]
+							.map((person) => `${person.name} ${person.address}`)
+							.join("\0"),
+					);
+					const text = `${subject}\0${people}\0${normalizeSearchText(message.snippet)}\0${body}`;
 					return { message, subject, people, body, bodyText, text };
 				}),
 			};
@@ -299,11 +299,7 @@ export class MailStore {
 			.map(({ message, body, bodyText }) => {
 				const bodyTerm = terms.find((term) => body.includes(term));
 				if (!bodyTerm) return message;
-				const offset = body.indexOf(bodyTerm);
-				const snippet = bodyText
-					.slice(Math.max(0, offset - 55), offset + 125)
-					.replace(/\s+/g, " ")
-					.trim();
+				const snippet = searchSnippet(bodyText, terms, 180);
 				return { ...message, snippet: snippet || message.snippet };
 			});
 	}

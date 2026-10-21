@@ -55,6 +55,14 @@ test("cached mail search spans folders, ranks subject matches, and updates after
 			store.searchMessages("sender@example.com").map((m) => m.id),
 			["sent", "inbox", "archive"],
 		);
+		assert.deepEqual(
+			store.searchMessages("계약검토").map((m) => m.id),
+			["inbox", "sent"],
+		);
+		assert.deepEqual(
+			store.searchMessages("계 약 검 토").map((m) => m.id),
+			["inbox", "sent"],
+		);
 		assert.deepEqual(store.searchMessages("본문전용표현"), []);
 		const detailed = {
 			...message("sent", "sent", "회신", "계약 검토 부탁드립니다"),

@@ -38,6 +38,7 @@ import type {
 	OrbitSpace,
 } from "#/lib/orbit/schema";
 import { orbitItemSchema } from "#/lib/orbit/schema";
+import { matchesSearch } from "#/lib/orbit/search-text";
 import { onItemUndone } from "#/lib/orbit/undo-events";
 import { FileItemForm } from "@/components/file-item-form";
 import {
@@ -466,13 +467,19 @@ export function ItemWorkspace({
 	);
 
 	const filtered = useMemo(() => {
-		const needle = listQuery.trim().toLocaleLowerCase();
+		const needle = listQuery.trim();
 		if (!needle) return visibleItems;
 		return visibleItems.filter((item) =>
-			[item.title, item.body, item.tags.join(" "), item.folder ?? ""]
-				.join("\n")
-				.toLocaleLowerCase()
-				.includes(needle),
+			matchesSearch(
+				[
+					item.title,
+					item.body,
+					...item.tags,
+					item.folder ?? "",
+					item.project ?? "",
+				],
+				needle,
+			),
 		);
 	}, [listQuery, visibleItems]);
 

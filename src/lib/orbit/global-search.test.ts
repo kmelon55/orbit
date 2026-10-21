@@ -40,3 +40,24 @@ test("global search requires all terms and normalizes case", () => {
 		["yes"],
 	);
 });
+
+test("compact searches cover title, body, folder and tags without crossing fields", () => {
+	const tagged = item("tag", "다른 문서", "본문");
+	tagged.tags = ["검색 기능"];
+	const index = createSearchIndex([
+		item("title", "검색 기능", "본문"),
+		item("body", "다른 문서", `${"서문 ".repeat(100)}검색 기능 상세`),
+		item("folder", "다른 문서", "본문", "검색 기능"),
+		tagged,
+	]);
+	for (const query of ["검색기능", "검색 기능", "검 색 기 능"]) {
+		const hits = searchItems(index, query);
+		assert.equal(hits.length, 4);
+		assert.equal(hits[0].entry.item.id, "title");
+		assert.match(
+			hits.find((h) => h.entry.item.id === "body")?.snippet ?? "",
+			/검색 기능/,
+		);
+	}
+	assert.deepEqual(searchItems(index, " \t\n"), []);
+});

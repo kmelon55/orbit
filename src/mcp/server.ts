@@ -1,7 +1,9 @@
 #!/usr/bin/env node
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { createSearchIndex, searchItems } from "../lib/orbit/global-search";
 import { isInboxItem } from "../lib/orbit/para";
 import {
 	captureOrbitItem,
@@ -234,21 +236,11 @@ server.registerTool(
 		},
 	},
 	async ({ query, limit }) => {
-		const needle = query.toLocaleLowerCase();
-		const items = (await listOrbitItems())
-			.filter((item) =>
-				[
-					item.title,
-					item.body,
-					item.project ?? "",
-					item.folder ?? "",
-					item.tags.join(" "),
-				]
-					.join("\n")
-					.toLocaleLowerCase()
-					.includes(needle),
-			)
-			.slice(0, limit);
+		const items = searchItems(
+			createSearchIndex(await listOrbitItems()),
+			query,
+			limit,
+		).map(({ entry }) => entry.item);
 
 		return {
 			content: [{ type: "text", text: JSON.stringify(items, null, 2) }],

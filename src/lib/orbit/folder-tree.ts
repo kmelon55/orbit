@@ -1,5 +1,6 @@
 import { folderOf } from "./para";
 import type { OrbitFolder, OrbitItem, TreeOrder } from "./schema";
+import { matchesSearch } from "./search-text";
 
 export type FolderRow = {
 	kind: "folder";
@@ -82,18 +83,22 @@ export function flattenFolderTree(
 	collapsed: ReadonlySet<string>,
 	query: string,
 ): TreeRow[] {
-	const needle = query.trim().toLocaleLowerCase("ko");
+	const needle = query.trim();
 	const matches = new Set<string>();
 	const matchingFolders = new Set<string>();
 	if (needle) {
 		for (const item of tree.items) {
 			if (
-				![
-					item.title,
-					item.body,
-					item.tags.join(" "),
-					folderOf(item) ?? "",
-				].some((text) => text.toLocaleLowerCase("ko").includes(needle))
+				!matchesSearch(
+					[
+						item.title,
+						item.body,
+						...item.tags,
+						folderOf(item) ?? "",
+						item.project ?? "",
+					],
+					needle,
+				)
 			)
 				continue;
 			matches.add(item.id);
@@ -101,7 +106,7 @@ export function flattenFolderTree(
 				matchingFolders.add(ancestor);
 		}
 		for (const folder of tree.folders) {
-			if (folder.slug.toLocaleLowerCase("ko").includes(needle)) {
+			if (matchesSearch([folder.slug], needle)) {
 				for (const ancestor of folderAncestors(folder.slug))
 					matchingFolders.add(ancestor);
 			}

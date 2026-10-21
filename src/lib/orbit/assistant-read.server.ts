@@ -13,6 +13,7 @@ import {
 } from "./goal-portfolio";
 import { focusedGoal, goalPercent, goalRoot, goalWeekStart } from "./goals";
 import type { OrbitItem } from "./schema";
+import { matchesSearch, searchSnippet, searchTerms } from "./search-text";
 import { getOrbitItem, listOrbitItems } from "./store";
 
 export function itemSummary(item: OrbitItem) {
@@ -48,7 +49,7 @@ export async function searchAssistantItems(
 	input: z.input<typeof assistantSearchSchema>,
 ) {
 	const p = assistantSearchSchema.parse(input);
-	const terms = p.query.toLocaleLowerCase().split(/\s+/).filter(Boolean);
+	const terms = searchTerms(p.query);
 	const day = (value: string | undefined) =>
 		!value
 			? undefined
@@ -75,17 +76,22 @@ export async function searchAssistantItems(
 			(!start || !end || (p.from && end < p.from) || (p.to && start > p.to))
 		)
 			return false;
-		const haystack =
-			`${item.title}\n${item.body}\n${item.tags.join(" ")}`.toLocaleLowerCase();
-		return terms.every((term) => haystack.includes(term));
+		return matchesSearch(
+			[
+				item.title,
+				item.body,
+				...item.tags,
+				item.folder ?? "",
+				item.project ?? "",
+			],
+			p.query,
+		);
 	});
 	return {
 		items: matches.slice(p.offset, p.offset + p.limit).map((item) => {
-			const text = item.body.replace(/\s+/g, " ");
-			const hit = terms.length ? text.toLocaleLowerCase().indexOf(terms[0]) : 0;
 			return {
 				...itemSummary(item),
-				excerpt: text.slice(Math.max(0, hit - 60), Math.max(0, hit - 60) + 600),
+				excerpt: searchSnippet(item.body, terms, 600),
 			};
 		}),
 		total: matches.length,
