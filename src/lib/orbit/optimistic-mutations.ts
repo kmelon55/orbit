@@ -315,6 +315,17 @@ export class OptimisticItems {
 		}
 		this.pending.delete(event.requestId);
 		if (event.phase !== "success") return;
+		if (event.mutation.action === "tree-selection") {
+			const result = event.result as
+				| { removedIds?: string[]; items?: unknown[] }
+				| undefined;
+			for (const id of result?.removedIds ?? []) this.confirmed.set(id, null);
+			for (const value of result?.items ?? []) {
+				const item = orbitItemSchema.safeParse(value);
+				if (item.success) this.acknowledge(item.data);
+			}
+			return;
+		}
 		if (event.mutation.action === "delete-item") {
 			this.confirmed.set(event.mutation.id, null);
 			// The server returns the removed item for undo, not an upsert.

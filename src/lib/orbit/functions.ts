@@ -18,6 +18,13 @@ const mutateOrbitRequest = createServerFn({ method: "POST" })
 	.middleware([orbitAuthMiddleware])
 	.validator((input: unknown) => orbitMutationSchema.parse(input))
 	.handler(async ({ data }) => {
+		if (data.action === "tree-selection") {
+			const { operateOrbitTreeSelection } = await import("./store");
+			return {
+				result: await operateOrbitTreeSelection(data.input),
+				undo: null,
+			};
+		}
 		if (
 			data.action === "save-routine" ||
 			data.action === "set-routine-enabled" ||

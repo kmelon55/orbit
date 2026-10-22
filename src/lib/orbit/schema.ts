@@ -157,10 +157,23 @@ export const moveTreeInputSchema = z.object({
 	position: z.enum(["before", "after", "inside"]),
 });
 export type MoveTreeInput = z.infer<typeof moveTreeInputSchema>;
+export const treeSelectionInputSchema = z.object({
+	space: paraFolderSpaceSchema,
+	keys: z.array(z.string().min(1).max(600)).min(1).max(2000),
+	operation: z.enum(["move", "delete"]),
+	target: z.string().min(1).max(600).optional(),
+	position: z.enum(["before", "after", "inside"]).default("inside"),
+	confirmDelete: z.boolean().optional(),
+});
+export type TreeSelectionInput = z.infer<typeof treeSelectionInputSchema>;
 export type TreeOrder = Record<string, string[]>;
 
 export const orbitMutationSchema = z.discriminatedUnion("action", [
 	...routineMutationSchemas,
+	z.object({
+		action: z.literal("tree-selection"),
+		input: treeSelectionInputSchema,
+	}),
 	z.object({
 		action: z.literal("save-schedule-category"),
 		input: scheduleCategorySettingsSchema,

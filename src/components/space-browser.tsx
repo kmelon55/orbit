@@ -539,21 +539,28 @@ function UnifiedFolderWorkspace({
 					<FolderTreeList
 						space={space}
 						order={snapshot.treeOrder?.[space]}
-						onMove={async (input) => {
-							const sourceFolder = input.key.startsWith("folder:")
-								? input.key.slice(7)
-								: undefined;
+						onMove={async (input, keys) => {
+							const sourceFolders = keys
+								.filter((key) => key.startsWith("folder:"))
+								.map((key) => key.slice(7));
 							const ids = controls.items
 								.filter(
 									(item) =>
-										input.key === `item:${item.id}` ||
-										(sourceFolder &&
-											(folderOf(item) === sourceFolder ||
-												folderOf(item)?.startsWith(`${sourceFolder}/`))),
+										keys.includes(`item:${item.id}`) ||
+										sourceFolders.some(
+											(folder) =>
+												folderOf(item) === folder ||
+												folderOf(item)?.startsWith(`${folder}/`),
+										),
 								)
 								.map((item) => item.id);
 							await controls.runWithSavedItems(ids, () =>
-								mutateOrbit({ data: { action: "move-tree-entry", input } }),
+								mutateOrbit({
+									data: {
+										action: "tree-selection",
+										input: { ...input, keys, operation: "move" },
+									},
+								}),
 							);
 							setCollapsed((current) => {
 								const next = new Set(current);
@@ -564,6 +571,37 @@ function UnifiedFolderWorkspace({
 									next.delete(input.target.slice(7));
 								return next;
 							});
+							await refresh();
+						}}
+						onDelete={async (keys) => {
+							const sourceFolders = keys
+								.filter((key) => key.startsWith("folder:"))
+								.map((key) => key.slice(7));
+							const ids = controls.items
+								.filter(
+									(item) =>
+										keys.includes(`item:${item.id}`) ||
+										sourceFolders.some(
+											(folder) =>
+												folderOf(item) === folder ||
+												folderOf(item)?.startsWith(`${folder}/`),
+										),
+								)
+								.map((item) => item.id);
+							await controls.runWithRemovedItems(ids, () =>
+								mutateOrbit({
+									data: {
+										action: "tree-selection",
+										input: {
+											space,
+											keys,
+											operation: "delete",
+											position: "inside",
+											confirmDelete: true,
+										},
+									},
+								}),
+							);
 							await refresh();
 						}}
 						items={controls.items}

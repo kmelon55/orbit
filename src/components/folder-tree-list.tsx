@@ -1,6 +1,8 @@
+import { Trash2, X } from "lucide-react";
 import {
 	type DragEvent,
 	type ReactNode,
+	useEffect,
 	useLayoutEffect,
 	useMemo,
 	useRef,
@@ -22,11 +24,19 @@ import type {
 } from "#/lib/orbit/schema";
 import {
 	planTreeMove,
-	resolveTreeMove,
 	treeMoveEntries,
+	treeSelectionRoots,
 } from "#/lib/orbit/tree-move";
 import { cn } from "#/lib/utils";
 import { useI18n } from "@/components/locale-provider";
+import { Button } from "./ui/button";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+} from "./ui/dialog";
 
 const ROW_HEIGHT = 34;
 
@@ -40,11 +50,13 @@ export function FolderTreeList({
 	order,
 	space,
 	onMove,
+	onDelete,
 }: {
 	items: OrbitItem[];
 	order?: TreeOrder;
 	space: OrbitFolder["space"];
-	onMove: (input: MoveTreeInput) => Promise<void>;
+	onMove: (input: MoveTreeInput, keys: string[]) => Promise<void>;
+	onDelete: (keys: string[]) => Promise<void>;
 	folders: OrbitFolder[];
 	collapsed: ReadonlySet<string>;
 	query: string;
@@ -53,6 +65,14 @@ export function FolderTreeList({
 }) {
 	const { t, errorText } = useI18n();
 
+	const [selected, setSelected] = useState<Set<string>>(new Set());
+	const [working, setWorking] = useState(false);
+	const [deleteSelection, setDeleteSelection] = useState<{
+		keys: string[];
+		labels: string[];
+	}>();
+	const anchor = useRef<string | undefined>(undefined);
+	const draggedKeys = useRef<string[]>([]);
 	const [dragKey, setDragKey] = useState<string>();
 	const dragIntent = useTreeDragIntent();
 	const suppressClick = useRef(false);
@@ -82,7 +102,12 @@ export function FolderTreeList({
 		kind?: "folder" | "item",
 	): MoveTreeInput | undefined {
 		const key = dragRef.current;
-		if (!key || busy.current) return;
+		if (
+			!key ||
+			busy.current ||
+			(target && draggedKeys.current.includes(target))
+		)
+			return;
 		const bounds = event.currentTarget.getBoundingClientRect();
 		const ratio = (event.clientY - bounds.top) / bounds.height;
 		const position = !target
@@ -94,7 +119,13 @@ export function FolderTreeList({
 					: "after";
 		const input = { space, key, target, position } as MoveTreeInput;
 		try {
-			resolveTreeMove(entries, input);
+			let plan = { items, folders, order: order ?? {} };
+			for (const selectedKey of draggedKeys.current) {
+				plan = planTreeMove(plan.items, plan.folders, plan.order, {
+					...input,
+					key: selectedKey,
+				});
+			}
 			return input;
 		} catch {
 			return;
@@ -139,9 +170,22 @@ export function FolderTreeList({
 		if (!input) return;
 		busy.current = true;
 		setMoveError(undefined);
-		setPreview(planTreeMove(items, folders, order ?? {}, input));
+		const selection = [...draggedKeys.current];
 		try {
-			await onMove(input);
+			const keys =
+				input.position === "after" ? [...selection].reverse() : selection;
+			let plan = planTreeMove(items, folders, order ?? {}, {
+				...input,
+				key: keys[0],
+			});
+			for (const key of keys.slice(1))
+				plan = planTreeMove(plan.items, plan.folders, plan.order, {
+					...input,
+					key,
+				});
+			setPreview(plan);
+			await onMove(input, selection);
+			setSelected(new Set());
 		} catch (error) {
 			setMoveError(
 				error instanceof Error ? error.message : t("이동하지 못했습니다."),
@@ -156,6 +200,12 @@ export function FolderTreeList({
 		[displayItems, displayFolders, displayOrder],
 	);
 	const entries = useMemo(() => treeMoveEntries(index), [index]);
+	useEffect(() => {
+		setSelected((current) => {
+			const next = new Set([...current].filter((key) => entries.has(key)));
+			return next.size === current.size ? current : next;
+		});
+	}, [entries]);
 	const rows = useMemo(
 		() => flattenFolderTree(index, displayCollapsed, query),
 		[index, displayCollapsed, query],
@@ -198,9 +248,165 @@ export function FolderTreeList({
 		}
 		return { top: Math.max(0, boundary * ROW_HEIGHT - 1), depth: target.depth };
 	}, [dropTarget, rows]);
+	function requestDelete() {
+		const keys = treeSelectionRoots(entries, [...selected]);
+		setDeleteSelection({
+			keys,
+			labels: keys.map(
+				(key) =>
+					entries.get(key)?.folder?.name ??
+					entries.get(key)?.item?.title ??
+					key,
+			),
+		});
+		setMoveError(undefined);
+	}
+
+	async function moveSelection(target?: string) {
+		if (busy.current) return;
+		busy.current = true;
+		setWorking(true);
+		setMoveError(undefined);
+		try {
+			const keys = treeSelectionRoots(entries, [...selected]);
+			await onMove({ space, key: keys[0], target, position: "inside" }, keys);
+			setSelected(new Set());
+		} catch (error) {
+			setMoveError(
+				error instanceof Error ? error.message : t("이동하지 못했습니다."),
+			);
+		} finally {
+			busy.current = false;
+			setWorking(false);
+		}
+	}
 	return (
 		<div className="relative flex min-h-0 flex-1 flex-col">
-			{moveError ? (
+			{selected.size > 0 && (
+				<div
+					className="flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs"
+					role="toolbar"
+					aria-label={t("선택한 항목")}
+				>
+					<span className="shrink-0" aria-live="polite">
+						{t("{0}개 선택", [selected.size])}
+					</span>
+					<select
+						aria-label={t("선택 항목 옮기기")}
+						value=""
+						disabled={working || Boolean(preview)}
+						className="min-w-0 flex-1 rounded border bg-background p-1"
+						onChange={(event) =>
+							void moveSelection(
+								event.target.value === "root" ? undefined : event.target.value,
+							)
+						}
+					>
+						<option value="" disabled>
+							{t("옮기기…")}
+						</option>
+						<option value="root">{t("최상위로 이동")}</option>
+						{folders
+							.filter(
+								(folder) =>
+									![...selected].some(
+										(key) =>
+											key.startsWith("folder:") &&
+											(folder.slug === key.slice(7) ||
+												folder.slug.startsWith(`${key.slice(7)}/`)),
+									),
+							)
+							.map((folder) => (
+								<option key={folder.slug} value={`folder:${folder.slug}`}>
+									{folder.slug}
+								</option>
+							))}
+					</select>
+					<Button
+						size="icon-sm"
+						variant="ghost"
+						aria-label={t("선택 항목 삭제")}
+						disabled={working || Boolean(preview)}
+						onClick={() => requestDelete()}
+					>
+						<Trash2 />
+					</Button>
+					<Button
+						size="icon-sm"
+						variant="ghost"
+						aria-label={t("선택 해제")}
+						disabled={working || Boolean(preview)}
+						onClick={() => setSelected(new Set())}
+					>
+						<X />
+					</Button>
+				</div>
+			)}
+			{deleteSelection && (
+				<Dialog
+					open
+					onOpenChange={(open) => {
+						if (!open && !working) setDeleteSelection(undefined);
+					}}
+				>
+					<DialogContent className="max-w-sm">
+						<DialogHeader>
+							<DialogTitle>{t("선택 항목 삭제")}</DialogTitle>
+							<DialogDescription>
+								{t(
+									"선택한 폴더의 모든 내용과 하위 폴더도 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
+								)}
+							</DialogDescription>
+						</DialogHeader>
+						<ul className="max-h-48 overflow-auto text-sm">
+							{deleteSelection.labels.map((label, index) => (
+								<li key={deleteSelection.keys[index]}>{label}</li>
+							))}
+						</ul>
+						{moveError && (
+							<p role="alert" className="text-sm text-destructive">
+								{errorText(moveError)}
+							</p>
+						)}
+						<div className="flex justify-end gap-2">
+							<Button
+								variant="outline"
+								disabled={working}
+								onClick={() => setDeleteSelection(undefined)}
+							>
+								{t("취소")}
+							</Button>
+							<Button
+								variant="destructive"
+								disabled={working}
+								onClick={async () => {
+									if (busy.current) return;
+									busy.current = true;
+									setWorking(true);
+									setMoveError(undefined);
+									try {
+										await onDelete(deleteSelection.keys);
+										setSelected(new Set());
+										setDeleteSelection(undefined);
+									} catch (error) {
+										setMoveError(
+											error instanceof Error
+												? error.message
+												: t("삭제하지 못했습니다."),
+										);
+									} finally {
+										busy.current = false;
+										setWorking(false);
+									}
+								}}
+							>
+								{t("삭제")}
+							</Button>
+						</div>
+					</DialogContent>
+				</Dialog>
+			)}
+			{moveError && !deleteSelection ? (
 				<output className="px-3 text-xs text-destructive">
 					{errorText(moveError)}
 				</output>
@@ -221,13 +427,49 @@ export function FolderTreeList({
 			<div
 				role="tree"
 				aria-label={t("폴더와 노트")}
-				aria-busy={Boolean(preview)}
+				aria-busy={Boolean(preview) || working}
+				aria-multiselectable="true"
 				onClickCapture={(event) => {
 					if (suppressClick.current && event.detail !== 0) {
 						suppressClick.current = false;
 						event.preventDefault();
 						event.stopPropagation();
 						return;
+					}
+					if (busy.current) {
+						event.preventDefault();
+						event.stopPropagation();
+						return;
+					}
+					const row = (event.target as HTMLElement).closest<HTMLElement>(
+						"[data-tree-key]",
+					);
+					const key = row?.dataset.treeKey;
+					if (key && !busy.current) {
+						if (event.metaKey || event.ctrlKey || event.shiftKey) {
+							event.preventDefault();
+							event.stopPropagation();
+							setSelected((current) => {
+								const next = new Set(current);
+								const from = rows.findIndex(
+									(row) => row.key === anchor.current,
+								);
+								const to = rows.findIndex((row) => row.key === key);
+								if (event.shiftKey && from >= 0)
+									for (const row of rows.slice(
+										Math.min(from, to),
+										Math.max(from, to) + 1,
+									))
+										next.add(row.key);
+								else if (next.has(key)) next.delete(key);
+								else next.add(key);
+								return next;
+							});
+							if (!event.shiftKey) anchor.current = key;
+							return;
+						}
+						setSelected(new Set([key]));
+						anchor.current = key;
 					}
 					captureFolderMotion(event);
 				}}
@@ -245,6 +487,24 @@ export function FolderTreeList({
 					})
 				}
 				onKeyDown={(event) => {
+					if (event.key === "Escape") {
+						setSelected(new Set());
+						return;
+					}
+					if (
+						(event.key === "Delete" || event.key === "Backspace") &&
+						selected.size &&
+						!busy.current
+					) {
+						event.preventDefault();
+						requestDelete();
+						return;
+					}
+					if ((event.metaKey || event.ctrlKey) && event.key === "a") {
+						event.preventDefault();
+						setSelected(new Set(rows.map((row) => row.key)));
+						return;
+					}
 					if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key))
 						return;
 					const current = (event.target as HTMLElement).closest<HTMLElement>(
@@ -292,13 +552,19 @@ export function FolderTreeList({
 								key={row.key}
 								data-tree-index={start + offset}
 								data-tree-key={row.key}
-								data-drag-ready={dragIntent.readyKey === row.key || undefined}
+								aria-selected={selected.has(row.key)}
 								draggable={
-									!preview && !row.key.startsWith("item:orbit-optimistic:")
+									!working &&
+									!preview &&
+									!row.key.startsWith("item:orbit-optimistic:")
 								}
 								onPointerDown={(event) => {
 									suppressClick.current = false;
-									if (!preview && !row.key.startsWith("item:orbit-optimistic:"))
+									if (
+										!working &&
+										!preview &&
+										!row.key.startsWith("item:orbit-optimistic:")
+									)
 										dragIntent.pointerDown(event, row.key);
 								}}
 								onDragStart={(event) => {
@@ -308,6 +574,11 @@ export function FolderTreeList({
 										dragIntent.reset();
 										return;
 									}
+									draggedKeys.current = treeSelectionRoots(
+										entries,
+										selected.has(row.key) ? [...selected] : [row.key],
+									);
+									if (!selected.has(row.key)) setSelected(new Set([row.key]));
 									suppressClick.current = true;
 									dragRef.current = row.key;
 									setDragKey(row.key);
@@ -328,10 +599,12 @@ export function FolderTreeList({
 								onDragOver={(event) => dragOver(event, row.key, row.kind)}
 								onDrop={(event) => void drop(event, row.key, row.kind)}
 								className={cn(
-									"rounded-lg",
-									dragIntent.readyKey === row.key &&
-										"bg-muted/70 [&_*]:cursor-grab",
-									dragKey === row.key && "opacity-40",
+									"rounded-lg [&_button]:cursor-grab",
+									selected.has(row.key) &&
+										"bg-primary/10 ring-1 ring-inset ring-primary/30",
+									dragKey &&
+										draggedKeys.current.includes(row.key) &&
+										"opacity-40",
 									dropTarget?.target === row.key &&
 										dropTarget.position === "inside" &&
 										"bg-blue-500/10 ring-1 ring-inset ring-blue-500",

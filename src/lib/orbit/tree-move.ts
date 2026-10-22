@@ -82,6 +82,28 @@ export function treeMoveEntries(tree: ReturnType<typeof indexFolderTree>) {
 		for (const entry of children) entries.set(entry.key, entry);
 	return entries;
 }
+
+// A selected folder already owns its descendants; operate on each branch once.
+export function treeSelectionRoots(
+	entries: ReturnType<typeof treeMoveEntries>,
+	keys: readonly string[],
+) {
+	const selected = new Set(keys);
+	for (const key of selected)
+		if (!entries.has(key)) throw new Error("선택한 항목을 찾을 수 없습니다.");
+	return [...entries.values()]
+		.filter((entry) => {
+			if (!selected.has(entry.key)) return false;
+			let parent =
+				entry.folder?.parent ?? (entry.item ? folderOf(entry.item) : undefined);
+			while (parent) {
+				if (selected.has(`folder:${parent}`)) return false;
+				parent = parent.split("/").slice(0, -1).join("/");
+			}
+			return true;
+		})
+		.map((entry) => entry.key);
+}
 export function resolveTreeMove(
 	entries: ReturnType<typeof treeMoveEntries>,
 	input: MoveTreeInput,
