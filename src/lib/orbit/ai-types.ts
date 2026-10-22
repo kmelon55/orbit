@@ -26,6 +26,7 @@ export type AiChatMessage = {
 
 export type AiChat = {
 	id: string;
+	mailId?: string;
 	title: string;
 	createdAt: number;
 	updatedAt: number;

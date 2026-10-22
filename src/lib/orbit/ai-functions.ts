@@ -105,3 +105,39 @@ export const askOrbitAi = createServerFn({ method: "POST" })
 			await getUiLocale(),
 		);
 	});
+
+export const loadMailAiChat = createServerFn({ method: "GET" })
+	.middleware([orbitAuthMiddleware])
+	.validator((input: unknown) =>
+		z.object({ mailId: z.string().min(1).max(500) }).parse(input),
+	)
+	.handler(async ({ data }) => {
+		const { latestMailAiChat } = await import("./ai-history.server");
+		return latestMailAiChat(data.mailId);
+	});
+
+export const askMailAi = createServerFn({ method: "POST" })
+	.middleware([orbitAuthMiddleware])
+	.validator((input: unknown) =>
+		z
+			.object({
+				mailId: z.string().min(1).max(500),
+				question: z.string().trim().min(2).max(1000),
+				model: z.string().min(3).max(200),
+				chatId: z.uuid().optional(),
+				requestId: z.uuid(),
+			})
+			.parse(input),
+	)
+	.handler(async ({ data }) => {
+		const { askOrbit } = await import("./ai.server");
+		return askOrbit(
+			data.question,
+			data.model,
+			[],
+			data.chatId,
+			data.requestId,
+			await getUiLocale(),
+			data.mailId,
+		);
+	});

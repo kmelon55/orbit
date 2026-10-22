@@ -40,6 +40,18 @@ export function saveAiChat(chat: AiChat) {
 		.run(chat.id, chat.updatedAt, current.seal(chat));
 }
 
+export function latestMailAiChat(mailId: string): AiChat | null {
+	const current = store();
+	const rows = current.db
+		.prepare("SELECT data FROM ai_chats ORDER BY updated_at DESC")
+		.iterate() as Iterable<{ data: string }>;
+	for (const { data } of rows) {
+		const chat = current.unseal<AiChat>(data);
+		if (chat.mailId === mailId) return chat;
+	}
+	return null;
+}
+
 export function deleteAiChat(id: string) {
 	store().db.prepare("DELETE FROM ai_chats WHERE id=?").run(id);
 }

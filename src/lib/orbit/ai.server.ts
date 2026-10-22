@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import sanitizeHtml from "sanitize-html";
 import type { Locale } from "../i18n";
 import { detailMessage } from "../mail/service.server";
 import { mailStore } from "../mail/store.server";
@@ -115,6 +116,7 @@ async function sourceFor(
 	reference: AiReference,
 	items: OrbitItem[],
 	fullMail: boolean,
+	mailOnly = false,
 ): Promise<SourceWithExcerpt> {
 	if (reference.kind === "item") {
 		const item = items.find(({ id }) => id === reference.id);
@@ -131,22 +133,36 @@ async function sourceFor(
 		};
 	}
 	const message = mailStore().message(reference.id);
-	let text = mailStore().body(reference.id)?.hidden.text;
-	if (!text && fullMail) {
+	let body = mailStore().body(reference.id)?.hidden;
+	if (!body && fullMail) {
 		try {
-			text = (await detailMessage(reference.id)).text;
+			body = await detailMessage(reference.id);
 		} catch {
+			if (mailOnly)
+				throw new Error(
+					"메일 본문을 불러오지 못했습니다. 메일을 다시 열어 주세요.",
+				);
 			/* keep cached preview when a provider is offline */
 		}
 	}
+	const text =
+		body?.text.trim() ||
+		(body?.html
+			? sanitizeHtml(
+					body.html.replace(/<\/(?:p|div|tr|li|h[1-6])>|<br\s*\/?\s*>/gi, "\n"),
+					{ allowedTags: [], allowedAttributes: {} },
+				).trim()
+			: "");
+	const limit = mailOnly ? 24_000 : 4000;
+	const content = body ? text || "(본문 없음)" : message.snippet;
 	return {
 		kind: "mail",
 		id: message.id,
 		index: 0,
 		title: message.subject || "(제목 없음)",
 		folder: message.folder,
-		scope: text ? "full" : "preview",
-		excerpt: `보낸 사람: ${message.from.map((person) => `${person.name} <${person.address}>`).join(", ")}\n받는 사람: ${message.to.map((person) => person.address).join(", ")}\n날짜: ${new Date(message.date).toISOString()}\n내용: ${(text || message.snippet).slice(0, 4000)}`,
+		scope: body && content.length <= limit ? "full" : "preview",
+		excerpt: `보낸 사람: ${message.from.map((person) => `${person.name} <${person.address}>`).join(", ")}\n받는 사람: ${message.to.map((person) => person.address).join(", ")}\n날짜: ${new Date(message.date).toISOString()}\n내용: ${content.slice(0, limit)}${content.length > limit ? "\n[본문이 길어 이후 내용은 생략됨]" : ""}\n첨부파일(내용은 제공되지 않음): ${body?.attachments.map((attachment) => attachment.name).join(", ") || "없음"}`,
 	};
 }
 
@@ -226,6 +242,7 @@ export async function askOrbit(
 	chatId?: string,
 	requestId: string = randomUUID(),
 	locale: Locale = "ko",
+	mailId?: string,
 ): Promise<AiChat> {
 	const { configured, models } = await gatewayModels();
 	if (!configured)
@@ -237,8 +254,13 @@ export async function askOrbit(
 	const now = Date.now();
 	const chat = chatId ? aiChat(chatId) : null;
 	if (chatId && !chat) throw new Error("대화 기록을 찾을 수 없습니다.");
+	if (chat && mailId && chat.mailId !== mailId)
+		throw new Error("다른 메일의 대화를 이어갈 수 없습니다.");
+	const scopedMailId = mailId || chat?.mailId;
+	if (scopedMailId) references = [{ kind: "mail", id: scopedMailId }];
 	const current: AiChat = chat ?? {
 		id: randomUUID(),
+		...(scopedMailId ? { mailId: scopedMailId } : {}),
 		title: question.trim().slice(0, 72),
 		createdAt: now,
 		updatedAt: now,
@@ -263,8 +285,10 @@ export async function askOrbit(
 	current.updatedAt = now;
 	saveAiChat(current);
 	try {
-		const items = await listOrbitItems();
-		const selected = collectReferences(question, items, references, history);
+		const items = scopedMailId ? [] : await listOrbitItems();
+		const selected = scopedMailId
+			? references
+			: collectReferences(question, items, references, history);
 		const sources = await Promise.all(
 			selected.map(async (reference) =>
 				sourceFor(
@@ -274,6 +298,7 @@ export async function askOrbit(
 						(selected) =>
 							selected.kind === reference.kind && selected.id === reference.id,
 					),
+					Boolean(scopedMailId),
 				),
 			),
 		);
