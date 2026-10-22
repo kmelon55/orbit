@@ -8,6 +8,7 @@ import {
 	PopoverContent,
 	PopoverTrigger,
 } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 
 export function AiModelSelector({
 	models,
@@ -16,6 +17,7 @@ export function AiModelSelector({
 	disabled,
 	loading,
 	onRefresh,
+	compact = false,
 }: {
 	models: string[];
 	value: string;
@@ -23,6 +25,7 @@ export function AiModelSelector({
 	disabled: boolean;
 	loading: boolean;
 	onRefresh: () => void;
+	compact?: boolean;
 }) {
 	const { t } = useI18n();
 
@@ -46,12 +49,15 @@ export function AiModelSelector({
 			<PopoverTrigger asChild>
 				<Button
 					type="button"
-					variant="outline"
+					variant={compact ? "ghost" : "outline"}
 					size="sm"
 					disabled={disabled}
 					aria-label={t("AI 모델 선택")}
 					aria-expanded={open}
-					className="h-7 max-w-64 min-w-0 justify-between gap-2 px-2 text-xs font-normal"
+					className={cn(
+						"h-7 max-w-64 min-w-0 justify-between gap-2 px-2 text-xs font-normal",
+						compact && "max-w-52 text-muted-foreground hover:text-foreground",
+					)}
 				>
 					<span className="truncate">
 						{value || (loading ? t("모델 불러오는 중…") : t("모델 선택"))}

@@ -14,11 +14,14 @@ import {
 	ReplyAll,
 	Search,
 	Settings,
+	Sparkles,
 	Trash2,
 	X,
 } from "lucide-react";
 import {
+	lazy,
 	type ReactNode,
+	Suspense,
 	useCallback,
 	useEffect,
 	useMemo,
@@ -58,6 +61,10 @@ import { MailThreadMessage } from "./mail-thread-message";
 import { useMailDrafts } from "./use-mail-drafts";
 import { useMailList } from "./use-mail-list";
 
+const MailAiPanel = lazy(() =>
+	import("./mail-ai-panel").then((module) => ({ default: module.MailAiPanel })),
+);
+
 export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 	const { t, intlLocale, errorText } = useI18n();
 	const errorTextRef = useRef(errorText);
@@ -74,6 +81,8 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 	const folder = location.folder ?? "inbox";
 	const search = location.q ?? "";
 	const selected = location.message ?? "";
+	const [aiOpen, setAiOpen] = useState(false);
+	const [aiMounted, setAiMounted] = useState(false);
 	const [query, setQuery] = useState(search);
 	const [detail, setDetail] = useState<MailDetail | null>(
 		() => session.details.get(`${selected}:true`) ?? null,
@@ -981,6 +990,20 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 									<Forward className="size-4" />
 									<span className="hidden sm:inline">{t("전달")}</span>
 								</Button>
+								<Button
+									variant={aiOpen ? "secondary" : "ghost"}
+									size="sm"
+									disabled={!detail || detail.id !== selected}
+									aria-expanded={aiOpen}
+									aria-controls="mail-ai-panel"
+									onClick={() => {
+										setAiMounted(true);
+										setAiOpen((open) => !open);
+									}}
+								>
+									<Sparkles className="size-4" />
+									{t("AI에게 질문")}
+								</Button>
 								<div className="flex-1" />
 								{detail &&
 									messageMenu(
@@ -1029,126 +1052,168 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 								</Button>
 							</div>
 						)}
-						{selected && (threadLoading || threadError || threadIncomplete) && (
-							<div className="shrink-0 border-b bg-muted/15 p-3">
-								<div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-									<MessagesSquare className="size-3.5" />
-									{t("대화")}
-									{thread.length > 1 ? t("· {0}개 메일", [thread.length]) : ""}
-									{threadLoading && (
-										<span className="flex items-center gap-1">
-											<RefreshCw className="size-3 animate-spin" />
-											{t("이전 대화 확인 중…")}
-										</span>
-									)}
-								</div>
+						<div className="flex min-h-0 flex-1 flex-col xl:flex-row">
+							<div className="flex min-h-0 min-w-0 flex-1 flex-col">
+								{selected &&
+									(threadLoading || threadError || threadIncomplete) && (
+										<div className="shrink-0 border-b bg-muted/15 p-3">
+											<div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+												<MessagesSquare className="size-3.5" />
+												{t("대화")}
+												{thread.length > 1
+													? t("· {0}개 메일", [thread.length])
+													: ""}
+												{threadLoading && (
+													<span className="flex items-center gap-1">
+														<RefreshCw className="size-3 animate-spin" />
+														{t("이전 대화 확인 중…")}
+													</span>
+												)}
+											</div>
 
-								{threadError ? (
-									<p className="text-xs text-destructive">
-										{t("이전 대화를 모두 확인하지 못했습니다.")}
-										{errorText(threadError)}
-									</p>
-								) : threadIncomplete ? (
-									<p className="text-xs text-muted-foreground">
-										{t(
-											"불러온 메일 범위의 대화입니다. 이전 메일이 더 있을 수 있습니다.",
-										)}
-									</p>
-								) : null}
-							</div>
-						)}
-						{activeThread.length > 1 ? (
-							<section
-								key={selected}
-								className="min-h-0 flex-1 overflow-y-auto bg-muted/25"
-								aria-label={t("대화 전체")}
-							>
-								<div className="border-b bg-background px-5 py-4">
-									<h2 className="text-lg font-semibold">
-										{activeThread[0].subject.replace(
-											/^(?:(?:re|fw|fwd):\s*)+/i,
-											"",
-										)}
-									</h2>
-									<p className="mt-1 text-xs text-muted-foreground">
-										{t("오래된 메일부터 ·")}
-										{activeThread.length}
-										{t("개 메일")}
-									</p>
-								</div>
-								<div className="mx-auto max-w-5xl space-y-6 px-3 py-5 sm:px-6 sm:py-6">
-									{activeThread.map((m) => (
-										<MailThreadMessage
-											onRead={markThreadRead}
-											key={m.id}
-											message={m}
-											accountEmails={
-												status?.accounts
-													.filter((a) => a.id === m.accountId)
-													.flatMap(accountAddresses) || []
-											}
-											api={api}
+											{threadError ? (
+												<p className="text-xs text-destructive">
+													{t("이전 대화를 모두 확인하지 못했습니다.")}
+													{errorText(threadError)}
+												</p>
+											) : threadIncomplete ? (
+												<p className="text-xs text-muted-foreground">
+													{t(
+														"불러온 메일 범위의 대화입니다. 이전 메일이 더 있을 수 있습니다.",
+													)}
+												</p>
+											) : null}
+										</div>
+									)}
+								{activeThread.length > 1 ? (
+									<section
+										key={selected}
+										className="min-h-0 flex-1 overflow-y-auto bg-muted/25"
+										aria-label={t("대화 전체")}
+									>
+										<div className="border-b bg-background px-5 py-4">
+											<h2 className="text-lg font-semibold">
+												{activeThread[0].subject.replace(
+													/^(?:(?:re|fw|fwd):\s*)+/i,
+													"",
+												)}
+											</h2>
+											<p className="mt-1 text-xs text-muted-foreground">
+												{t("오래된 메일부터 ·")}
+												{activeThread.length}
+												{t("개 메일")}
+											</p>
+										</div>
+										<div className="mx-auto max-w-5xl space-y-6 px-3 py-5 sm:px-6 sm:py-6">
+											{activeThread.map((m) => (
+												<MailThreadMessage
+													onRead={markThreadRead}
+													key={m.id}
+													message={m}
+													accountEmails={
+														status?.accounts
+															.filter((a) => a.id === m.accountId)
+															.flatMap(accountAddresses) || []
+													}
+													api={api}
+													demo={demo}
+													cache={detailCache.current}
+													remoteImages={remoteImages}
+													primary={m.id === selected}
+													primaryDetail={m.id === selected ? detail : null}
+													primaryError={m.id === selected ? detailError : ""}
+													onRetryPrimary={() => setDetailRetry((v) => v + 1)}
+													onToggleImages={() => setRemoteImages((v) => !v)}
+													onCompose={(original, mode) => {
+														setComposeOriginal(original);
+														setCompose(mode);
+													}}
+												/>
+											))}
+										</div>
+									</section>
+								) : reading ? (
+									<div className="space-y-5 p-5">
+										<h2 className="text-lg font-semibold">
+											{selectedSummary?.subject}
+										</h2>
+										<p className="text-sm text-muted-foreground">
+											{selectedSummary?.from
+												.map((a) => a.name || a.address)
+												.join(", ")}
+										</p>
+										<output className="flex items-center gap-2 text-xs text-muted-foreground">
+											<RefreshCw className="size-3 animate-spin" />
+											{t("본문을 불러오는 중…")}
+										</output>
+										<Skeleton className="h-4 w-4/5" />
+										<Skeleton className="h-4 w-full" />
+										<Skeleton className="h-4 w-2/3" />
+									</div>
+								) : detailError ? (
+									<div className="p-8">
+										<p role="alert" className="text-sm text-destructive">
+											{errorText(detailError)}
+										</p>
+										<Button
+											variant="outline"
+											className="mt-3"
+											onClick={() => setDetailRetry((v) => v + 1)}
+										>
+											{t("다시 열기")}
+										</Button>
+									</div>
+								) : detail ? (
+									<div className="min-h-0 flex-1 overflow-y-auto">
+										<MailMessageContent
+											detail={detail}
 											demo={demo}
-											cache={detailCache.current}
 											remoteImages={remoteImages}
-											primary={m.id === selected}
-											primaryDetail={m.id === selected ? detail : null}
-											primaryError={m.id === selected ? detailError : ""}
-											onRetryPrimary={() => setDetailRetry((v) => v + 1)}
 											onToggleImages={() => setRemoteImages((v) => !v)}
-											onCompose={(original, mode) => {
-												setComposeOriginal(original);
-												setCompose(mode);
-											}}
 										/>
-									))}
-								</div>
-							</section>
-						) : reading ? (
-							<div className="space-y-5 p-5">
-								<h2 className="text-lg font-semibold">
-									{selectedSummary?.subject}
-								</h2>
-								<p className="text-sm text-muted-foreground">
-									{selectedSummary?.from
-										.map((a) => a.name || a.address)
-										.join(", ")}
-								</p>
-								<output className="flex items-center gap-2 text-xs text-muted-foreground">
-									<RefreshCw className="size-3 animate-spin" />
-									{t("본문을 불러오는 중…")}
-								</output>
-								<Skeleton className="h-4 w-4/5" />
-								<Skeleton className="h-4 w-full" />
-								<Skeleton className="h-4 w-2/3" />
+									</div>
+								) : (
+									<div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+										{t("선택된 메일 없음")}
+									</div>
+								)}
 							</div>
-						) : detailError ? (
-							<div className="p-8">
-								<p role="alert" className="text-sm text-destructive">
-									{errorText(detailError)}
-								</p>
-								<Button
-									variant="outline"
-									className="mt-3"
-									onClick={() => setDetailRetry((v) => v + 1)}
+							{selected && (
+								<div
+									id="mail-ai-panel"
+									className="mail-ai-shell"
+									data-open={aiOpen}
+									aria-hidden={!aiOpen}
+									inert={!aiOpen}
 								>
-									{t("다시 열기")}
-								</Button>
-							</div>
-						) : detail ? (
-							<div className="min-h-0 flex-1 overflow-y-auto">
-								<MailMessageContent
-									detail={detail}
-									demo={demo}
-									remoteImages={remoteImages}
-									onToggleImages={() => setRemoteImages((v) => !v)}
-								/>
-							</div>
-						) : (
-							<div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-								{t("선택된 메일 없음")}
-							</div>
-						)}
+									<div className="mail-ai-shell-inner">
+										{aiMounted && (
+											<Suspense
+												fallback={
+													<div className="p-4">
+														<Skeleton className="h-32 w-full" />
+													</div>
+												}
+											>
+												<MailAiPanel
+													key={selected}
+													mailId={selected}
+													active={aiOpen}
+													subject={
+														detail?.id === selected
+															? detail.subject
+															: selectedSummary?.subject || ""
+													}
+													demo={demo}
+													onClose={() => setAiOpen(false)}
+													onOpenMail={selectMessage}
+												/>
+											</Suspense>
+										)}
+									</div>
+								</div>
+							)}
+						</div>
 					</div>
 				</div>
 			)}
