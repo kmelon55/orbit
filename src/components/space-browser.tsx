@@ -266,7 +266,7 @@ function UnifiedFolderWorkspace({
 			await mutateOrbit({
 				data: {
 					action: "update-folder",
-					input: { space, path: editingFolder.slug, name: nextName },
+					input: { space, path: editingFolder.slug, displayName: nextName },
 				},
 			});
 			setEditingFolder(undefined);

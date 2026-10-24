@@ -1,6 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { ListTodo, Mail } from "lucide-react";
 import type { ReactNode } from "react";
+import { folderDisplayPath } from "#/lib/orbit/folder-tree";
 import type { OrbitSnapshot } from "#/lib/orbit/schema";
 import { AppSidebar } from "@/components/app-sidebar";
 import { GlobalSearch } from "@/components/global-search";
@@ -14,7 +15,11 @@ import {
 } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-function pageTitle(pathname: string, t: (message: string) => string) {
+function pageTitle(
+	pathname: string,
+	t: (message: string) => string,
+	snapshot: OrbitSnapshot,
+) {
 	if (pathname === "/") return t("Today");
 	if (pathname === "/inbox") return t("Inbox");
 	if (pathname === "/mail") return t("Mail");
@@ -26,15 +31,24 @@ function pageTitle(pathname: string, t: (message: string) => string) {
 	if (pathname === "/archive") return t("Archive");
 	if (pathname.startsWith("/whiteboards")) return t("Whiteboards");
 	if (pathname.startsWith("/projects/")) {
-		return decodeURIComponent(pathname.slice("/projects/".length));
+		return folderDisplayPath(
+			snapshot.folders.project,
+			decodeURIComponent(pathname.slice("/projects/".length)),
+		);
 	}
 	if (pathname === "/projects") return t("Projects");
 	if (pathname.startsWith("/areas/")) {
-		return decodeURIComponent(pathname.slice("/areas/".length));
+		return folderDisplayPath(
+			snapshot.folders.area,
+			decodeURIComponent(pathname.slice("/areas/".length)),
+		);
 	}
 	if (pathname === "/areas") return t("Areas");
 	if (pathname.startsWith("/resources/")) {
-		return decodeURIComponent(pathname.slice("/resources/".length));
+		return folderDisplayPath(
+			snapshot.folders.resource,
+			decodeURIComponent(pathname.slice("/resources/".length)),
+		);
 	}
 	if (pathname === "/resources") return t("Resources");
 	return "Orbit";
@@ -66,7 +80,9 @@ export function AppShell({
 								Orbit
 							</span>
 							<span className="hidden text-muted-foreground md:inline">/</span>
-							<h1 className="truncate font-medium">{pageTitle(pathname, t)}</h1>
+							<h1 className="truncate font-medium">
+								{pageTitle(pathname, t, snapshot)}
+							</h1>
 						</div>
 						<nav
 							aria-label={t("빠른 이동")}

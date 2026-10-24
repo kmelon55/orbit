@@ -66,6 +66,9 @@ export function folderMutationObserved(
 		folder &&
 			(!mutation.input.color || folder.color === mutation.input.color) &&
 			(mutation.action !== "update-folder" ||
+				!mutation.input.displayName ||
+				folder.name === mutation.input.displayName.normalize("NFC")) &&
+			(mutation.action !== "update-folder" ||
 				(destinationSpace === mutation.input.space &&
 					next === mutation.input.path) ||
 				!snapshot.folders[mutation.input.space].some(
@@ -92,7 +95,7 @@ export function projectFolderMutation(
 					{
 						space,
 						slug: nextPath,
-						name: parts.at(-1) ?? nextPath,
+						name: mutation.input.name.normalize("NFC"),
 						parent: parts.slice(0, -1).join("/") || undefined,
 						depth: parts.length - 1,
 						color: mutation.input.color ?? "lime",
@@ -182,7 +185,12 @@ export function projectFolderMutation(
 					...folder,
 					space: nextSpace,
 					slug,
-					name: parts.at(-1) ?? slug,
+					name:
+						folder.slug === oldPath
+							? ((mutation.input.displayName ?? mutation.input.name)?.normalize(
+									"NFC",
+								) ?? folder.name)
+							: folder.name,
 					parent: parts.slice(0, -1).join("/") || undefined,
 					depth: parts.length - 1,
 					color:
@@ -273,7 +281,12 @@ export function projectFolderMutation(
 				return {
 					...folder,
 					slug,
-					name: parts.at(-1) ?? slug,
+					name:
+						folder.slug === oldPath
+							? ((mutation.input.displayName ?? mutation.input.name)?.normalize(
+									"NFC",
+								) ?? folder.name)
+							: folder.name,
 					parent: parts.slice(0, -1).join("/") || undefined,
 					depth: parts.length - 1,
 					color:

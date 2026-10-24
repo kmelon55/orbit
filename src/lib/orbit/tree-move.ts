@@ -135,7 +135,7 @@ export function resolveTreeMove(
 	if (from && (parent === from || parent.startsWith(`${from}/`)))
 		throw new Error("자신의 하위 폴더로 이동할 수 없습니다.");
 	const to = from
-		? [parent, source.folder?.name].filter(Boolean).join("/")
+		? [parent, from.split("/").at(-1)].filter(Boolean).join("/")
 		: undefined;
 	if (from !== to && to && entries.has(`folder:${to}`))
 		throw new Error("같은 이름의 폴더가 이미 있습니다.");

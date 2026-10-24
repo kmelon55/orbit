@@ -66,7 +66,7 @@ type FolderMetadata = {
 	folders: Partial<
 		Record<
 			"project" | "area" | "resource" | "archive",
-			Record<string, { color: OrbitFolderColor }>
+			Record<string, { color: OrbitFolderColor; name?: string }>
 		>
 	>;
 };
@@ -158,6 +158,7 @@ async function existingFolderPath(
 	const folders = await listNestedFolders(
 		path.join(vaultRoot, folderRoot(space)),
 	);
+	const metadata = await readFolderMetadata(vaultRoot);
 	const resolved: string[] = [];
 	for (const segment of parts) {
 		const parent = resolved.join("/");
@@ -172,6 +173,8 @@ async function existingFolderPath(
 			const name = folder.split("/").at(-1) ?? "";
 			return (
 				normalizeSearchText(name) === normalizeSearchText(segment) ||
+				normalizeSearchText(metadata.folders[space]?.[folder]?.name ?? "") ===
+					normalizeSearchText(segment) ||
 				toVaultSlug(name) === toVaultSlug(segment)
 			);
 		});
@@ -380,7 +383,7 @@ async function collectFolders(
 				return {
 					space,
 					slug,
-					name: parts.at(-1) ?? slug,
+					name: metadata.folders[space]?.[slug]?.name ?? parts.at(-1) ?? slug,
 					parent,
 					depth: parts.length - 1,
 					color: metadata.folders[space]?.[slug]?.color ?? DEFAULT_FOLDER_COLOR,
@@ -780,7 +783,7 @@ export async function createOrbitFolder(input: CreateFolderInput) {
 	const requested = parsed.parent ? `${parsed.parent}/${segment}` : segment;
 	const slug = await existingFolderPath(vaultRoot, parsed.space, requested);
 	const segments = splitVaultObjectKey(slug);
-	const name = segments.at(-1) ?? slug;
+	const name = parsed.name.trim().normalize("NFC");
 	const parent =
 		segments.length > 1 ? segments.slice(0, -1).join("/") : undefined;
 	const directory = path.join(
@@ -789,18 +792,28 @@ export async function createOrbitFolder(input: CreateFolderInput) {
 		...splitVaultObjectKey(slug),
 	);
 	assertInsideVault(vaultRoot, directory);
-	await createDirectory(directory, { recursive: true });
-	if (parsed.color) {
-		const metadata = await readFolderMetadata(vaultRoot);
-		const spaceMetadata = metadata.folders[parsed.space] ?? {};
-		spaceMetadata[slug] = { color: parsed.color };
-		metadata.folders[parsed.space] = spaceMetadata;
-		await writeFolderMetadata(vaultRoot, metadata);
+	const metadata = await readFolderMetadata(vaultRoot);
+	const spaceMetadata = metadata.folders[parsed.space] ?? {};
+	let existed = false;
+	try {
+		existed = (await documentInfo(directory)).isDirectory();
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 	}
+	const displayName =
+		spaceMetadata[slug]?.name ?? (existed ? (segments.at(-1) ?? slug) : name);
+	await createDirectory(directory, { recursive: true });
+	spaceMetadata[slug] = {
+		...spaceMetadata[slug],
+		name: displayName,
+		color: parsed.color ?? spaceMetadata[slug]?.color ?? DEFAULT_FOLDER_COLOR,
+	};
+	metadata.folders[parsed.space] = spaceMetadata;
+	await writeFolderMetadata(vaultRoot, metadata);
 	return {
 		space: parsed.space,
 		slug,
-		name,
+		name: displayName,
 		parent,
 		depth: splitVaultObjectKey(slug).length - 1,
 		color:
@@ -824,6 +837,27 @@ export async function updateOrbitFolder(input: UpdateFolderInput) {
 	const currentParts = splitVaultObjectKey(currentPath);
 	if (currentParts.length === 0) throw new Error("Folder path is required");
 
+	if (parsed.displayName) {
+		const metadata = await readFolderMetadata(vaultRoot);
+		const parent = currentParts.slice(0, -1).join("/");
+		const siblings = await listNestedFolders(
+			path.join(vaultRoot, folderRoot(parsed.space)),
+		);
+		if (
+			siblings.some(
+				(slug) =>
+					slug !== currentPath &&
+					slug.split("/").slice(0, -1).join("/") === parent &&
+					normalizeSearchText(
+						metadata.folders[parsed.space]?.[slug]?.name ??
+							slug.split("/").at(-1) ??
+							"",
+					) === normalizeSearchText(parsed.displayName ?? ""),
+			)
+		) {
+			throw new Error("같은 이름의 폴더가 이미 있습니다.");
+		}
+	}
 	const nextSpace = parsed.destinationSpace ?? parsed.space;
 	const crossSpace = nextSpace !== parsed.space;
 	let nextPath = currentPath;
@@ -884,9 +918,10 @@ export async function updateOrbitFolder(input: UpdateFolderInput) {
 
 	const metadata = await readFolderMetadata(vaultRoot);
 	const currentMetadata = metadata.folders[parsed.space] ?? {};
-	const nextMetadata: Record<string, { color: OrbitFolderColor }> = crossSpace
-		? { ...metadata.folders[nextSpace] }
-		: {};
+	const nextMetadata: Record<
+		string,
+		{ color: OrbitFolderColor; name?: string }
+	> = crossSpace ? { ...metadata.folders[nextSpace] } : {};
 	for (const [folderPath, value] of Object.entries(currentMetadata)) {
 		if (
 			folderPath === currentPath ||
@@ -899,8 +934,15 @@ export async function updateOrbitFolder(input: UpdateFolderInput) {
 			nextMetadata[folderPath] = value;
 		}
 	}
-	if (parsed.color) {
-		nextMetadata[nextPath] = { color: parsed.color };
+	if (parsed.color || parsed.name || parsed.displayName) {
+		nextMetadata[nextPath] = {
+			...nextMetadata[nextPath],
+			color:
+				parsed.color ?? nextMetadata[nextPath]?.color ?? DEFAULT_FOLDER_COLOR,
+			name:
+				(parsed.displayName ?? parsed.name)?.normalize("NFC") ??
+				nextMetadata[nextPath]?.name,
+		};
 	}
 	if (crossSpace) {
 		const movedIds = new Set(
@@ -941,7 +983,7 @@ export async function updateOrbitFolder(input: UpdateFolderInput) {
 	return {
 		space: nextSpace,
 		slug: nextPath,
-		name: parts.at(-1) ?? nextPath,
+		name: nextMetadata[nextPath]?.name ?? parts.at(-1) ?? nextPath,
 		parent: parts.length > 1 ? parts.slice(0, -1).join("/") : undefined,
 		depth: parts.length - 1,
 		color:
@@ -960,10 +1002,12 @@ export async function deleteOrbitFolder(input: DeleteFolderInput) {
 	if (splitVaultObjectKey(folderPath).length === 0) {
 		throw new Error("Folder path is required");
 	}
+	const displayName =
+		(await readFolderMetadata(vaultRoot)).folders[parsed.space]?.[folderPath]
+			?.name ?? splitVaultObjectKey(folderPath).at(-1);
 	if (
 		parsed.deleteContents &&
-		parsed.confirmationName?.normalize("NFC") !==
-			splitVaultObjectKey(folderPath).at(-1)?.normalize("NFC")
+		parsed.confirmationName?.normalize("NFC") !== displayName?.normalize("NFC")
 	) {
 		throw new Error("확인을 위해 폴더 이름을 정확히 입력해 주세요.");
 	}

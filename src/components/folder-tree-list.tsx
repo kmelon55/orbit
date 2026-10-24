@@ -13,6 +13,7 @@ import { useTreeDragIntent } from "#/hooks/use-tree-drag-intent";
 import {
 	type FolderRow,
 	flattenFolderTree,
+	folderDisplayPath,
 	indexFolderTree,
 	visibleRowRange,
 } from "#/lib/orbit/folder-tree";
@@ -318,7 +319,7 @@ export function FolderTreeList({
 							)
 							.map((folder) => (
 								<option key={folder.slug} value={`folder:${folder.slug}`}>
-									{folder.slug}
+									{folderDisplayPath(folders, folder.slug)}
 								</option>
 							))}
 					</select>

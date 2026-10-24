@@ -106,7 +106,7 @@ export function flattenFolderTree(
 				matchingFolders.add(ancestor);
 		}
 		for (const folder of tree.folders) {
-			if (matchesSearch([folder.slug], needle)) {
+			if (matchesSearch([folder.slug, folder.name], needle)) {
 				for (const ancestor of folderAncestors(folder.slug))
 					matchingFolders.add(ancestor);
 			}
@@ -157,4 +157,12 @@ export function visibleRowRange(
 		Math.max(start + 1, Math.ceil((scrollTop + height) / rowHeight)) + 8,
 	);
 	return { start, end };
+}
+
+/** Human-readable breadcrumbs; keys and routes continue to use the stored slug. */
+export function folderDisplayPath(folders: OrbitFolder[], slug: string) {
+	const names = new Map(folders.map((folder) => [folder.slug, folder.name]));
+	return folderAncestors(slug)
+		.map((path) => names.get(path) ?? path.split("/").at(-1))
+		.join(" / ");
 }

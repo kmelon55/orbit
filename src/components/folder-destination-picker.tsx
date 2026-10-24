@@ -19,7 +19,7 @@ import {
 	useState,
 } from "react";
 import { folderColor } from "#/lib/orbit/folder-colors";
-import { indexFolderTree } from "#/lib/orbit/folder-tree";
+import { folderDisplayPath, indexFolderTree } from "#/lib/orbit/folder-tree";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { moveItemLocally } from "#/lib/orbit/item-move";
 import { folderOf } from "#/lib/orbit/para";
@@ -240,7 +240,10 @@ export function FolderDestinationPicker({
 						space,
 						folder: folder.slug,
 						label: folder.name,
-						parent: [label, folder.slug.split("/").slice(0, -1).join(" / ")]
+						parent: [
+							label,
+							folderDisplayPath(tree.folders, folder.parent ?? ""),
+						]
 							.filter(Boolean)
 							.join(" / "),
 						color: folderColor(folder.color).icon,
@@ -568,7 +571,10 @@ export function FolderDestinationPicker({
 			const next: Destination = {
 				space: target.space,
 				folder,
-				label: folder.split("/").at(-1) ?? folder,
+				label:
+					"name" in result && typeof result.name === "string"
+						? result.name
+						: (folder.split("/").at(-1) ?? folder),
 				parent: [target.parent, target.label].filter(Boolean).join(" / "),
 				depth: target.depth + 1,
 				hasChildren: false,
