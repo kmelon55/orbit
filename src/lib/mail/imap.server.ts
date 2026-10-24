@@ -378,7 +378,11 @@ export async function imapBody(
 				return await readBody(
 					meta.headers?.toString() || "",
 					imapBodyPart(meta.bodyStructure),
-					(part) => downloadPart(client, uid, part.id.slice(5)),
+					(part) =>
+						// Empty alternatives may have no download stream. Keep reading siblings.
+						part.size === 0
+							? Promise.resolve(Buffer.alloc(0))
+							: downloadPart(client, uid, part.id.slice(5)),
 				);
 			} finally {
 				lock.release();

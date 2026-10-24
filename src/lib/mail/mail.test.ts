@@ -846,6 +846,89 @@ test("IMAP body reads only text and inline image parts; lazy text attachments re
 	assert.equal(mailStore().message(m.id).unread, true);
 });
 
+for (const withHtml of [true, false]) {
+	test(`IMAP empty text parts remain readable with HTML alternative: ${withHtml}`, async () => {
+		const { detailMessage } = await import("./service.server");
+		account = { ...account, provider: "icloud" };
+		mailStore().saveAccount(account, { password: "app-password" });
+		const m = {
+			...message(),
+			remoteId: "7:42",
+			mailbox: "INBOX",
+			uidValidity: "7",
+		};
+		mailStore().saveMessages([m]);
+		mock.method(ImapFlow.prototype, "connect", async function (this: ImapFlow) {
+			Object.defineProperty(this, "usable", {
+				value: true,
+				configurable: true,
+			});
+		});
+		mock.method(
+			ImapFlow.prototype,
+			"getMailboxLock",
+			async function (this: ImapFlow) {
+				this.mailbox = { uidValidity: 7n } as Exclude<
+					ImapFlow["mailbox"],
+					false
+				>;
+				return { release() {} };
+			},
+		);
+		const empty = {
+			part: "1",
+			type: "text/plain",
+			parameters: { charset: "us-ascii" },
+			encoding: "quoted-printable",
+			size: 0,
+			lineCount: 0,
+		};
+		mock.method(ImapFlow.prototype, "fetchOne", async () => ({
+			headers: Buffer.from("From: support@example.com\r\nSubject: Reply\r\n"),
+			bodyStructure: withHtml
+				? {
+						type: "multipart/alternative",
+						childNodes: [
+							empty,
+							{
+								part: "2",
+								type: "text/html",
+								parameters: { charset: "utf-8" },
+								encoding: "quoted-printable",
+								size: 9657,
+							},
+						],
+					}
+				: empty,
+		}));
+		const downloads: (string | undefined)[] = [];
+		mock.method(
+			ImapFlow.prototype,
+			"download",
+			async (_uid: string, part?: string) => {
+				downloads.push(part);
+				// ImapFlow returns no stream for the real Creem reply's empty text part.
+				if (part === "1") return {};
+				assert.equal(
+					part,
+					"2",
+					"body reading must not download the whole message",
+				);
+				return {
+					content: Readable.from([Buffer.from("<p>Creem 답장 본문</p>")]),
+				};
+			},
+		);
+		const body = await detailMessage(m.id);
+		if (withHtml) assert.match(body.html, /Creem 답장 본문/);
+		else assert.equal(body.text, "");
+		assert.deepEqual(downloads, withHtml ? ["2"] : []);
+		assert.deepEqual(await detailMessage(m.id), body);
+		assert.deepEqual(downloads, withHtml ? ["2"] : []);
+		assert.equal(mailStore().message(m.id).unread, true);
+	});
+}
+
 test("IMAP first page fetches a bounded sequence window and reuses its connection", async () => {
 	const { listImap } = await import("./imap.server");
 	account = { ...account, provider: "icloud" };
