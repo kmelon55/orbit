@@ -3,8 +3,14 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { scheduleSchema } from "../lib/orbit/assistant-schema";
 import { createSearchIndex, searchItems } from "../lib/orbit/global-search";
 import { isInboxItem } from "../lib/orbit/para";
+import {
+	agentScheduleIssue,
+	SCHEDULE_INTENT_GUIDANCE,
+} from "../lib/orbit/schedule-intent";
+import { scheduleCategoryIdSchema } from "../lib/orbit/schema";
 import {
 	captureOrbitItem,
 	createOrbitFolder,
@@ -14,28 +20,37 @@ import {
 	listOrbitItems,
 } from "../lib/orbit/store";
 
-const server = new McpServer({
-	name: "orbit",
-	version: "0.2.0",
-});
+const server = new McpServer(
+	{
+		name: "orbit",
+		version: "0.2.0",
+	},
+	{ instructions: SCHEDULE_INTENT_GUIDANCE },
+);
 
 server.registerTool(
 	"orbit_capture",
 	{
 		title: "Capture to Orbit Inbox",
 		description:
-			"Capture a Markdown item. Notes and links appear in Inbox; tasks appear in Tasks and events in Calendar. PARA filing is optional.",
+			SCHEDULE_INTENT_GUIDANCE +
+			" Capture a Markdown item. Notes and links appear in Inbox; tasks appear in Tasks and events in Calendar. PARA filing is optional.",
 		inputSchema: {
 			title: z.string().min(1).max(160),
 			body: z.string().max(20_000).default(""),
 			type: z.enum(["note", "task", "event", "link"]).default("note"),
-			due: z.string().optional(),
-			start: z.string().optional(),
-			end: z.string().optional(),
+			category: scheduleCategoryIdSchema.nullable().optional(),
+			allDay: z.boolean().optional(),
+			due: scheduleSchema.optional(),
+			start: scheduleSchema.optional(),
+			end: scheduleSchema.optional(),
 			url: z.string().url().optional(),
 		},
 	},
 	async (input) => {
+		const issue = agentScheduleIssue(input);
+		if (issue)
+			return { isError: true, content: [{ type: "text", text: issue }] };
 		const item = await captureOrbitItem(input);
 		return {
 			content: [
@@ -141,7 +156,8 @@ server.registerTool(
 	{
 		title: "File an Orbit item into PARA",
 		description:
-			"Move an existing item into Projects, Areas, Resources, Archive, or Calendar. Creates the folder if needed. Prefer this after capturing to Inbox.",
+			SCHEDULE_INTENT_GUIDANCE +
+			" Move an existing item into Projects, Areas, Resources, Archive, or Calendar. Creates the folder if needed. Convert a mistaken event with type=task and space=inbox (or its existing project), preserving its ID and work period.",
 		inputSchema: {
 			id: z.string().min(1),
 			space: z.enum([
@@ -154,15 +170,31 @@ server.registerTool(
 			]),
 			folder: z.string().max(80).optional(),
 			type: z.enum(["note", "task", "event", "link"]).optional(),
+			category: scheduleCategoryIdSchema.nullable().optional(),
+			allDay: z.boolean().optional(),
 			title: z.string().max(160).optional(),
 			body: z.string().max(100_000).optional(),
-			due: z.string().optional(),
-			start: z.string().optional(),
-			end: z.string().optional(),
+			due: scheduleSchema.nullable().optional(),
+			start: scheduleSchema.nullable().optional(),
+			end: scheduleSchema.nullable().optional(),
 		},
 	},
 	async (input) => {
 		const { id, ...rest } = input;
+		if (["type", "start", "end", "allDay"].some((key) => key in rest)) {
+			const current = await getOrbitItem(id);
+			if (!current) throw new Error("Orbit item not found");
+			const issue = agentScheduleIssue({
+				...current,
+				...Object.fromEntries(
+					Object.entries(rest).filter(([, value]) => value !== undefined),
+				),
+				type: rest.type ?? current.type,
+				title: rest.title ?? current.title,
+			});
+			if (issue)
+				return { isError: true, content: [{ type: "text", text: issue }] };
+		}
 		const item = await fileOrbitItem(id, rest);
 		return {
 			content: [

@@ -17,6 +17,7 @@ import {
 	DEFAULT_SCHEDULE_CATEGORIES,
 	upsertScheduleCategory,
 } from "./schedule-categories";
+import { inferScheduleCategory } from "./schedule-intent";
 import {
 	type OrbitItem,
 	type OrbitMutation,
@@ -242,6 +243,7 @@ export class OptimisticItems {
 			const now = new Date().toISOString();
 			const initial: OrbitItem = {
 				...input,
+				category: inferScheduleCategory(input),
 				id,
 				space: "space" in input ? input.space : "inbox",
 				status: input.type === "task" ? "open" : undefined,

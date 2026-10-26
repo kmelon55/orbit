@@ -89,7 +89,7 @@ export const captureInputSchema = z.object({
 	body: z.string().trim().max(20_000).default(""),
 	type: orbitItemTypeSchema.default("note"),
 	color: orbitFolderColorSchema.optional(),
-	category: scheduleCategoryIdSchema.optional(),
+	category: scheduleCategoryIdSchema.nullable().optional(),
 	due: z.string().optional(),
 	start: z.string().optional(),
 	end: z.string().optional(),

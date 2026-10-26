@@ -10,6 +10,7 @@ import {
 	DEFAULT_SCHEDULE_CATEGORIES,
 	upsertScheduleCategory,
 } from "./schedule-categories";
+import { inferScheduleCategory } from "./schedule-intent";
 import {
 	type CaptureInput,
 	type CreateFolderInput,
@@ -759,7 +760,7 @@ export async function createOrbitItem(input: CreateItemInput) {
 			title: parsed.title,
 			type: parsed.type,
 			color: parsed.color,
-			category: parsed.category,
+			category: inferScheduleCategory({ ...parsed, folder }),
 			space: parsed.space,
 			status,
 			project,

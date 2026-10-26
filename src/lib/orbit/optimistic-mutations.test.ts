@@ -226,7 +226,12 @@ test("calendar creation appears before the request settles and reconciles to one
 	};
 	store.start("event", mutation, source);
 	assert.equal(store.project(source).items[0].id, "orbit-pending:event");
-	const saved: OrbitItem = { ...note, ...mutation.input, id: "saved-event" };
+	const saved: OrbitItem = {
+		...note,
+		...mutation.input,
+		category: mutation.input.category ?? undefined,
+		id: "saved-event",
+	};
 	store.finish({
 		requestId: "event",
 		mutation,

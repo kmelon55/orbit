@@ -181,12 +181,31 @@ export const inboxStatusSchema = z.enum([
 	"archived",
 ]);
 const fields = {
-	category: scheduleCategoryIdSchema.optional(),
+	category: scheduleCategoryIdSchema
+		.nullable()
+		.optional()
+		.describe(
+			"Existing category ID: business for development/marketing/operations, personal for private life. Null only for unclear/mixed items needing review. Omission uses conservative inference.",
+		),
 	title,
 	body: z.string().max(20000).default(""),
-	due: scheduleSchema.optional(),
-	start: scheduleSchema.optional(),
+	due: scheduleSchema
+		.optional()
+		.describe(
+			"Task deadline. Use YYYY-MM-DD when only a date is known; do not create an all-day event for a task.",
+		),
+	start: scheduleSchema
+		.optional()
+		.describe(
+			"Actual appointment or requested task work period. Do not invent a time. Date-only events require allDay=true.",
+		),
 	end: scheduleSchema.optional(),
+	allDay: z
+		.boolean()
+		.optional()
+		.describe(
+			"Explicitly true only for a genuine all-day event. Not for tasks or unknown times.",
+		),
 };
 const goalPatchSchema = z
 	.object({
@@ -219,7 +238,11 @@ export const proposalActionSchema = z.discriminatedUnion("kind", [
 	z
 		.object({
 			kind: z.literal("create"),
-			type: z.enum(["task", "event", "note"]),
+			type: z
+				.enum(["task", "event", "note"])
+				.describe(
+					"task: work to complete, even time-blocked; event: actual appointment/meeting/operating period; note: reference information.",
+				),
 			...fields,
 			projectFolder: z.string().min(1).max(500).optional(),
 		})
@@ -230,12 +253,19 @@ export const proposalActionSchema = z.discriminatedUnion("kind", [
 			itemId: z.string().min(1).max(200),
 			patch: z
 				.object({
+					type: z
+						.enum(["task", "event"])
+						.optional()
+						.describe(
+							"Convert an existing task/event in place; preserves its ID. Never duplicate a task as an event.",
+						),
 					title: title.optional(),
 					category: scheduleCategoryIdSchema.nullable().optional(),
-					body: fields.body.optional(),
+					body: fields.body.removeDefault().optional(),
 					due: scheduleSchema.nullable().optional(),
 					start: scheduleSchema.nullable().optional(),
 					end: scheduleSchema.nullable().optional(),
+					allDay: fields.allDay,
 					status: z
 						.enum(["open", "in_progress", "done", "cancelled"])
 						.optional(),

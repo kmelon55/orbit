@@ -21,6 +21,8 @@ import { databaseFor, sha256, withDatabase } from "./database";
 import { recordGoalMeasurement } from "./goal-metrics";
 import { goalTasks } from "./goal-portfolio";
 import { goalInput } from "./goals";
+import { DEFAULT_SCHEDULE_CATEGORIES } from "./schedule-categories";
+import { agentScheduleIssue, inferScheduleCategory } from "./schedule-intent";
 import type { OrbitItem } from "./schema";
 import {
 	archiveOrbitItem,
@@ -333,7 +335,36 @@ async function validateAction(action: ProposalAction) {
 	if (current && !["note", "task", "event"].includes(current.type))
 		fail("unsupported", "이 항목 유형은 수정할 수 없습니다.");
 	const next =
-		action.kind === "create" ? action : { ...current, ...action.patch };
+		action.kind === "create"
+			? action
+			: { ...item(action.itemId), ...action.patch };
+	if (next.category) {
+		const snapshot = await getOrbitSnapshot();
+		if (
+			!(snapshot.scheduleCategories ?? DEFAULT_SCHEDULE_CATEGORIES).some(
+				(category) => category.id === next.category,
+			)
+		)
+			fail(
+				"category_missing",
+				"기존 카테고리 ID를 사용해 주세요. 업무는 business, 개인 용무는 personal입니다.",
+			);
+	}
+	// Validate intent when creating or changing a schedule/type, without blocking
+	// a category-only repair of a legacy all-day record.
+	if (
+		action.kind === "create" ||
+		(action.kind === "update" &&
+			["type", "start", "end", "allDay"].some((key) => key in action.patch))
+	) {
+		const issue = agentScheduleIssue(next);
+		if (issue) fail("schedule_intent", issue);
+	}
+	if (action.kind === "update" && action.patch.type && current?.type === "note")
+		fail(
+			"unsupported",
+			"유형 변경은 기존 할 일과 일정에만 사용할 수 있습니다.",
+		);
 	if (next.type === "event" && !next.start)
 		fail("schedule", "일정 시작일이 필요합니다.");
 	if (next.end && (!next.start || next.end < next.start))
@@ -344,11 +375,7 @@ async function validateAction(action: ProposalAction) {
 		next.start.includes("T") !== next.end.includes("T")
 	)
 		fail("schedule", "시작과 종료의 시간 형식을 맞춰 주세요.");
-	if (
-		action.kind === "update" &&
-		action.patch.status &&
-		current?.type !== "task"
-	)
+	if (action.kind === "update" && action.patch.status && next.type !== "task")
 		fail("status", "할 일만 완료 상태를 변경할 수 있습니다.");
 	if (action.kind === "create" && action.projectFolder) {
 		const snapshot = await getOrbitSnapshot();
@@ -461,7 +488,8 @@ async function decide(input: z.input<typeof decisionSchema>) {
 							title: action.title,
 							body: action.body,
 							type: action.type,
-							category: action.category,
+							category:
+								action.category === null ? null : inferScheduleCategory(action),
 							due: action.due,
 							start: action.start,
 							end: action.end,
@@ -476,7 +504,12 @@ async function decide(input: z.input<typeof decisionSchema>) {
 						})
 					: await fileOrbitItem(action.itemId, {
 							...action.patch,
-							space: item(action.itemId).space,
+							project: item(action.itemId).project ?? null,
+							space:
+								action.patch.type === "task" &&
+								item(action.itemId).space === "event"
+									? "inbox"
+									: item(action.itemId).space,
 							folder: item(action.itemId).folder,
 						});
 		if (!result) fail("apply_failed", "변경 결과를 확인할 수 없습니다.");
@@ -596,6 +629,7 @@ export function assistantContext(
 			generatedAt: new Date().toISOString(),
 			goals,
 			projects: snapshot.folders.project,
+			scheduleCategories: snapshot.scheduleCategories,
 			today: active.filter(
 				(i) =>
 					(i.type === "event" || i.type === "task") && overlaps(i, date, date),

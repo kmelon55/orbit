@@ -105,3 +105,11 @@ Official connection/authentication sources rechecked 2026-10-12 (scheduling sour
 - [OAuth library PKCE](https://node-oauth.github.io/node-oauth2-server/guide/pkce.html)
 
 Current SDK 1.x puts OAuth extension metadata under `_meta`; the HTTP adapter mirrors `securitySchemes` to the top-level tool descriptor expected by ChatGPT. Tools remain authenticated at the HTTP boundary regardless of their annotations.
+
+## Schedule classification and task intent
+
+Both MCP servers expose the same scheduling guidance. Creation through the shared store (web/API/MCP) infers `business` for clear development, marketing and business work and `personal` for clear private activities when category is omitted. Explicit custom IDs are preserved; explicit `null` leaves an item unclassified for review. Mixed or unknown context stays unclassified. The schedule editor previews inference and respects a manual selection. Assistant context lists category IDs; search, fetch and create results report the saved category.
+
+Work with a completion outcome is a task, including time-blocked development, testing, preparation and self-review. Real meetings, appointments and operating periods are events. Agent writes reject obvious work-as-event titles and date-only task start/end values, with instructions to use `task` and `due`. A genuine date-only event requires `allDay: true`; unknown time alone is not an all-day event. This is conservative validation, not a semantic classifier: agents must still interpret context and avoid duplicate tasks/events.
+
+Approved update proposals may change an existing task/event's `type` in place. IDs and supplied work periods remain stable; event-to-task conversion moves to Inbox and exposes task completion. Omitted body and project values are preserved. Existing custom classification is not silently rewritten by unrelated edits. Existing recommendation approval, source fingerprints, atomic application and idempotency remain in force.

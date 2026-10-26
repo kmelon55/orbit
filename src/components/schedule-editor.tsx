@@ -24,6 +24,7 @@ import {
 } from "#/lib/orbit/item-editor";
 import { isPendingItemId } from "#/lib/orbit/optimistic-mutations";
 import { formatDayKey } from "#/lib/orbit/para";
+import { inferScheduleCategory } from "#/lib/orbit/schedule-intent";
 import {
 	type FileItemInput,
 	type OrbitItem,
@@ -141,6 +142,11 @@ export function ScheduleEditor({
 	const [title, setTitle] = useState("");
 	const [body, setBody] = useState("");
 	const [category, setCategory] = useState<string | undefined>();
+	const [categoryChosen, setCategoryChosen] = useState(false);
+	const resolvedCategory =
+		!item && !categoryChosen
+			? inferScheduleCategory({ type: kind, title, body })
+			: category;
 	const [startDate, setStartDate] = useState(initialDate ?? today);
 	const [endDate, setEndDate] = useState(initialDate ?? today);
 	const [startTime, setStartTime] = useState(initialTime);
@@ -174,6 +180,7 @@ export function ScheduleEditor({
 		setKind(resolvedKind);
 		setTitle(item?.title ?? "");
 		setCategory(item?.category);
+		setCategoryChosen(false);
 		setBody(item?.body ?? "");
 		setStartDate(
 			resolvedKind === "task" && item && !item.start && !item.due
@@ -283,7 +290,7 @@ export function ScheduleEditor({
 			title: trimmed,
 			body: memoBody,
 			type: kind,
-			category,
+			category: resolvedCategory,
 			start,
 			end,
 			due,
@@ -311,7 +318,7 @@ export function ScheduleEditor({
 						title: trimmed,
 						body: memoBody,
 						type: kind,
-						category,
+						category: categoryChosen ? (category ?? null) : resolvedCategory,
 						space: input.space,
 						start: input.start ?? undefined,
 						end: input.end ?? undefined,
@@ -468,8 +475,11 @@ export function ScheduleEditor({
 								{kind !== "note" && (
 									<>
 										<ScheduleCategorySelect
-											value={category}
-											onChange={setCategory}
+											value={resolvedCategory}
+											onChange={(value) => {
+												setCategory(value);
+												setCategoryChosen(true);
+											}}
 										/>
 										<div className="grid gap-3">
 											<div className="flex items-center gap-3">
