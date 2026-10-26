@@ -330,6 +330,10 @@ test("Gmail reply sends correct thread, MIME reply headers, attachments and Bcc;
 	assert.ok(sent);
 	assert.equal(sent.threadId, "thread-1");
 	const parsed = await parseMail(Buffer.from(sent.raw, "base64url"));
+	assert.deepEqual(parsed.from?.value[0], {
+		name: account.name,
+		address: account.email,
+	});
 	assert.equal(parsed.inReplyTo, "<original@example.com>");
 	assert.equal(parsed.text, "답장입니다");
 	assert.match(
@@ -1310,7 +1314,12 @@ test("iCloud identities persist, validate the default sender and survive notific
 });
 
 test("alias sender reaches MIME and SMTP envelope while authentication keeps the primary account", async () => {
-	account = { ...account, provider: "icloud", aliases: ["work@company.com"] };
+	account = {
+		...account,
+		provider: "icloud",
+		name: account.email,
+		aliases: ["work@company.com"],
+	};
 	mailStore().saveAccount(account, { password: "app-password" });
 	let raw: Buffer = Buffer.alloc(0);
 	let envelope: unknown;
@@ -1343,10 +1352,10 @@ test("alias sender reaches MIME and SMTP envelope while authentication keeps the
 		text: "Body",
 	});
 	assert.equal((await sendMail(data)).status, "sent");
-	assert.equal(
-		(await parseMail(raw)).from?.value[0].address,
-		"work@company.com",
-	);
+	assert.deepEqual((await parseMail(raw)).from?.value[0], {
+		name: "",
+		address: "work@company.com",
+	});
 	assert.deepEqual(envelope, {
 		from: "work@company.com",
 		to: ["recipient@example.com"],

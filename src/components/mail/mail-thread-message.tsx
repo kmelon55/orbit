@@ -138,9 +138,7 @@ export function MailThreadMessage({
 	return (
 		<article
 			ref={article}
-			aria-label={t("{0}의 메일", [
-				message.from.map((a) => a.name || a.address).join(", "),
-			])}
+			aria-label={t("{0}의 메일", [sender])}
 			className={cn(
 				"flex min-w-0 flex-col",
 				sent ? "items-end pl-6 sm:pl-16" : "items-start pr-6 sm:pr-16",

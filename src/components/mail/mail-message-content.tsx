@@ -1,5 +1,10 @@
 import { Download, Paperclip } from "lucide-react";
-import { canPreview, type MailDetail } from "#/lib/mail/types";
+import { senderDisplayName } from "#/lib/mail/identities";
+import {
+	canPreview,
+	type MailAccount,
+	type MailDetail,
+} from "#/lib/mail/types";
 import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -7,6 +12,7 @@ import { MailHtmlBody } from "./mail-html-body";
 
 export function MailMessageContent({
 	detail,
+	account,
 	demo,
 	remoteImages,
 	onToggleImages,
@@ -14,6 +20,7 @@ export function MailMessageContent({
 	conversation = false,
 }: {
 	detail: MailDetail;
+	account?: MailAccount;
 	demo: boolean;
 	remoteImages: boolean;
 	onToggleImages: () => void;
@@ -57,7 +64,12 @@ export function MailMessageContent({
 				) : (
 					<div className="space-y-1 text-xs text-muted-foreground">
 						<p className="break-all text-sm text-foreground">
-							{detail.from.map((a) => `${a.name} <${a.address}>`).join(", ")}
+							{detail.from
+								.map((a) => {
+									const name = senderDisplayName(a, account);
+									return name ? `${name} <${a.address}>` : a.address;
+								})
+								.join(", ")}
 						</p>
 						<p className="break-all">
 							{t("받는 사람:")}

@@ -11,7 +11,11 @@ import {
 	listGmail,
 	mutateGmail,
 } from "./gmail.server";
-import { accountAddresses, senderAddress } from "./identities";
+import {
+	accountAddresses,
+	senderAddress,
+	senderDisplayName,
+} from "./identities";
 import {
 	findMailbox,
 	imapAttachment,
@@ -421,7 +425,10 @@ export async function sendMail(data: SendMail): Promise<SendResult> {
 		const messageId = `<${data.requestId}@orbit.local>`;
 		const composer = new MailComposer({
 			keepBcc: account.provider === "gmail",
-			from: { name: account.name, address: from },
+			from: {
+				name: senderDisplayName({ name: account.name, address: from }, account),
+				address: from,
+			},
 			to: data.to,
 			cc: data.cc,
 			bcc: data.bcc,

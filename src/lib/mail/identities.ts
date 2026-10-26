@@ -1,5 +1,10 @@
 import { z } from "zod";
-import type { MailAccount, MailFolder, MailMessage } from "./types";
+import type {
+	MailAccount,
+	MailAddress,
+	MailFolder,
+	MailMessage,
+} from "./types";
 
 export const aliasesSchema = z.array(z.email().max(254)).max(50);
 export function mailViews(accounts: MailAccount[]) {
@@ -58,6 +63,22 @@ export function senderAddress(
 			"등록된 발신 주소를 선택해 주세요. 메일 설정에서 주소를 확인할 수 있습니다.",
 		);
 	return address;
+}
+
+export function senderDisplayName(
+	sender: MailAddress,
+	account?: MailAccount,
+): string {
+	const name = sender.name.trim();
+	// IMAP connections without a name store the login email as their account label.
+	// Do not reuse that label as an alias's sender name, including in older mail.
+	if (
+		account &&
+		name.toLowerCase() === account.email.toLowerCase() &&
+		accountAddresses(account).includes(sender.address.toLowerCase())
+	)
+		return "";
+	return name;
 }
 
 export function matchingAddresses(message: MailMessage, account: MailAccount) {

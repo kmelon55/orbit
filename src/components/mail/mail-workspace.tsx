@@ -37,6 +37,7 @@ import {
 	mailScopes,
 	mailViews,
 	matchingAddresses,
+	senderDisplayName,
 } from "#/lib/mail/identities";
 import { mailSessionFor } from "#/lib/mail/session-cache";
 import {
@@ -520,6 +521,9 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 	const selectedSummary =
 		messages.find((m) => m.id === selected) ||
 		thread.find((m) => m.id === selected);
+	const selectedAccount = status?.accounts.find(
+		(a) => a.id === (selectedSummary?.accountId || detail?.accountId),
+	);
 	const activeThread = thread.some((m) => m.id === selected) ? thread : [];
 	const conversationDraft = scopedDrafts.find((d) =>
 		[selected, ...activeThread.map((m) => m.id)].some(
@@ -828,6 +832,9 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 						)}
 						{rows.map((group) => {
 							const m = group[0];
+							const account = status?.accounts.find(
+								(a) => a.id === m.accountId,
+							);
 							const isSelected = group.some((entry) => entry.id === selected);
 							const unread = group.some((entry) => entry.unread);
 							return messageMenu(
@@ -850,8 +857,9 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 												unread ? "font-semibold" : "font-medium",
 											)}
 										>
-											{m.from.map((a) => a.name || a.address).join(", ") ||
-												t("보낸 사람 없음")}
+											{m.from
+												.map((a) => senderDisplayName(a, account) || a.address)
+												.join(", ") || t("보낸 사람 없음")}
 										</span>
 										{unread && (
 											<span
@@ -1139,7 +1147,10 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 										</h2>
 										<p className="text-sm text-muted-foreground">
 											{selectedSummary?.from
-												.map((a) => a.name || a.address)
+												.map(
+													(a) =>
+														senderDisplayName(a, selectedAccount) || a.address,
+												)
 												.join(", ")}
 										</p>
 										<output className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -1167,6 +1178,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 									<div className="min-h-0 flex-1 overflow-y-auto">
 										<MailMessageContent
 											detail={detail}
+											account={selectedAccount}
 											demo={demo}
 											remoteImages={remoteImages}
 											onToggleImages={() => setRemoteImages((v) => !v)}

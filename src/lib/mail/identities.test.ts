@@ -9,6 +9,7 @@ import {
 	matchingAddresses,
 	replyAddress,
 	senderAddress,
+	senderDisplayName,
 } from "./identities";
 import { type MailAccount, type MailDetail, replyRecipients } from "./types";
 
@@ -83,6 +84,26 @@ test("sender allowlist preserves legacy accounts and rejects unregistered or rem
 	);
 	assert.throws(() =>
 		senderAddress({ ...account, provider: "gmail" }, "work@company.com"),
+	);
+});
+
+test("sender names omit the connection email for own addresses but preserve explicit and external names", () => {
+	for (const address of accountAddresses(account)) {
+		assert.equal(
+			senderDisplayName({ name: " ME@ICLOUD.COM ", address }, account),
+			"",
+		);
+		assert.equal(
+			senderDisplayName({ name: "김민아", address }, account),
+			"김민아",
+		);
+	}
+	const external = { name: account.email, address: "other@example.com" };
+	assert.equal(senderDisplayName(external, account), account.email);
+	assert.equal(senderDisplayName(external), account.email);
+	assert.equal(
+		senderDisplayName({ name: "", address: "work@company.com" }, account),
+		"",
 	);
 });
 
