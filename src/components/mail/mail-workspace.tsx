@@ -19,7 +19,6 @@ import {
 	X,
 } from "lucide-react";
 import {
-	lazy,
 	type ReactNode,
 	Suspense,
 	useCallback,
@@ -47,6 +46,7 @@ import {
 	type MailMessage,
 } from "#/lib/mail/types";
 import type { MailSearch } from "#/lib/orbit/navigation-search";
+import { lazyWithRecovery } from "@/components/chunk-load-boundary";
 import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,7 +62,7 @@ import { MailThreadMessage } from "./mail-thread-message";
 import { useMailDrafts } from "./use-mail-drafts";
 import { useMailList } from "./use-mail-list";
 
-const MailAiPanel = lazy(() =>
+const MailAiPanel = lazyWithRecovery(() =>
 	import("./mail-ai-panel").then((module) => ({ default: module.MailAiPanel })),
 );
 

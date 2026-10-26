@@ -8,14 +8,7 @@ import {
 	Sparkles,
 	X,
 } from "lucide-react";
-import {
-	lazy,
-	Suspense,
-	useCallback,
-	useEffect,
-	useRef,
-	useState,
-} from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
 	askMailAi,
 	loadAiModels,
@@ -24,12 +17,13 @@ import {
 } from "#/lib/orbit/ai-functions";
 import type { AiChat } from "#/lib/orbit/ai-types";
 import { AiModelSelector } from "@/components/ai-model-selector";
+import { lazyWithRecovery } from "@/components/chunk-load-boundary";
 import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
-const AiMessage = lazy(() =>
+const AiMessage = lazyWithRecovery(() =>
 	import("../ai-message").then((module) => ({ default: module.AiMessage })),
 );
 

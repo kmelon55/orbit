@@ -16,7 +16,6 @@ import {
 	Search,
 } from "lucide-react";
 import {
-	lazy,
 	type ReactElement,
 	type ReactNode,
 	Suspense,
@@ -40,6 +39,7 @@ import type {
 import { orbitItemSchema } from "#/lib/orbit/schema";
 import { matchesSearch } from "#/lib/orbit/search-text";
 import { onItemUndone } from "#/lib/orbit/undo-events";
+import { lazyWithRecovery } from "@/components/chunk-load-boundary";
 import { FileItemForm } from "@/components/file-item-form";
 import {
 	ConfirmItemDialog,
@@ -85,7 +85,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useTaskToggle } from "@/hooks/use-task-toggle";
 import { cn } from "@/lib/utils";
 
-const NoteEditor = lazy(() =>
+const NoteEditor = lazyWithRecovery(() =>
 	import("@/components/note-editor").then(({ NoteEditor }) => ({
 		default: NoteEditor,
 	})),

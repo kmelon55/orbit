@@ -8,7 +8,6 @@ import {
 	Trash2,
 } from "lucide-react";
 import {
-	lazy,
 	type ReactNode,
 	Suspense,
 	useEffect,
@@ -31,6 +30,7 @@ import {
 	type OrbitMutation,
 	orbitItemSchema,
 } from "#/lib/orbit/schema";
+import { lazyWithRecovery } from "@/components/chunk-load-boundary";
 import { useI18n } from "@/components/locale-provider";
 import type { NoteEditorHandle } from "@/components/note-editor";
 import { ScheduleCategorySelect } from "@/components/schedule-categories";
@@ -57,7 +57,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { EditorSkeleton } from "@/components/workspace-skeleton";
 
-const MemoEditor = lazy(() =>
+const MemoEditor = lazyWithRecovery(() =>
 	import("@/components/note-editor").then(({ NoteEditor }) => ({
 		default: NoteEditor,
 	})),

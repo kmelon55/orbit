@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "orbit-static";
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 const STATIC_CACHE = `${CACHE_PREFIX}-${CACHE_VERSION}`;
 const CORE_ASSETS = [
   "/manifest.webmanifest",
@@ -49,18 +49,34 @@ self.addEventListener("fetch", (event) => {
 		url.pathname.startsWith("/cursors/");
   if (!staticRequest) return;
 
-  event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((response) => {
-        if (response.ok && response.type === "basic") {
-          const copy = response.clone();
-          void caches.open(STATIC_CACHE).then((cache) => cache.put(request, copy));
-        }
-        return response;
-      });
-    })
-  );
+  const validAsset = (response) => {
+    if (!response || !response.ok || response.redirected || response.type !== "basic") return false;
+    const type = response.headers.get("content-type") || "";
+    if (/text\/html/i.test(type)) return false;
+    if (/\.m?js$/.test(url.pathname)) return /^(?:text|application)\/(?:javascript|ecmascript)(?:;|$)/i.test(type);
+    if (/\.css$/.test(url.pathname)) return /^text\/css(?:;|$)/i.test(type);
+    return true;
+  };
+  const response = (async () => {
+    try {
+      const cache = await caches.open(STATIC_CACHE);
+      const cached = await cache.match(request);
+      if (validAsset(cached)) return cached;
+      if (cached) await cache.delete(request);
+    } catch {
+      // Private browsing, eviction and quota failures must not block the network.
+    }
+    return fetch(request);
+  })();
+  event.respondWith(response);
+  // Cache failures must never turn a successful asset request into a load error.
+  event.waitUntil(response.then(async (result) => {
+    if (validAsset(result)) {
+      const copy = result.clone();
+      const cache = await caches.open(STATIC_CACHE);
+      await cache.put(request, copy);
+    }
+  }).catch(() => {}));
 });
 
 // Mail bodies, credentials and attachments are never cached by this worker.

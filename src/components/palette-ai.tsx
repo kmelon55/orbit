@@ -11,7 +11,6 @@ import {
 	X,
 } from "lucide-react";
 import {
-	lazy,
 	type RefObject,
 	Suspense,
 	useCallback,
@@ -37,10 +36,11 @@ import { createSearchIndex, searchItems } from "#/lib/orbit/global-search";
 import type { OrbitSnapshot } from "#/lib/orbit/schema";
 import { searchCachedMail } from "#/lib/orbit/search-functions";
 import { AiModelSelector } from "@/components/ai-model-selector";
+import { lazyWithRecovery } from "@/components/chunk-load-boundary";
 import { useI18n } from "@/components/locale-provider";
 import { Input } from "@/components/ui/input";
 
-const AiMessage = lazy(() =>
+const AiMessage = lazyWithRecovery(() =>
 	import("./ai-message").then((module) => ({ default: module.AiMessage })),
 );
 
