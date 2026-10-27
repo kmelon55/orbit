@@ -27,6 +27,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { usePanelCallbackRef } from "react-resizable-panels";
 import { toast } from "sonner";
 import { createMailClient } from "#/lib/mail/client";
 import { conversations } from "#/lib/mail/conversations";
@@ -50,6 +51,11 @@ import { lazyWithRecovery } from "@/components/chunk-load-boundary";
 import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+	ResizableHandle,
+	ResizablePanel,
+	ResizablePanelGroup,
+} from "@/components/ui/resizable";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { MailAccountFilter } from "./mail-account-filter";
@@ -84,6 +90,20 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 	const selected = location.message ?? "";
 	const [aiOpen, setAiOpen] = useState(false);
 	const [aiMounted, setAiMounted] = useState(false);
+	const [aiPanel, setAiPanel] = usePanelCallbackRef();
+	const [aiSideBySide, setAiSideBySide] = useState(false);
+	const aiOrientation = aiSideBySide ? "horizontal" : "vertical";
+	const aiSizes = useRef({ horizontal: "23rem", vertical: "62%" });
+	useEffect(() => {
+		const media = window.matchMedia("(min-width: 1280px)");
+		const update = () => setAiSideBySide(media.matches);
+		update();
+		media.addEventListener("change", update);
+		return () => media.removeEventListener("change", update);
+	}, []);
+	useEffect(() => {
+		aiPanel?.resize(aiOpen ? aiSizes.current[aiOrientation] : "0%");
+	}, [aiPanel, aiOpen, aiOrientation]);
 	const [query, setQuery] = useState(search);
 	const [detail, setDetail] = useState<MailDetail | null>(
 		() => session.details.get(`${selected}:true`) ?? null,
@@ -1060,8 +1080,22 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 								</Button>
 							</div>
 						)}
-						<div className="flex min-h-0 flex-1 flex-col xl:flex-row">
-							<div className="flex min-h-0 min-w-0 flex-1 flex-col">
+						<ResizablePanelGroup
+							id="mail-ai-layout"
+							orientation={aiOrientation}
+							className="min-h-0 flex-1"
+							onLayoutChanged={(layout, { isUserInteraction }) => {
+								if (isUserInteraction && aiOpen && layout["mail-ai-panel"] > 0)
+									aiSizes.current[aiOrientation] =
+										`${layout["mail-ai-panel"]}%`;
+							}}
+						>
+							<ResizablePanel
+								id="mail-reader"
+								defaultSize="100%"
+								minSize="20%"
+								className="flex min-h-0 min-w-0 flex-col"
+							>
 								{selected &&
 									(threadLoading || threadError || threadIncomplete) && (
 										<div className="shrink-0 border-b bg-muted/15 p-3">
@@ -1189,43 +1223,56 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 										{t("선택된 메일 없음")}
 									</div>
 								)}
-							</div>
+							</ResizablePanel>
+							{selected && aiOpen && (
+								<ResizableHandle
+									withHandle
+									aria-label={t("메일 AI 패널 크기 조절")}
+									className="z-10 shrink-0"
+								/>
+							)}
 							{selected && (
-								<div
+								<ResizablePanel
 									id="mail-ai-panel"
-									className="mail-ai-shell"
-									data-open={aiOpen}
+									panelRef={setAiPanel}
+									defaultSize="0%"
+									minSize={aiOpen ? (aiSideBySide ? "280px" : "180px") : "0%"}
+									maxSize={aiOpen ? "80%" : "0%"}
+									className="min-h-0 min-w-0"
+									style={{ overflow: "hidden" }}
 									aria-hidden={!aiOpen}
 									inert={!aiOpen}
 								>
-									<div className="mail-ai-shell-inner">
-										{aiMounted && (
-											<Suspense
-												fallback={
-													<div className="p-4">
-														<Skeleton className="h-32 w-full" />
-													</div>
-												}
-											>
-												<MailAiPanel
-													key={selected}
-													mailId={selected}
-													active={aiOpen}
-													subject={
-														detail?.id === selected
-															? detail.subject
-															: selectedSummary?.subject || ""
+									<div className="mail-ai-shell" data-open={aiOpen}>
+										<div className="mail-ai-shell-inner">
+											{aiMounted && (
+												<Suspense
+													fallback={
+														<div className="p-4">
+															<Skeleton className="h-32 w-full" />
+														</div>
 													}
-													demo={demo}
-													onClose={() => setAiOpen(false)}
-													onOpenMail={selectMessage}
-												/>
-											</Suspense>
-										)}
+												>
+													<MailAiPanel
+														key={selected}
+														mailId={selected}
+														active={aiOpen}
+														subject={
+															detail?.id === selected
+																? detail.subject
+																: selectedSummary?.subject || ""
+														}
+														demo={demo}
+														onClose={() => setAiOpen(false)}
+														onOpenMail={selectMessage}
+													/>
+												</Suspense>
+											)}
+										</div>
 									</div>
-								</div>
+								</ResizablePanel>
 							)}
-						</div>
+						</ResizablePanelGroup>
 					</div>
 				</div>
 			)}

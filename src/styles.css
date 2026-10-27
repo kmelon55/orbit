@@ -162,25 +162,21 @@
 
 @layer components {
 	.mail-ai-shell {
-		flex: 0 0 0;
+		height: 100%;
 		min-height: 0;
 		min-width: 0;
 		overflow: hidden;
 		opacity: 0;
 		visibility: hidden;
-		transition: flex-basis 300ms var(--interaction-ease), min-height 300ms var(--interaction-ease), opacity 180ms ease, visibility 0s linear 300ms;
+		transition: opacity 180ms ease;
 	}
 	.mail-ai-shell[data-open="true"] {
-		flex-basis: 62%;
-		min-height: min(20rem, 100%);
 		opacity: 1;
 		visibility: visible;
-		transition-delay: 0s;
 	}
 	.mail-ai-shell-inner {
 		height: 100%;
 		min-height: 0;
-		border-top: 1px solid var(--border);
 		background: color-mix(in oklch, var(--muted) 28%, var(--background));
 	}
 	.mail-ai-composer {
@@ -208,10 +204,6 @@
 	}
 	.mail-ai-thinking span:nth-child(2) { animation-delay: 140ms; }
 	.mail-ai-thinking span:nth-child(3) { animation-delay: 280ms; }
-	@media (min-width: 1280px) {
-		.mail-ai-shell[data-open="true"] { flex-basis: 23rem; min-height: 0; }
-		.mail-ai-shell-inner { width: 23rem; border-top: 0; border-left: 1px solid var(--border); }
-	}
 	@media (prefers-reduced-motion: reduce) {
 		.mail-ai-shell, .mail-ai-composer, .mail-ai-suggestion, .mail-ai-send { transition: none; }
 		.mail-ai-shell[data-open="true"] .mail-ai-suggestion, .mail-ai-message, .mail-ai-thinking span { animation: none; }
