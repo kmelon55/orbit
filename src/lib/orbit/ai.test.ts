@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, test } from "node:test";
-import { mailStore } from "../mail/store.server";
+import { afterEach, beforeEach, mock, test } from "node:test";
+import { OAuth2Client } from "google-auth-library";
+import { mailStore, messageKey } from "../mail/store.server";
 import type { MailAccount, MailMessage } from "../mail/types";
 import {
 	askOrbit,
@@ -35,8 +36,17 @@ beforeEach(() => {
 	process.env.ORBIT_VAULT_DIR = join(directory, "vault");
 	mkdirSync(process.env.ORBIT_VAULT_DIR);
 	delete process.env.AI_GATEWAY_API_KEY;
+	mailStore().setSetting("config", {
+		gmailClientId: "test-client",
+		gmailClientSecret: "test-secret",
+		publicUrl: "https://orbit.example.com",
+	});
+	mock.method(OAuth2Client.prototype, "getAccessToken", async () => ({
+		token: "test-token",
+	}));
 });
 afterEach(() => {
+	mock.restoreAll();
 	globalThis.fetch = previousFetch;
 	mailStore().db.close();
 	rmSync(directory, { recursive: true, force: true });
@@ -216,6 +226,7 @@ test("mail questions stay scoped across follow-ups, restore history, and expose 
 	const store = mailStore();
 	const message: MailMessage = {
 		id: "scoped-mail",
+		threadId: "scoped-thread",
 		accountId: "account",
 		folder: "inbox",
 		remoteId: "remote",
@@ -246,6 +257,7 @@ test("mail questions stay scoped across follow-ups, restore history, and expose 
 		{
 			...message,
 			id: "other-mail",
+			threadId: "other-thread",
 			remoteId: "other",
 			snippet: "계약 검토 unrelated email secret",
 		},
@@ -271,6 +283,8 @@ test("mail questions stay scoped across follow-ups, restore history, and expose 
 	const requests: Array<{ messages: Array<{ content: string }> }> = [];
 	let fail = false;
 	globalThis.fetch = async (input, init) => {
+		if (String(input).includes("/threads/"))
+			return Response.json({ messages: [] });
 		if (String(input).endsWith("/models"))
 			return Response.json({
 				data: [{ id: "example/text", type: "language" }],
@@ -338,7 +352,7 @@ test("mail questions stay scoped across follow-ups, restore history, and expose 
 		message.id,
 	);
 	assert.equal(requests.length, 2);
-	const long = { ...detail, text: "가".repeat(25_000) };
+	const long = { ...detail, text: "가".repeat(65_000) };
 	store.saveBody(message.id, long, long);
 	const truncated = await askOrbit(
 		"전체 요약",
@@ -350,10 +364,8 @@ test("mail questions stay scoped across follow-ups, restore history, and expose 
 		message.id,
 	);
 	assert.equal(truncated.messages.at(-1)?.sources?.[0].scope, "preview");
-	assert.match(
-		requests[2].messages.at(-1)?.content || "",
-		/이후 내용은 생략됨/,
-	);
+	assert.match(requests[2].messages.at(-1)?.content || "", /발췌 요약/);
+	assert.match(truncated.messages.at(-1)?.content || "", /발췌 요약/);
 	fail = true;
 	await assert.rejects(
 		() =>
@@ -394,4 +406,244 @@ test("mail questions stay scoped across follow-ups, restore history, and expose 
 		requests.at(-1)?.messages.at(-1)?.content || "",
 		/SECRET_STYLE|SECRET_SCRIPT/,
 	);
+});
+
+test("mail AI discovers sent replies remotely, loads bodies, and refreshes the conversation on follow-up", async () => {
+	const store = mailStore();
+	const account: MailAccount = {
+		id: "thread-account",
+		provider: "gmail",
+		email: "me@example.com",
+		name: "Me",
+		notifications: false,
+		createdAt: 1,
+		lastSync: null,
+		error: null,
+	};
+	store.saveAccount(account, { refreshToken: "fixture" });
+	const root: MailMessage = {
+		id: messageKey(account.id, "inbox", "root"),
+		accountId: account.id,
+		remoteId: "root",
+		threadId: "discussion",
+		messageId: "<root>",
+		folder: "inbox",
+		subject: "제안",
+		from: [{ name: "Client", address: "client@example.com" }],
+		to: [{ name: "Me", address: account.email }],
+		cc: [],
+		date: 100,
+		unread: true,
+		snippet: "제안 미리보기",
+		hasAttachments: false,
+	};
+	store.saveMessages([
+		root,
+		{
+			...root,
+			id: "unrelated",
+			remoteId: "unrelated",
+			threadId: "other",
+			messageId: "<other>",
+			snippet: "UNRELATED_SECRET",
+		},
+	]);
+	const original = "계약 금액은 백만원이고 최초 일정은 금요일이에요.";
+	const body = {
+		...root,
+		text: original,
+		html: "",
+		replyTo: [],
+		messageId: "<root>",
+		references: [],
+		attachments: [],
+	};
+	store.saveBody(root.id, body, body);
+	const headers = [
+		{ name: "Subject", value: "Re: 변경한 일정" },
+		{ name: "From", value: account.email },
+		{ name: "To", value: "client@example.com" },
+		{ name: "Message-ID", value: "<reply>" },
+		{ name: "In-Reply-To", value: "<root>" },
+	];
+	const requests: Array<{ messages: Array<{ content: string }> }> = [];
+	const providerPaths: string[] = [];
+	let newReply = false;
+	globalThis.fetch = async (input, init) => {
+		const url = String(input);
+		if (url.endsWith("/models"))
+			return Response.json({
+				data: [{ id: "example/text", type: "language" }],
+			});
+		if (url.endsWith("/chat/completions")) {
+			requests.push(JSON.parse(String(init?.body)));
+			return Response.json({
+				choices: [{ message: { content: "월요일로 변경했어요. [2]" } }],
+			});
+		}
+		providerPaths.push(url);
+		if (url.endsWith("threads/discussion?format=metadata"))
+			return Response.json({
+				messages: [
+					{
+						id: "reply",
+						threadId: "discussion",
+						labelIds: ["SENT"],
+						internalDate: "200",
+						payload: { headers },
+					},
+					...(newReply
+						? [
+								{
+									id: "missing",
+									threadId: "discussion",
+									labelIds: ["INBOX"],
+									internalDate: "300",
+									snippet: "최신 회신 미리보기",
+									payload: {
+										headers: [
+											{ name: "Subject", value: "최신 회신" },
+											{ name: "Message-ID", value: "<missing>" },
+										],
+									},
+								},
+							]
+						: []),
+				],
+			});
+		if (url.endsWith("messages/reply?format=full"))
+			return Response.json({
+				payload: {
+					mimeType: "text/plain",
+					headers,
+					body: {
+						data: Buffer.from(
+							`월요일로 변경해 주세요.\n> ${original}`,
+						).toString("base64url"),
+					},
+				},
+			});
+		if (url.endsWith("messages/missing?format=full"))
+			return new Response(null, { status: 503 });
+		throw new Error(`Unexpected request: ${url}`);
+	};
+	await saveGatewayKey("thread-fixture-key");
+	const chat = await askOrbit(
+		"최종 일정은?",
+		"example/text",
+		[],
+		undefined,
+		"thread-1",
+		"ko",
+		root.id,
+	);
+	assert.deepEqual(
+		chat.messages[1].sources?.map((s) => s.id),
+		[root.id, messageKey(account.id, "sent", "reply")],
+	);
+	assert.deepEqual(
+		chat.messages[1].sources?.map((s) => s.scope),
+		["full", "full"],
+	);
+	const prompt = requests[0].messages.at(-1)?.content || "";
+	assert.match(prompt, /백만원/);
+	assert.match(prompt, /월요일로 변경/);
+	assert.equal(prompt.match(/최초 일정은 금요일/g)?.length, 1);
+	assert.doesNotMatch(prompt, /UNRELATED_SECRET/);
+	assert.equal(store.message(root.id).unread, true);
+	assert.ok(
+		providerPaths.some((path) => path.endsWith("messages/reply?format=full")),
+	);
+	assert.ok(!providerPaths.some((path) => /modify|attachments/.test(path)));
+	// The next question must discover a new remote reply even with a warm thread cache.
+	newReply = true;
+	const next = await askOrbit(
+		"추가 답장도 확인해줘",
+		"example/text",
+		[],
+		chat.id,
+		"thread-2",
+		"ko",
+		root.id,
+	);
+	assert.equal(next.messages.at(-1)?.sources?.length, 3);
+	assert.equal(next.messages.at(-1)?.sources?.at(-1)?.scope, "preview");
+	assert.match(
+		next.messages.at(-1)?.content || "",
+		/1개 메일은 본문을 불러오지 못해/,
+	);
+	assert.match(
+		requests[1].messages.at(-1)?.content || "",
+		/최신 회신 미리보기/,
+	);
+	assert.equal(requests.length, 2);
+	assert.equal(
+		providerPaths.filter((path) => path.includes("/threads/")).length,
+		2,
+	);
+});
+
+test("mail AI discloses incomplete remote conversation retrieval even when cached bodies are full", async () => {
+	const store = mailStore();
+	store.saveAccount(
+		{
+			id: "offline",
+			provider: "gmail",
+			email: "me@example.com",
+			name: "Me",
+			notifications: false,
+			createdAt: 1,
+			lastSync: null,
+			error: null,
+		},
+		{ refreshToken: "fixture" },
+	);
+	const body = {
+		id: "offline-mail",
+		accountId: "offline",
+		remoteId: "offline",
+		threadId: "offline-thread",
+		folder: "inbox" as const,
+		subject: "계약",
+		from: [],
+		to: [],
+		cc: [],
+		date: 1,
+		unread: true,
+		snippet: "미리보기",
+		hasAttachments: false,
+		text: "저장된 본문",
+		html: "",
+		replyTo: [],
+		messageId: "<offline>",
+		references: [],
+		attachments: [],
+	};
+	store.saveMessages([body]);
+	store.saveBody(body.id, body, body);
+	let prompt = "";
+	globalThis.fetch = async (input, init) => {
+		const url = String(input);
+		if (url.endsWith("/models"))
+			return Response.json({
+				data: [{ id: "example/text", type: "language" }],
+			});
+		if (url.includes("/threads/")) return new Response(null, { status: 503 });
+		assert.ok(url.endsWith("/chat/completions"));
+		prompt = String(init?.body);
+		return Response.json({ choices: [{ message: { content: "답변 [1]" } }] });
+	};
+	await saveGatewayKey("offline-fixture-key");
+	const chat = await askOrbit(
+		"요약해줘",
+		"example/text",
+		[],
+		undefined,
+		"offline-1",
+		"ko",
+		body.id,
+	);
+	assert.match(prompt, /일부 메일을 확인하지 못했어요/);
+	assert.match(chat.messages[1].content, /일부 메일을 확인하지 못했어요/);
+	assert.equal(chat.messages[1].sources?.[0].scope, "full");
 });

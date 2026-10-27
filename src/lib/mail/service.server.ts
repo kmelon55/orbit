@@ -262,7 +262,11 @@ const conversationRequests = new Map<
 	string,
 	{ expires: number; value: ReturnType<typeof fetchConversation> }
 >();
-export async function conversationMessages(id: string, remote = false) {
+export async function conversationMessages(
+	id: string,
+	remote = false,
+	refresh = false,
+) {
 	const m = mailStore().message(id);
 	const key = JSON.stringify([
 		mailDirectory(),
@@ -271,7 +275,7 @@ export async function conversationMessages(id: string, remote = false) {
 		remote,
 	]);
 	const cached = conversationRequests.get(key);
-	if (remote && cached && cached.expires > Date.now()) {
+	if (remote && !refresh && cached && cached.expires > Date.now()) {
 		const result = await cached.value;
 		return {
 			...(await fetchConversation(id, false)),
