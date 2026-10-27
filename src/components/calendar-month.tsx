@@ -86,6 +86,7 @@ import { Button } from "@/components/ui/button";
 import { useCalendarTimeZoom } from "@/hooks/use-calendar-time-zoom";
 import { useCalendarVisibility } from "@/hooks/use-calendar-visibility";
 import { useKoreanHolidays } from "@/hooks/use-korean-holidays";
+import { useLocalDay } from "@/hooks/use-local-day";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useTaskToggle } from "@/hooks/use-task-toggle";
 import { cn } from "@/lib/utils";
@@ -651,13 +652,14 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 
 function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 	const { t, intlLocale, errorText } = useI18n();
+	const localDay = useLocalDay();
 
 	const [hourHeight, setHourHeight] = useState(HOUR_HEIGHT);
 	const [headerCollapsed, setHeaderCollapsed] = useState(false);
 	const location = useSearch({ from: "/calendar" });
 	const navigate = useNavigate({ from: "/calendar" });
 	const view = location.view ?? "month";
-	const cursorKey = location.date ?? formatDayKey();
+	const cursorKey = location.date ?? localDay ?? formatDayKey();
 	const cursor = useMemo(() => parseDayKey(cursorKey), [cursorKey]);
 	const viewportAnchor =
 		view === "week"
@@ -763,13 +765,15 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 	]);
 	const [routineNow, setRoutineNow] = useState(() => new Date());
 	useEffect(() => {
+		if (!localDay) return;
 		const zones = [
 			...new Set(routineData.routines.map((routine) => routine.timeZone)),
 		];
 		const update = () => {
 			const now = new Date();
-			// Only invalidate projections when a routine's local date changes.
+			// Both the viewer's day and each routine's day control expiration.
 			setRoutineNow((previous) =>
+				formatDayKey(previous) !== formatDayKey(now) ||
 				zones.some(
 					(zone) => routineToday(zone, previous) !== routineToday(zone, now),
 				)
@@ -786,7 +790,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 			window.removeEventListener("focus", update);
 			document.removeEventListener("visibilitychange", update);
 		};
-	}, [routineData.routines]);
+	}, [routineData.routines, localDay]);
 	const routineContext = useMemo(
 		() => ({ data: routineData, now: routineNow }),
 		[routineData, routineNow],
@@ -859,7 +863,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, [cursor, visibleCursor, selectedDate, view, updateCalendar, chooseView]);
-	const today = formatDayKey();
+	const today = localDay ?? formatDayKey();
 	const dated = useMemo(
 		() =>
 			localItems

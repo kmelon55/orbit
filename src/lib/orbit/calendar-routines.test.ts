@@ -5,6 +5,7 @@ import {
 	calendarRoutineItems as projectRoutineItems,
 } from "./calendar-routines";
 import { visibleDayKeys } from "./calendar-schedule";
+import { formatDayKey } from "./para";
 import {
 	applyRoutineMutation,
 	emptyRoutineData,
@@ -12,6 +13,7 @@ import {
 	type RoutineData,
 	routineRecordKey,
 } from "./routines";
+import { todayView } from "./today";
 
 const routine: Routine = {
 	id: "00000000-0000-4000-8000-000000000001",
@@ -222,7 +224,7 @@ test("past open all-day routines disappear without changing records or future oc
 	const items = calendarRoutineItems(
 		input,
 		["2026-10-05", "2026-10-06", "2026-10-07"],
-		new Date("2026-10-05T15:00:00Z"),
+		new Date("2026-10-06T12:00:00"),
 	);
 	assert.deepEqual(
 		items.map((item) => item.start),
@@ -241,6 +243,55 @@ test("past open all-day routines disappear without changing records or future oc
 		).length,
 		1,
 	);
+});
+
+test("today's routines survive another timezone's midnight and turn over at local midnight", () => {
+	const originalZone = process.env.TZ;
+	const input: RoutineData = {
+		...data,
+		routines: [
+			{ ...routine, moment: "anytime", weekdays: [0, 1, 2, 3, 4, 5, 6] },
+		],
+	};
+	const original = structuredClone(input);
+	try {
+		for (const zone of ["Asia/Seoul", "UTC", "America/Los_Angeles"]) {
+			process.env.TZ = zone;
+			const before = new Date("2026-10-26T23:59:59");
+			const after = new Date("2026-10-27T00:00:00");
+			const days = ["2026-10-26", "2026-10-27"];
+			assert.deepEqual(
+				calendarRoutineItems(input, days, before).map(
+					(item) => item.routine.day,
+				),
+				days,
+				zone,
+			);
+			assert.deepEqual(
+				calendarRoutineItems(input, days, after).map(
+					(item) => item.routine.day,
+				),
+				["2026-10-27"],
+				zone,
+			);
+			assert.equal(todayView([], formatDayKey(before)).displayDate.day, "26");
+			assert.equal(todayView([], formatDayKey(after)).displayDate.day, "27");
+		}
+		// Seoul has already crossed midnight, but the UTC calendar still shows today.
+		process.env.TZ = "UTC";
+		assert.equal(
+			calendarRoutineItems(
+				input,
+				["2026-10-26"],
+				new Date("2026-10-26T15:00:00Z"),
+			).length,
+			1,
+		);
+		assert.deepEqual(input, original);
+	} finally {
+		if (originalZone === undefined) delete process.env.TZ;
+		else process.env.TZ = originalZone;
+	}
 });
 
 test("past all-day completion history and timed appointments remain visible", () => {

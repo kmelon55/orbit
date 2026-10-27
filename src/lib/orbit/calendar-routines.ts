@@ -47,6 +47,7 @@ export function calendarRoutineItems(
 	days: string[],
 	now = new Date(),
 ): CalendarRoutineItem[] {
+	const calendarToday = formatDayKey(now);
 	const todayByZone = new Map<string, string>();
 	const plannedDays = Object.values(data.schedules ?? {})
 		.filter((schedule) =>
@@ -88,8 +89,10 @@ export function calendarRoutineItems(
 					today = routineToday(routine.timeZone, now);
 					todayByZone.set(routine.timeZone, today);
 				}
-				// Use the effective end date so moved and ongoing occurrences stay visible.
-				if ((end ?? start).slice(0, 10) < today) return [];
+				// A routine's timezone may reach midnight before the viewer's.
+				// Hide only after both days end, using the effective scheduled end.
+				const lastDay = (end ?? start).slice(0, 10);
+				if (lastDay < today && lastDay < calendarToday) return [];
 			}
 			return [
 				{

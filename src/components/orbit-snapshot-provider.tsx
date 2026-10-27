@@ -21,7 +21,9 @@ import {
 	type OrbitSnapshot,
 	orbitItemSchema,
 } from "#/lib/orbit/schema";
+import { todayView } from "#/lib/orbit/today";
 import { onItemUndone } from "#/lib/orbit/undo-events";
+import { useLocalDay } from "@/hooks/use-local-day";
 
 export type PendingCapture = {
 	id: string;
@@ -44,6 +46,7 @@ export function OrbitSnapshotProvider({
 	snapshot: OrbitSnapshot;
 	children: ReactNode;
 }) {
+	const localDay = useLocalDay();
 	const [source, setSource] = useState(snapshot);
 	useEffect(() => setSource(snapshot), [snapshot]);
 	const [refresh] = useState(() =>
@@ -141,8 +144,11 @@ export function OrbitSnapshotProvider({
 	);
 	const value = useMemo(() => {
 		void revision;
-		return store.project(source);
-	}, [source, store, revision]);
+		const projected = store.project(source);
+		return localDay
+			? { ...projected, ...todayView(projected.items, localDay) }
+			: projected;
+	}, [source, store, revision, localDay]);
 	const actions = useMemo(
 		() => ({ acknowledge, capture, retry, pending, refresh }),
 		[acknowledge, capture, retry, pending, refresh],
