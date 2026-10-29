@@ -374,7 +374,7 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 	}
 
 	return (
-		<div className="relative h-full overflow-hidden bg-muted/20">
+		<div className="orbit-tasks relative h-full overflow-hidden bg-background">
 			<div className="h-full overflow-auto">
 				<div className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-5 sm:py-6 lg:px-8">
 					<header className="mb-5 flex flex-wrap items-center justify-between gap-3 sm:mb-7">
@@ -474,8 +474,12 @@ export function TaskManager({ snapshot }: { snapshot: OrbitSnapshot }) {
 					{view !== "done" ? (
 						<div className="space-y-4">
 							{groups.map((group) => (
-								<section key={group.key} className="orbit-card overflow-hidden">
-									<div className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
+								<section
+									key={group.key}
+									data-empty={group.items.length === 0}
+									className="orbit-task-section overflow-hidden"
+								>
+									<div className="orbit-task-section-heading flex items-center gap-2 border-b border-border/60 px-4 py-3">
 										<h3 className="text-xs font-semibold text-muted-foreground">
 											{t(group.label)}
 										</h3>
@@ -738,7 +742,7 @@ function TaskRows({
 								}}
 								onDragEnd={onDragEnd}
 								className={cn(
-									"group flex min-h-14 items-center gap-3 border-b border-border/55 px-3 transition-[background-color,opacity,transform] duration-150 last:border-b-0 hover:bg-muted/40 sm:px-4",
+									"orbit-task-row group flex min-h-12 items-center gap-3 border-b border-border/55 px-3 transition-[background-color,opacity,transform] duration-150 last:border-b-0 hover:bg-muted/40 sm:px-4",
 									canReschedule &&
 										item.type === "task" &&
 										!checked &&
@@ -778,7 +782,7 @@ function TaskRows({
 								<button
 									type="button"
 									onClick={() => onOpen(item)}
-									className="min-w-0 flex-1 py-2 text-left"
+									className="orbit-task-title min-w-0 flex-1 py-2 text-left"
 								>
 									<span
 										className={taskTitleClass(
@@ -809,7 +813,7 @@ function TaskRows({
 										triggerContent={formatDue(item, today, intlLocale)}
 										variant="ghost"
 										className={cn(
-											"h-8 w-auto max-w-28 shrink-0 gap-1 px-1.5 text-[11px] text-muted-foreground sm:max-w-none sm:gap-1.5 sm:text-xs",
+											"orbit-task-date h-8 w-auto max-w-28 shrink-0 gap-1 px-1.5 text-[11px] text-muted-foreground sm:max-w-none sm:gap-1.5 sm:text-xs",
 											scheduledDay &&
 												scheduledDay < today &&
 												!checked &&
@@ -820,7 +824,7 @@ function TaskRows({
 									<button
 										type="button"
 										onClick={() => onOpen(item)}
-										className="max-w-28 shrink-0 text-right text-[11px] text-muted-foreground sm:max-w-none sm:text-xs"
+										className="orbit-task-date max-w-28 shrink-0 text-right text-[11px] text-muted-foreground sm:max-w-none sm:text-xs"
 									>
 										{item.start?.slice(0, 16).replace("T", " ")}
 										{item.end && item.end !== item.start
@@ -835,7 +839,7 @@ function TaskRows({
 			})}
 			<TaskEmpty show={empty} animate={!settling}>
 				<ItemContextMenu createLabel="할 일 추가" onCreate={onCreate}>
-					<div className="flex min-h-16 items-center gap-2 px-4 text-sm text-muted-foreground">
+					<div className="orbit-task-empty flex min-h-12 items-center gap-2 px-4 text-xs text-muted-foreground">
 						<Circle className="size-3.5" /> {t("비어 있습니다")}
 					</div>
 				</ItemContextMenu>

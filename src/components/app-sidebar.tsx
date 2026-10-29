@@ -91,8 +91,8 @@ export function AppSidebar() {
 	}
 
 	return (
-		<Sidebar variant="inset" collapsible="icon">
-			<SidebarHeader>
+		<Sidebar variant="inset" collapsible="icon" className="orbit-app-sidebar">
+			<SidebarHeader className="orbit-brand">
 				<SidebarMenu>
 					<SidebarMenuItem>
 						<SidebarMenuButton
@@ -113,9 +113,6 @@ export function AppSidebar() {
 								</div>
 								<div className="grid flex-1 text-left text-sm leading-tight">
 									<span className="truncate font-semibold">Orbit</span>
-									<span className="truncate text-xs text-muted-foreground">
-										{t("Markdown notes")}
-									</span>
 								</div>
 							</Link>
 						</SidebarMenuButton>

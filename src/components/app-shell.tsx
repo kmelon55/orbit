@@ -1,6 +1,7 @@
+import "./workspace-surfaces.css";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { ListTodo, Mail } from "lucide-react";
-import type { ReactNode } from "react";
+import { Mail } from "lucide-react";
+import type { CSSProperties, ReactNode } from "react";
 import { folderDisplayPath } from "#/lib/orbit/folder-tree";
 import type { OrbitSnapshot } from "#/lib/orbit/schema";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -69,10 +70,13 @@ export function AppShell({
 
 	return (
 		<TooltipProvider delayDuration={0}>
-			<SidebarProvider className="h-svh min-h-0 overflow-hidden bg-sidebar">
+			<SidebarProvider
+				className="orbit-shell h-svh min-h-0 overflow-hidden bg-sidebar"
+				style={{ "--sidebar-width": "14rem" } as CSSProperties}
+			>
 				<AppSidebar />
-				<SidebarInset className="min-h-0 overflow-hidden border-border/70 bg-background md:border md:shadow-sm">
-					<header className="orbit-mobile-header flex h-12 shrink-0 items-center gap-3 border-b border-border/60 bg-background/90 px-4 backdrop-blur-xl">
+				<SidebarInset className="orbit-main min-h-0 overflow-hidden border-border/70 bg-background md:border">
+					<header className="orbit-topbar orbit-mobile-header flex h-12 shrink-0 items-center gap-3 border-b border-border/60 bg-background/90 px-4 backdrop-blur-xl">
 						<SidebarTrigger className="-ml-1 text-muted-foreground" />
 						<div className="hidden h-4 w-px bg-border/80 sm:block" />
 						<div className="flex min-w-0 items-center gap-2 text-sm">
@@ -93,25 +97,13 @@ export function AppShell({
 								asChild
 								variant={pathname === "/mail" ? "secondary" : "ghost"}
 								size="sm"
+								className="md:hidden"
 							>
 								<Link
 									to="/mail"
 									aria-current={pathname === "/mail" ? "page" : undefined}
 								>
 									<Mail /> {t("메일")}
-								</Link>
-							</Button>
-							<Button
-								asChild
-								variant={pathname === "/tasks" ? "secondary" : "ghost"}
-								size="sm"
-								className="hidden md:inline-flex"
-							>
-								<Link
-									to="/tasks"
-									aria-current={pathname === "/tasks" ? "page" : undefined}
-								>
-									<ListTodo /> {t("할 일")}
 								</Link>
 							</Button>
 						</nav>

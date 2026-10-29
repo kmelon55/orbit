@@ -212,7 +212,7 @@ export function GlobalSearch({ snapshot }: { snapshot: OrbitSnapshot }) {
 			<button
 				type="button"
 				onClick={() => setOpen(true)}
-				className="flex h-8 items-center gap-2 rounded-lg px-2.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+				className="orbit-search-trigger flex h-8 items-center gap-2 rounded-md px-2.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
 				aria-label={t("검색과 AI 열기")}
 			>
 				<Search className="size-4" />
@@ -235,7 +235,7 @@ export function GlobalSearch({ snapshot }: { snapshot: OrbitSnapshot }) {
 					}}
 				>
 					<DialogContent
-						className="top-4 h-[min(80svh,680px)] max-h-[calc(100svh-2rem)] max-w-2xl -translate-y-0 flex flex-col gap-0 overflow-hidden p-0 sm:top-[10vh]"
+						className="orbit-search-dialog top-4 h-[min(80svh,680px)] max-h-[calc(100svh-2rem)] max-w-2xl -translate-y-0 flex flex-col gap-0 overflow-hidden p-0 sm:top-[10vh]"
 						onOpenAutoFocus={(event) => {
 							event.preventDefault();
 							(mode === "search" ? inputRef : aiInputRef).current?.focus();
