@@ -294,7 +294,7 @@
 
 /* Move the text on the compositor; changing margins during scroll relayouts it. */
 @supports (animation-timeline: --calendar-week-x) {
-	[data-calendar-week-scroll] {
+	[data-calendar-week-scroll], [data-calendar-month-scroll] {
 		scroll-timeline: --calendar-week-x x;
 	}
 
@@ -922,6 +922,14 @@
  background-color: color-mix(in srgb, var(--schedule-color) 23%, var(--background));
  color: var(--foreground);
 }
-.orbit-task-surface:hover, .orbit-event-surface:hover {
+.orbit-task-surface:hover, .orbit-event-surface:hover,
+[data-calendar-event][data-calendar-hovered="true"] {
  background-color: color-mix(in srgb, var(--schedule-color) 34%, var(--background));
+}
+
+@media (max-width: 767px) {
+ @container calendar-event (max-width: 120px) {
+  .calendar-card-check { display: none; }
+  .calendar-task-content { padding-left: 0; }
+ }
 }

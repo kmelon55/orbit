@@ -73,6 +73,10 @@ import {
 } from "#/lib/orbit/routines";
 import { visibleScheduleCategory } from "#/lib/orbit/schedule-categories";
 import type { OrbitItem, OrbitSnapshot } from "#/lib/orbit/schema";
+import {
+	CalendarEventHoverProvider,
+	useCalendarEventHover,
+} from "@/components/calendar-event-hover";
 import { useI18n } from "@/components/locale-provider";
 import { RoutineCalendarEditor } from "@/components/routine-manager";
 import {
@@ -83,6 +87,7 @@ import {
 import { ScheduleEditor } from "@/components/schedule-editor";
 import { TaskCheck, taskTitleClass } from "@/components/task-check";
 import { Button } from "@/components/ui/button";
+import { useCalendarMonthZoom } from "@/hooks/use-calendar-month-zoom";
 import { useCalendarTimeZoom } from "@/hooks/use-calendar-time-zoom";
 import { useCalendarVisibility } from "@/hooks/use-calendar-visibility";
 import { useKoreanHolidays } from "@/hooks/use-korean-holidays";
@@ -503,6 +508,7 @@ function CalendarEvent({
 }) {
 	const { t } = useI18n();
 	const contentTravel = Math.max(0, (horizontalScroll?.width ?? 0) - 80);
+	const hover = useCalendarEventHover(item.id);
 
 	const startKey = itemDayKey(item);
 	const endKey = visibleEndDayKey(item);
@@ -528,19 +534,25 @@ function CalendarEvent({
 	);
 	return (
 		<div
+			data-calendar-event
+			{...hover}
+			data-continues-before={continuesFromBefore || undefined}
+			data-continues-after={continuesAfter || undefined}
 			className={cn(
 				"group/event @container/calendar-event relative flex h-full min-h-0 w-full min-w-0 items-start border px-2 text-left transition-colors active:cursor-grabbing",
 				"cursor-grab",
 				dragging && dragOperation === "move" && "opacity-35",
 				stickyContent ? "overflow-clip" : "overflow-hidden",
 				eventTone(item),
-				continuesFromBefore ? "rounded-l-sm border-l-0" : "rounded-l-md",
-				continuesAfter ? "rounded-r-sm border-r-0" : "rounded-r-md",
+				continuesFromBefore ? "rounded-l-none border-l-0" : "rounded-l-md",
+				continuesAfter ? "rounded-r-none border-r-0" : "rounded-r-md",
 				compact
-					? "h-6 items-center py-px text-[9px] leading-4 sm:text-[11px]"
+					? "h-6 items-center px-1 py-px text-[10px] leading-4 sm:px-2 sm:text-[11px]"
 					: dense
 						? "items-center py-0 text-xs leading-4 shadow-sm"
 						: "py-1.5 text-xs leading-4 shadow-sm",
+				continuesFromBefore && "pl-4 sm:pl-4",
+				continuesAfter && "pr-4 sm:pr-4",
 			)}
 		>
 			<button
@@ -554,9 +566,27 @@ function CalendarEvent({
 					onClick();
 				}}
 				onDoubleClick={(event) => event.stopPropagation()}
-				aria-label={showRange ? `${item.title} · ${displayTime}` : item.title}
+				aria-label={[
+					showRange ? `${item.title} · ${displayTime}` : item.title,
+					continuesFromBefore && t("이전 날짜에서 이어짐"),
+					continuesAfter && t("다음 날짜로 이어짐"),
+				]
+					.filter(Boolean)
+					.join(" · ")}
 				className="absolute inset-0 size-full cursor-inherit rounded-[inherit] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 			/>
+			{continuesFromBefore ? (
+				<ChevronLeft
+					aria-hidden="true"
+					className="pointer-events-none absolute left-0.5 top-1/2 size-3 -translate-y-1/2 opacity-75"
+				/>
+			) : null}
+			{continuesAfter ? (
+				<ChevronRight
+					aria-hidden="true"
+					className="pointer-events-none absolute right-0.5 top-1/2 size-3 -translate-y-1/2 opacity-75"
+				/>
+			) : null}
 			<span
 				style={
 					horizontalScroll
@@ -571,11 +601,14 @@ function CalendarEvent({
 					"pointer-events-none relative z-10 min-w-0 flex-1",
 					horizontalScroll && "calendar-header-content",
 					stickyContent && "sticky top-(--calendar-sticky-top) self-start",
-					item.type === "task" && "min-h-4 pl-6",
+					item.type === "task" && "calendar-task-content min-h-4 pl-6",
 					dense && "flex items-center gap-1.5",
 				)}
 			>
-				<CalendarTaskCheck item={item} className="left-0 size-4" />
+				<CalendarTaskCheck
+					item={item}
+					className="calendar-card-check left-0 size-4"
+				/>
 				<span
 					className={cn(
 						"block min-w-0 truncate font-medium",
@@ -628,7 +661,7 @@ function CalendarEvent({
 					className={cn(
 						"absolute z-20 touch-none",
 						compact
-							? "inset-y-0 right-0 w-2 cursor-ew-resize"
+							? "inset-y-0 right-0 hidden w-2 cursor-ew-resize md:block"
 							: "left-8 right-0 bottom-0 h-2 cursor-ns-resize",
 					)}
 				/>
@@ -645,7 +678,9 @@ export function CalendarMonth({ snapshot }: { snapshot: OrbitSnapshot }) {
 	}, [snapshot.items, taskToggle.sync]);
 	return (
 		<CalendarTasks.Provider value={taskToggle}>
-			<CalendarContent snapshot={snapshot} />
+			<CalendarEventHoverProvider>
+				<CalendarContent snapshot={snapshot} />
+			</CalendarEventHoverProvider>
 		</CalendarTasks.Provider>
 	);
 }
@@ -2516,6 +2551,11 @@ function MonthView(
 	const selectedItems =
 		useRoutineDays(byDay, [parseDayKey(selectedDate)]).get(selectedDate) ?? [];
 	const scrollRef = useRef<HTMLDivElement>(null);
+	const { zoom, suppressClick } = useCalendarMonthZoom({
+		scrollRef,
+		enabled: isMobile,
+		onGestureStart: props.onDragEnd,
+	});
 	const currentWeekRef = useRef<HTMLElement>(null);
 	const initialized = useRef(false);
 	const pendingShift = useRef<{
@@ -2526,13 +2566,17 @@ function MonthView(
 		top: number;
 	} | null>(null);
 	const [viewportHeight, setViewportHeight] = useState(0);
+	const [viewportWidth, setViewportWidth] = useState(0);
 	const [range, setRange] = useState({ start: -3, end: 6 });
 	const firstWeek = startOfWeek(startOfMonth(cursor));
 
 	useLayoutEffect(() => {
 		const element = scrollRef.current;
 		if (!element) return;
-		const measure = () => setViewportHeight(element.clientHeight);
+		const measure = () => {
+			setViewportHeight(element.clientHeight);
+			setViewportWidth(element.clientWidth);
+		};
 		measure();
 		const observer = new ResizeObserver(measure);
 		observer.observe(element);
@@ -2565,9 +2609,29 @@ function MonthView(
 			<div
 				ref={scrollRef}
 				data-calendar-month-scroll
-				className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none]"
+				data-calendar-month-zoom={zoom}
+				className="relative min-h-0 flex-1 overflow-auto overscroll-contain [touch-action:pan-x_pan-y] [overflow-anchor:none]"
+				onClickCapture={(event) => {
+					if (suppressClick()) {
+						event.preventDefault();
+						event.stopPropagation();
+					}
+				}}
+				onDoubleClickCapture={(event) => {
+					if (suppressClick()) {
+						event.preventDefault();
+						event.stopPropagation();
+					}
+				}}
 				onScroll={(event) => {
-					if (!initialized.current || pendingShift.current) return;
+					if (!CSS.supports("animation-timeline", "--calendar-week-x")) {
+						event.currentTarget.style.setProperty(
+							"--calendar-scroll-left",
+							`${event.currentTarget.scrollLeft}px`,
+						);
+					}
+					if (!initialized.current || pendingShift.current || suppressClick())
+						return;
 					const element = event.currentTarget;
 					const top = element.getBoundingClientRect().top + 40;
 					const visibleWeek = Array.from(
@@ -2600,38 +2664,50 @@ function MonthView(
 					}
 				}}
 			>
-				<div className="sticky top-0 z-30 grid h-10 grid-cols-7 border-b bg-background/95 backdrop-blur">
-					{WEEKDAYS.map((day, index) => (
-						<div
-							key={weekdayName(day, intlLocale)}
-							className={cn(
-								"flex items-center justify-center border-r text-[11px] font-medium text-muted-foreground last:border-r-0",
-								(index === 0 || index === 6) && "bg-muted/20",
-								index === 0 && "text-red-600 dark:text-red-400",
-							)}
-						>
-							{weekdayName(day, intlLocale)}
-						</div>
-					))}
+				<div style={{ width: `${zoom * 100}%` }}>
+					<div className="sticky top-0 z-30 grid h-10 grid-cols-7 border-b bg-background/95 backdrop-blur">
+						{WEEKDAYS.map((day, index) => (
+							<div
+								key={weekdayName(day, intlLocale)}
+								className={cn(
+									"flex items-center justify-center border-r text-[11px] font-medium text-muted-foreground last:border-r-0",
+									(index === 0 || index === 6) && "bg-muted/20",
+									index === 0 && "text-red-600 dark:text-red-400",
+								)}
+							>
+								{weekdayName(day, intlLocale)}
+							</div>
+						))}
+					</div>
+					{Array.from({ length: range.end - range.start + 1 }, (_, index) => {
+						const offset = range.start + index;
+						const week = addDays(firstWeek, offset * 7);
+						return (
+							<section
+								key={formatDayKey(week)}
+								ref={offset === 0 ? currentWeekRef : undefined}
+								data-calendar-week={formatDayKey(week)}
+								aria-label={weekLabel(week, false, intlLocale)}
+							>
+								<MonthGrid
+									{...props}
+									days={Array.from({ length: 7 }, (_, day) =>
+										addDays(week, day),
+									)}
+									minHeight={Math.max(112, (viewportHeight - 40) / 5) * zoom}
+									horizontalWidth={
+										zoom > 1
+											? {
+													viewport: viewportWidth,
+													content: viewportWidth * zoom,
+												}
+											: undefined
+									}
+								/>
+							</section>
+						);
+					})}
 				</div>
-				{Array.from({ length: range.end - range.start + 1 }, (_, index) => {
-					const offset = range.start + index;
-					const week = addDays(firstWeek, offset * 7);
-					return (
-						<section
-							key={formatDayKey(week)}
-							ref={offset === 0 ? currentWeekRef : undefined}
-							data-calendar-week={formatDayKey(week)}
-							aria-label={weekLabel(week, false, intlLocale)}
-						>
-							<MonthGrid
-								{...props}
-								days={Array.from({ length: 7 }, (_, day) => addDays(week, day))}
-								minHeight={Math.max(112, (viewportHeight - 40) / 5)}
-							/>
-						</section>
-					);
-				})}
 			</div>
 			{isMobile ? (
 				<div
@@ -2694,6 +2770,7 @@ function MonthGrid({
 	cursor,
 	days: suppliedDays,
 	minHeight = 0,
+	horizontalWidth,
 	byDay: suppliedByDay,
 	today,
 	selectedDate,
@@ -2712,6 +2789,7 @@ function MonthGrid({
 	cursor: Date;
 	days?: Date[];
 	minHeight?: number;
+	horizontalWidth?: { viewport: number; content: number };
 	byDay: Map<string, OrbitItem[]>;
 	today: string;
 	selectedDate: string;
@@ -2833,9 +2911,18 @@ function MonthGrid({
 												day.getDate() === 1 && "w-auto whitespace-nowrap px-1",
 											)}
 										>
-											{day.getDate() === 1
-												? t("{0}월 1일", [day.getMonth() + 1])
-												: day.getDate()}
+											{day.getDate() === 1 ? (
+												<>
+													<span className="sm:hidden">
+														{day.getMonth() + 1}/1
+													</span>
+													<span className="hidden sm:inline">
+														{t("{0}월 1일", [day.getMonth() + 1])}
+													</span>
+												</>
+											) : (
+												day.getDate()
+											)}
 										</button>
 										<CalendarCreateButton
 											date={key}
@@ -2926,6 +3013,23 @@ function MonthGrid({
 								>
 									<CalendarEvent
 										item={segment.item}
+										horizontalScroll={
+											horizontalWidth && segment.endColumn > segment.startColumn
+												? {
+														start:
+															(segment.startColumn * horizontalWidth.content) /
+															7,
+														width:
+															((segment.endColumn - segment.startColumn + 1) *
+																horizontalWidth.content) /
+																7 -
+															4,
+														max:
+															horizontalWidth.content -
+															horizontalWidth.viewport,
+													}
+												: undefined
+										}
 										compact
 										dayKey={segment.startKey}
 										resizeEndKey={segment.endKey}
