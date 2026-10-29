@@ -1265,6 +1265,35 @@ test("demo mailbox supports accounts, HTML, search, conversations and simulated 
 	await call("reset", {});
 });
 
+test("demo classifications work without AI calls and cannot access real mail", async () => {
+	delete process.env.AI_GATEWAY_API_KEY;
+	const provider = mock.method(globalThis, "fetch", async () => {
+		throw new Error("Demo must not call a provider");
+	});
+	const real = message();
+	mailStore().saveMessages([real]);
+	const settingsBefore = mailStore().db.prepare("SELECT * FROM settings").all();
+	const response = await handleMailRequest(
+		request("demo/classifications", {
+			ids: ["demo-newsletter", "demo-review-latest", "demo-receipt", real.id],
+		}),
+	);
+	assert.equal(response.status, 200);
+	const results = await response.json();
+	assert.equal(results["demo-newsletter"].result.category, "newsletter");
+	assert.equal(results["demo-newsletter"].result.importance, "low");
+	assert.equal(results["demo-review-latest"].result.importance, "high");
+	assert.equal(results["demo-review-latest"].result.needsReply, true);
+	assert.equal(results["demo-receipt"].result.category, "billing");
+	assert.equal(results[real.id].status, "error");
+	assert.equal(provider.mock.callCount(), 0);
+	assert.deepEqual(mailStore().message(real.id), real);
+	assert.deepEqual(
+		mailStore().db.prepare("SELECT * FROM settings").all(),
+		settingsBefore,
+	);
+});
+
 test("iCloud identities persist, validate the default sender and survive notification edits", async () => {
 	account = { ...account, provider: "icloud" };
 	mailStore().saveAccount(account, { password: "app-password" });

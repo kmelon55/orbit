@@ -26,6 +26,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { classificationItemRevision } from "#/lib/orbit/classification";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { moveItemLocally } from "#/lib/orbit/item-move";
 import { formatDateTime, ITEM_TYPE_LABEL, isInboxItem } from "#/lib/orbit/para";
@@ -40,6 +41,7 @@ import { orbitItemSchema } from "#/lib/orbit/schema";
 import { matchesSearch } from "#/lib/orbit/search-text";
 import { onItemUndone } from "#/lib/orbit/undo-events";
 import { lazyWithRecovery } from "@/components/chunk-load-boundary";
+import { ClassificationSuggestions } from "@/components/classification-suggestions";
 import { FileItemForm } from "@/components/file-item-form";
 import {
 	ConfirmItemDialog,
@@ -1678,6 +1680,24 @@ export function ItemWorkspace({
 					) : null}
 				</header>
 			</ItemContextMenu>
+			{create?.space === "inbox" && isInboxItem(selected) && (
+				<ClassificationSuggestions
+					key={selected.id}
+					source={{ kind: "item", id: selected.id }}
+					revision={classificationItemRevision({
+						title: draft.title,
+						body: draft.body,
+						tags: parseTags(draft.tags),
+					})}
+					disabled={
+						isOptimisticItemId(selected.id) || convertingId === selected.id
+					}
+					beforeClassify={() =>
+						runWithSavedItems([selected.id], async () => {})
+					}
+					onMove={(folder, space) => moveItemById(selected.id, space, folder)}
+				/>
+			)}
 			<div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
 				<div className="mx-auto w-full max-w-[52rem] min-w-0 px-4 pt-5 sm:pr-6 sm:pl-16 sm:pt-6">
 					<NoteMetadataEditor
@@ -1722,7 +1742,17 @@ export function ItemWorkspace({
 				<NoteOrganizeTray
 					open={organizeOpen || draggingId !== null}
 					snapshot={snapshot}
-					activeItem={selected}
+					activeItem={
+						selected
+							? {
+									...selected,
+									title: draft.title,
+									body: draft.body,
+									tags: parseTags(draft.tags),
+								}
+							: undefined
+					}
+					beforeClassify={(id) => runWithSavedItems([id], async () => {})}
 					draggingId={draggingId}
 					hideInboxTarget={hideInboxTarget}
 					onClose={() => setOrganizeOpen(false)}
@@ -1777,7 +1807,17 @@ export function ItemWorkspace({
 				<NoteOrganizeTray
 					open={organizeOpen || draggingId !== null}
 					snapshot={snapshot}
-					activeItem={selected}
+					activeItem={
+						selected
+							? {
+									...selected,
+									title: draft.title,
+									body: draft.body,
+									tags: parseTags(draft.tags),
+								}
+							: undefined
+					}
+					beforeClassify={(id) => runWithSavedItems([id], async () => {})}
 					draggingId={draggingId}
 					hideInboxTarget={hideInboxTarget}
 					onClose={() => setOrganizeOpen(false)}
@@ -1817,7 +1857,17 @@ export function ItemWorkspace({
 			<NoteOrganizeTray
 				open={organizeOpen || draggingId !== null}
 				snapshot={snapshot}
-				activeItem={selected}
+				activeItem={
+					selected
+						? {
+								...selected,
+								title: draft.title,
+								body: draft.body,
+								tags: parseTags(draft.tags),
+							}
+						: undefined
+				}
+				beforeClassify={(id) => runWithSavedItems([id], async () => {})}
 				draggingId={draggingId}
 				hideInboxTarget={hideInboxTarget}
 				onClose={() => setOrganizeOpen(false)}

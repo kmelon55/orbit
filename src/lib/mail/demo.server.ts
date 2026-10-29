@@ -3,6 +3,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import MailComposer from "nodemailer/lib/mail-composer";
 import { z } from "zod";
+import type {
+	Classification,
+	MailClassificationState,
+} from "../orbit/classification";
 import { parseMail, toDetail } from "./content.server";
 import { relatedMessages } from "./conversations";
 import {
@@ -60,6 +64,49 @@ type DemoState = {
 };
 const globalDemo = globalThis as typeof globalThis & {
 	orbitMailDemo?: Promise<DemoState>;
+};
+// Demo results are fixture data, just like the example messages and simulated
+// sends. They work without a Gateway key and never inspect the real mailbox.
+const demoClassifications: Record<
+	string,
+	Pick<Classification, "category" | "importance" | "needsReply">
+> = {
+	"demo-newsletter": {
+		category: "newsletter",
+		importance: "low",
+		needsReply: false,
+	},
+	"demo-review-latest": {
+		category: "inquiry",
+		importance: "high",
+		needsReply: true,
+	},
+	"demo-receipt": { category: "billing", importance: "low", needsReply: false },
+	"demo-photo": {
+		category: "personal",
+		importance: "normal",
+		needsReply: false,
+	},
+	"demo-remote-image": {
+		category: "newsletter",
+		importance: "low",
+		needsReply: false,
+	},
+	"demo-review-sent": {
+		category: "inquiry",
+		importance: "normal",
+		needsReply: false,
+	},
+	"demo-review-root": {
+		category: "inquiry",
+		importance: "normal",
+		needsReply: true,
+	},
+	"demo-meeting": {
+		category: "notification",
+		importance: "normal",
+		needsReply: false,
+	},
 };
 const imagePath = "mail-demo/forest.jpg";
 const forest = () =>
@@ -335,6 +382,35 @@ export async function demoMailRequest(
 		}
 	}
 	if (request.method === "POST") {
+		if (path === "classifications") {
+			const { ids } = z
+				.object({ ids: z.array(z.string().min(1).max(500)).max(100) })
+				.parse(input);
+			const results: Record<string, MailClassificationState> = {};
+			for (const id of new Set(ids)) {
+				const mail = state.mails.get(id);
+				results[id] = mail
+					? {
+							status: "ready",
+							result: {
+								model: "demo",
+								createdAt: mail.message.date,
+								...(demoClassifications[id] ?? {
+									category: "other",
+									importance: null,
+									needsReply: null,
+								}),
+								folders: [],
+								folderStatus: "no-folders",
+								previewOnly: false,
+								truncated: false,
+								candidatesLimited: false,
+							},
+						}
+					: { status: "error", error: "데모 메일을 찾을 수 없습니다." };
+			}
+			return json(results);
+		}
 		if (path === "account") {
 			const value = z
 				.object({

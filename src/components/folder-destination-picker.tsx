@@ -18,11 +18,12 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { classificationItemRevision } from "#/lib/orbit/classification";
 import { folderColor } from "#/lib/orbit/folder-colors";
 import { folderDisplayPath, indexFolderTree } from "#/lib/orbit/folder-tree";
 import { mutateOrbit } from "#/lib/orbit/functions";
 import { moveItemLocally } from "#/lib/orbit/item-move";
-import { folderOf } from "#/lib/orbit/para";
+import { folderOf, isInboxItem } from "#/lib/orbit/para";
 import type {
 	OrbitFolder,
 	OrbitItem,
@@ -50,6 +51,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { ClassificationSuggestions } from "./classification-suggestions";
 
 const ROOTS = [
 	{ space: "project", label: "프로젝트" },
@@ -122,12 +124,14 @@ export function FolderDestinationPicker({
 	draggingId,
 	hideInbox = false,
 	onMove,
+	beforeClassify,
 }: {
 	snapshot: OrbitSnapshot;
 	item?: OrbitItem;
 	draggingId?: string | null;
 	hideInbox?: boolean;
 	onMove: MoveItem;
+	beforeClassify?: (id: string) => Promise<void>;
 }) {
 	const { t, errorText } = useI18n();
 
@@ -725,6 +729,20 @@ export function FolderDestinationPicker({
 		: t("폴더를 선택하세요");
 	return (
 		<div className="flex min-h-0 flex-1 flex-col" aria-busy={busy || creating}>
+			{item && isInboxItem(item) && (
+				<ClassificationSuggestions
+					placement="panel"
+					key={item.id}
+					source={{ kind: "item", id: item.id }}
+					revision={classificationItemRevision(item)}
+					disabled={busy || creating || item.id.startsWith("orbit-optimistic:")}
+					beforeClassify={() => beforeClassify?.(item.id) ?? Promise.resolve()}
+					onMove={async (folder, space) => {
+						const destination = byKey.get(`${space}:${folder}`);
+						if (destination) await choose(destination, item.id);
+					}}
+				/>
+			)}
 			<div className="relative m-3 mb-2 shrink-0">
 				<Search className="pointer-events-none absolute top-2.5 left-3 size-4 text-muted-foreground" />
 				<Input

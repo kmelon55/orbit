@@ -15,7 +15,7 @@ const GATEWAY = "https://ai-gateway.vercel.sh/v1";
 const KEY_SETTING = "aiGatewayApiKey";
 let catalog: { keyHash: string; expires: number; models: string[] } | undefined;
 
-function apiKey() {
+export function gatewayApiKey() {
 	return (
 		mailStore().setting<string>(KEY_SETTING)?.trim() ||
 		process.env.AI_GATEWAY_API_KEY?.trim()
@@ -89,7 +89,7 @@ export function removeGatewayKey() {
 }
 
 export async function gatewayModels(refresh = false) {
-	const key = apiKey();
+	const key = gatewayApiKey();
 	if (!key) return { configured: false, models: [] as string[] };
 	const models = await modelsForKey(key, refresh);
 	return { configured: true, models };
@@ -360,7 +360,7 @@ export async function askOrbit(
 			const response = await fetch(`${GATEWAY}/chat/completions`, {
 				method: "POST",
 				headers: {
-					Authorization: `Bearer ${apiKey()}`,
+					Authorization: `Bearer ${gatewayApiKey()}`,
 					"Content-Type": "application/json",
 				},
 				body: JSON.stringify({

@@ -159,6 +159,15 @@ async function fetchRemote(
 		}
 	}
 	mailStore().saveMessages(result.messages);
+	if (folder === "inbox" && result.messages.length) {
+		void import("../orbit/mail-classification.server")
+			.then(({ requestMailClassifications }) =>
+				requestMailClassifications(
+					result.messages.map((message) => message.id),
+				),
+			)
+			.catch(() => {});
+	}
 	// Only a fresh, unfiltered page can establish removal from the visible window.
 	if (!cursor && !query && !addresses.length)
 		mailStore().reconcile(

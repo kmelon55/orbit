@@ -18,6 +18,7 @@ export function NoteOrganizeTray({
 	variant = "overlay",
 	onClose,
 	onMove,
+	beforeClassify,
 }: {
 	open: boolean;
 	snapshot: OrbitSnapshot;
@@ -27,13 +28,16 @@ export function NoteOrganizeTray({
 	variant?: "overlay" | "panel";
 	onClose?: () => void;
 	onMove: MoveItem;
+	beforeClassify?: (id: string) => Promise<void>;
 }) {
 	const { t } = useI18n();
 
 	const isPanel = variant === "panel";
 	const visible = isPanel || open;
 	const movingItem =
-		snapshot.items.find((item) => item.id === draggingId) ?? activeItem;
+		draggingId && draggingId !== activeItem?.id
+			? snapshot.items.find((item) => item.id === draggingId)
+			: activeItem;
 
 	return (
 		<aside
@@ -76,6 +80,7 @@ export function NoteOrganizeTray({
 					draggingId={draggingId}
 					hideInbox={isPanel || hideInboxTarget}
 					onMove={onMove}
+					beforeClassify={beforeClassify}
 				/>
 			) : null}
 

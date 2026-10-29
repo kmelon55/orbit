@@ -48,6 +48,7 @@ import {
 } from "#/lib/mail/types";
 import type { MailSearch } from "#/lib/orbit/navigation-search";
 import { lazyWithRecovery } from "@/components/chunk-load-boundary";
+import { ClassificationSuggestions } from "@/components/classification-suggestions";
 import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,11 +61,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { MailAccountFilter } from "./mail-account-filter";
 import { MailActionsMenu } from "./mail-actions-menu";
+import { MailClassificationBadges } from "./mail-classification-badges";
 import { MailComposer } from "./mail-composer";
 import { MailDrafts } from "./mail-drafts";
 import { MailMessageContent } from "./mail-message-content";
 import { MailSettings } from "./mail-settings";
 import { MailThreadMessage } from "./mail-thread-message";
+import { useMailClassifications } from "./use-mail-classifications";
 import { useMailDrafts } from "./use-mail-drafts";
 import { useMailList } from "./use-mail-list";
 
@@ -196,6 +199,11 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 	const prefetched = useRef(new Set<string>());
 	const threadCache = useRef(session.threads);
 	const rows = useMemo(() => conversations(messages), [messages]);
+	const classifications = useMailClassifications(
+		[...rows.map(([message]) => message.id), ...(selected ? [selected] : [])],
+		folder !== "drafts",
+		demo,
+	);
 	useEffect(() => {
 		if (selected || loading || !rows.length) return;
 		const controller = new AbortController();
@@ -582,7 +590,9 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 					<span className="font-medium text-foreground">
 						{t("데모 메일함")}
 					</span>
-					<span className="flex-1">{t("실제로 발송되지 않습니다")}</span>
+					<span className="flex-1">
+						{t("분류는 예시이며, 실제로 발송되지 않아요.")}
+					</span>
 					<Button
 						size="sm"
 						variant="ghost"
@@ -864,8 +874,9 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 									type="button"
 									aria-current={isSelected ? "true" : undefined}
 									className={cn(
-										"w-full border-b px-4 py-3.5 text-left transition-colors hover:bg-muted/50",
-										isSelected && "bg-accent",
+										"relative w-full border-b border-border/45 px-4 py-4 text-left transition-colors hover:bg-muted/35",
+										isSelected &&
+											"bg-accent/70 after:absolute after:inset-y-4 after:left-0 after:w-0.5 after:rounded-r-full after:bg-primary/65",
 										unread && "bg-primary/[0.025]",
 									)}
 									onClick={() => selectMessage(m.id)}
@@ -922,7 +933,10 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 											{m.snippet}
 										</p>
 									)}
-									<div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+									<div className="mt-2.5">
+										<MailClassificationBadges state={classifications[m.id]} />
+									</div>
+									<div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground/80">
 										<span className="truncate">
 											{(() => {
 												const a = status?.accounts.find(
@@ -1079,6 +1093,19 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 									<Trash2 className="size-4" />
 								</Button>
 							</div>
+						)}
+						{selected && (
+							<ClassificationSuggestions
+								key={selected}
+								source={{ kind: "mail", id: selected }}
+								mailState={classifications[selected] ?? { status: "pending" }}
+								showFolders={!demo}
+								revision={
+									detail?.id === selected
+										? `${detail.text}${detail.html}`
+										: selected
+								}
+							/>
 						)}
 						<ResizablePanelGroup
 							id="mail-ai-layout"
