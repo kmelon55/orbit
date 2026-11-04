@@ -115,12 +115,15 @@ function RoutineEditor({
 	data,
 	today,
 	writer,
+	day,
 }: {
 	input: RoutineInput | null;
 	onClose: () => void;
 	data: RoutineData;
 	today: string;
 	writer: RoutineWriter;
+	// Set when opened from a single calendar occurrence.
+	day?: string;
 }) {
 	const { t } = useI18n();
 
@@ -177,6 +180,21 @@ function RoutineEditor({
 											await writer.write({
 												action: "delete-routine",
 												id: input.id,
+											})
+										)
+											onClose();
+									}
+								: undefined
+						}
+						deleteDay={existing ? day : undefined}
+						onDeleteDay={
+							existing && day
+								? async () => {
+										if (
+											await writer.write({
+												action: "delete-routine-occurrence",
+												id: input.id,
+												day,
 											})
 										)
 											onClose();
@@ -557,6 +575,7 @@ export function RoutineWorkspace({ snapshot }: { snapshot: OrbitSnapshot }) {
 	const [editing, setEditing] = useState<RoutineInput | null>(null),
 		[view, setView] = useState<"today" | "manage" | "activity">("today");
 	const routines = data.routines.filter((routine) => !routine.archived),
+		archived = data.routines.filter((routine) => routine.archived),
 		entries = buildRoutineTimeline(data, now);
 	const timed = entries.filter((entry) => entry.routine.moment === "time"),
 		done = entries.filter((entry) => entry.status === "done").length;
@@ -632,17 +651,51 @@ export function RoutineWorkspace({ snapshot }: { snapshot: OrbitSnapshot }) {
 						write={writer.write}
 					/>
 				) : view === "manage" ? (
-					routines.length > 0 ? (
-						<RoutineSettings
-							routines={routines}
-							writer={writer}
-							onEdit={setEditing}
-						/>
-					) : (
-						<div className="orbit-card px-5 py-8 text-sm text-muted-foreground">
-							{t("등록된 루틴이 없어요.")}
-						</div>
-					)
+					<>
+						{routines.length > 0 ? (
+							<RoutineSettings
+								routines={routines}
+								writer={writer}
+								onEdit={setEditing}
+							/>
+						) : (
+							<div className="orbit-card px-5 py-8 text-sm text-muted-foreground">
+								{t("등록된 루틴이 없어요.")}
+							</div>
+						)}
+						{archived.length > 0 && (
+							<section className="mt-6" aria-label={t("삭제된 루틴")}>
+								<h3 className="mb-2 text-xs font-medium text-muted-foreground">
+									{t("삭제된 루틴")}
+								</h3>
+								<div className="orbit-card divide-y divide-border/40 overflow-hidden">
+									{archived.map((routine) => (
+										<div
+											key={routine.id}
+											className="flex items-center gap-2 px-4 py-3"
+										>
+											<span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+												{routine.title}
+											</span>
+											<Button
+												variant="ghost"
+												size="sm"
+												disabled={writer.pending.includes(routine.id)}
+												onClick={() =>
+													void writer.write({
+														action: "restore-routine",
+														id: routine.id,
+													})
+												}
+											>
+												{t("복원")}
+											</Button>
+										</div>
+									))}
+								</div>
+							</section>
+						)}
+					</>
 				) : (
 					<>
 						<div className="mb-4 flex items-center justify-between text-xs text-muted-foreground">
@@ -768,6 +821,8 @@ function RoutineForm({
 	error,
 	onSave,
 	onDelete,
+	deleteDay,
+	onDeleteDay,
 }: {
 	input: RoutineInput;
 	data: RoutineData;
@@ -776,6 +831,8 @@ function RoutineForm({
 	error?: string;
 	onSave: (input: RoutineInput) => Promise<void>;
 	onDelete?: () => Promise<void>;
+	deleteDay?: string;
+	onDeleteDay?: () => Promise<void>;
 }) {
 	const { t, intlLocale, errorText } = useI18n();
 
@@ -992,15 +1049,27 @@ function RoutineForm({
 			<div className="flex items-center justify-between gap-2 border-t px-5 py-3">
 				{onDelete ? (
 					deleteConfirm ? (
-						<div className="flex items-center gap-1">
+						<div className="flex flex-wrap items-center gap-1">
+							{onDeleteDay && deleteDay && (
+								<Button
+									type="button"
+									variant="destructive"
+									size="sm"
+									disabled={pending}
+									onClick={() => void onDeleteDay()}
+								>
+									{t("이 날만 삭제")}
+								</Button>
+							)}
 							<Button
 								type="button"
-								variant="destructive"
+								variant={onDeleteDay ? "ghost" : "destructive"}
 								size="sm"
+								className={cn(onDeleteDay && "text-destructive")}
 								disabled={pending}
 								onClick={() => void onDelete()}
 							>
-								{t("삭제하기")}
+								{onDeleteDay ? t("루틴 전체 삭제") : t("삭제하기")}
 							</Button>
 							<Button
 								type="button"
@@ -1037,15 +1106,17 @@ function RoutineForm({
 
 export function RoutineCalendarEditor({
 	data,
-	routineId,
+	occurrence,
 	onClose,
 }: {
 	data: RoutineData;
-	routineId: string | null;
+	occurrence: { id: string; day: string } | null;
 	onClose: () => void;
 }) {
 	const writer = useRoutineWriter();
-	const routine = data.routines.find((entry) => entry.id === routineId);
+	const routine = data.routines.find(
+		(entry) => entry.id === occurrence?.id && !entry.archived,
+	);
 	return (
 		<RoutineEditor
 			input={routine ?? null}
@@ -1053,6 +1124,7 @@ export function RoutineCalendarEditor({
 			today={routineToday(routine?.timeZone ?? "Asia/Seoul")}
 			writer={writer}
 			onClose={onClose}
+			day={occurrence?.day}
 		/>
 	);
 }

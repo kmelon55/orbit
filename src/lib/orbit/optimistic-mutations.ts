@@ -84,6 +84,24 @@ function projectRoutineWrite(
 		else delete records[key];
 		return { ...data, records, timers };
 	}
+	if (mutation.action === "delete-routine-occurrence") {
+		const key = `${mutation.day}:${mutation.id}`,
+			records = { ...data.records },
+			schedules = { ...data.schedules };
+		delete records[key];
+		delete schedules[key];
+		delete timers[key];
+		const saved = entry.result.routines.find((routine) => routine.id === id);
+		return {
+			...data,
+			records,
+			timers,
+			...(data.schedules && { schedules }),
+			routines: data.routines.map((routine) =>
+				routine.id === id && saved ? saved : routine,
+			),
+		};
+	}
 	const saved = entry.result.routines.find((routine) => routine.id === id);
 	if (!saved) return data;
 	return {

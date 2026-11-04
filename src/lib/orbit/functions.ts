@@ -31,6 +31,8 @@ const mutateOrbitRequest = createServerFn({ method: "POST" })
 			data.action === "set-routine-status" ||
 			data.action === "set-routine-schedule" ||
 			data.action === "delete-routine" ||
+			data.action === "delete-routine-occurrence" ||
+			data.action === "restore-routine" ||
 			data.action === "move-routine" ||
 			data.action === "routine-timer"
 		) {

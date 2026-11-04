@@ -351,3 +351,70 @@ test("all-day expiration follows rescheduled dates and keeps ongoing ranges", ()
 		0,
 	);
 });
+
+test("deleting one calendar occurrence keeps the routine on other days and can restore the routine", () => {
+	let next = applyRoutineMutation(
+		data,
+		{
+			action: "set-routine-schedule",
+			id: routine.id,
+			day: "2026-10-07",
+			schedule: { start: "2026-10-07T18:00:00", end: "2026-10-07T18:15:00" },
+		},
+		"2026-10-05",
+	);
+	next = applyRoutineMutation(
+		next,
+		{ action: "delete-routine-occurrence", id: routine.id, day: "2026-10-07" },
+		"2026-10-05",
+	);
+	const days = [
+		"2026-10-05",
+		"2026-10-06",
+		"2026-10-07",
+		"2026-10-08",
+		"2026-10-09",
+	];
+	assert.deepEqual(
+		calendarRoutineItems(next, days).map((item) => item.routine.day),
+		["2026-10-05", "2026-10-09"],
+	);
+	assert.equal(next.routines[0].archived, false);
+	assert.equal(
+		next.schedules?.[routineRecordKey(routine.id, "2026-10-07")],
+		undefined,
+	);
+	assert.throws(() =>
+		applyRoutineMutation(
+			next,
+			{
+				action: "delete-routine-occurrence",
+				id: routine.id,
+				day: "2026-10-07",
+			},
+			"2026-10-05",
+		),
+	);
+	const saved = applyRoutineMutation(
+		next,
+		{ action: "save-routine", input: { ...routine, title: "Read more" } },
+		"2026-10-05",
+	);
+	assert.deepEqual(saved.routines[0].excludedDays, ["2026-10-07"]);
+
+	const deleted = applyRoutineMutation(
+		next,
+		{ action: "delete-routine", id: routine.id },
+		"2026-10-05",
+	);
+	assert.deepEqual(calendarRoutineItems(deleted, days), []);
+	const restored = applyRoutineMutation(
+		deleted,
+		{ action: "restore-routine", id: routine.id },
+		"2026-10-05",
+	);
+	assert.deepEqual(
+		calendarRoutineItems(restored, days).map((item) => item.routine.day),
+		["2026-10-05", "2026-10-09"],
+	);
+});

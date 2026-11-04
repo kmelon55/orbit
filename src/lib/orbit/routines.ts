@@ -56,6 +56,8 @@ export const routineInputSchema = z
 export const routineSchema = routineInputSchema.safeExtend({
 	createdDay: routineDaySchema,
 	archived: z.boolean(),
+	// Single deleted occurrences; the routine keeps repeating on other days.
+	excludedDays: z.array(routineDaySchema).max(3660).optional(),
 });
 export const routineRecordSchema = z.object({
 	routineId: z.string().uuid(),
@@ -159,6 +161,12 @@ export const routineMutationSchemas = [
 	}),
 	z.object({ action: z.literal("delete-routine"), id: z.string().uuid() }),
 	z.object({
+		action: z.literal("delete-routine-occurrence"),
+		id: z.string().uuid(),
+		day: routineDaySchema,
+	}),
+	z.object({ action: z.literal("restore-routine"), id: z.string().uuid() }),
+	z.object({
 		action: z.literal("move-routine"),
 		id: z.string().uuid(),
 		direction: z.enum(["up", "down"]),
@@ -212,6 +220,7 @@ export function isRoutineDue(routine: Routine, day: string) {
 		!routine.archived &&
 		routine.enabled &&
 		day >= routine.createdDay &&
+		!routine.excludedDays?.includes(day) &&
 		routine.weekdays.includes(new Date(`${day}T12:00:00`).getDay())
 	);
 }
@@ -332,6 +341,7 @@ export function applyRoutineMutation(
 			time: mutation.input.moment === "time" ? mutation.input.time : null,
 			createdDay: existing?.createdDay ?? today,
 			archived: false,
+			...(existing?.excludedDays && { excludedDays: existing.excludedDays }),
 		};
 		return {
 			...data,
@@ -340,6 +350,18 @@ export function applyRoutineMutation(
 						entry.id === routine.id ? routine : entry,
 					)
 				: [...data.routines, routine],
+		};
+	}
+	if (mutation.action === "restore-routine") {
+		if (!data.routines.some((entry) => entry.id === mutation.id))
+			throw new Error("루틴을 찾을 수 없습니다.");
+		return {
+			...data,
+			routines: data.routines.map((entry) =>
+				entry.id === mutation.id
+					? { ...entry, enabled: true, archived: false }
+					: entry,
+			),
 		};
 	}
 	const routine = data.routines.find(
@@ -389,6 +411,37 @@ export function applyRoutineMutation(
 						: entry,
 				),
 			};
+		case "delete-routine-occurrence": {
+			const key = routineRecordKey(routine.id, mutation.day);
+			if (
+				!isRoutineDue(routine, mutation.day) &&
+				!data.records[key] &&
+				!data.schedules?.[key]
+			)
+				throw new Error("해당 날짜에 예정된 루틴이 아닙니다.");
+			const records = { ...data.records },
+				schedules = { ...data.schedules },
+				timers = { ...data.timers };
+			delete records[key];
+			delete schedules[key];
+			delete timers[key];
+			return {
+				...data,
+				records,
+				timers,
+				...(data.schedules && { schedules }),
+				routines: data.routines.map((entry) =>
+					entry.id === routine.id
+						? {
+								...entry,
+								excludedDays: [
+									...new Set([...(entry.excludedDays ?? []), mutation.day]),
+								].sort(),
+							}
+						: entry,
+				),
+			};
+		}
 		case "set-routine-status": {
 			if (mutation.day > today || mutation.day < routine.createdDay)
 				throw new Error("기록할 수 없는 날짜입니다.");

@@ -729,7 +729,10 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 		[updateCalendar],
 	);
 	const [visibility, toggleVisibility] = useCalendarVisibility(view);
-	const [editingRoutine, setEditingRoutine] = useState<string | null>(null);
+	const [editingRoutine, setEditingRoutine] = useState<{
+		id: string;
+		day: string;
+	} | null>(null);
 	const [editor, setEditor] = useState<EditorState>({
 		open: false,
 		kind: "event",
@@ -968,7 +971,10 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 
 	function openItem(item: OrbitItem) {
 		if (isCalendarRoutine(item)) {
-			setEditingRoutine(item.routine.source.id);
+			setEditingRoutine({
+				id: item.routine.source.id,
+				day: item.routine.day,
+			});
 			return;
 		}
 		const date = itemDayKey(item);
@@ -1421,7 +1427,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 
 				<RoutineCalendarEditor
 					data={snapshot.routineData ?? EMPTY_ROUTINES}
-					routineId={editingRoutine}
+					occurrence={editingRoutine}
 					onClose={() => setEditingRoutine(null)}
 				/>
 				<ScheduleEditor
