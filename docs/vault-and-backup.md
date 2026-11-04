@@ -12,7 +12,7 @@ docker compose up -d --build
 
 Compose builds the image from this checkout and persists data in the `orbit-data` named volume. It binds to `127.0.0.1:3000` by default. Use your existing HTTPS reverse proxy; set `ORBIT_PUBLIC_URL` to its public origin for Gmail/push. A reverse proxy in another container needs an appropriate shared Docker network or an explicitly reachable host binding. Set `ORBIT_BIND_ADDRESS`/`ORBIT_PORT` when needed. There is no PostgreSQL container to configure.
 
-If the image build cannot download packages because the host's LAN DNS is unreachable from Docker builds, build with `--build-arg ORBIT_BUILD_DNS=public`. Only the dependency install step then reads `build-resolv.conf` (Cloudflare `1.1.1.1`); the host and running containers keep their DNS. The production Dokploy service sets this build argument.
+If the image build cannot download packages because the host's LAN DNS is unreachable from Docker builds, build with `--build-arg ORBIT_BUILD_DNS=public`. Only the dependency install step then reads `build-resolv.conf` (Cloudflare `1.1.1.1`); the host and running containers keep their DNS. If the host runs AdGuard Home or another LAN resolver with an access list, allowing Docker's `172.16.0.0/12` range there fixes default builds instead.
 
 **Existing deployments:** keep your current `/vault` mount. Do not replace it with a new empty Compose volume. Back up that directory and stop old Orbit instances/external Markdown writers before starting this version. Only the new version should write application data after migration.
 
