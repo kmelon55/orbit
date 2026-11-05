@@ -9,17 +9,33 @@ export function useCalendarTimeZoom({
 	headerRef,
 	hourHeight,
 	onHourHeightChange,
+	dayCount,
+	onDayCountChange,
 	onGestureStart,
 }: {
 	scrollRef: RefObject<HTMLDivElement | null>;
 	headerRef: RefObject<HTMLDivElement | null>;
 	hourHeight: number;
 	onHourHeightChange: (height: number) => void;
+	dayCount: number;
+	onDayCountChange: (days: number) => void;
 	onGestureStart: () => void;
 }) {
-	const latest = useRef({ hourHeight, onHourHeightChange, onGestureStart });
+	const latest = useRef({
+		hourHeight,
+		onHourHeightChange,
+		dayCount,
+		onDayCountChange,
+		onGestureStart,
+	});
 	useLayoutEffect(() => {
-		latest.current = { hourHeight, onHourHeightChange, onGestureStart };
+		latest.current = {
+			hourHeight,
+			onHourHeightChange,
+			dayCount,
+			onDayCountChange,
+			onGestureStart,
+		};
 	});
 	const pendingScrollTop = useRef<number | null>(null);
 	const suppressClickUntil = useRef(0);
@@ -59,17 +75,44 @@ export function useCalendarTimeZoom({
 			);
 			latest.current.onHourHeightChange(next);
 		};
+		let dayDelta = 0;
+		let lastWheelAt = 0;
 		const wheel = (event: WheelEvent) => {
 			if (!event.metaKey && !event.ctrlKey) return;
 			event.preventDefault();
 			latest.current.onGestureStart();
 			const delta =
-				event.deltaY *
+				(event.shiftKey && Math.abs(event.deltaX) > Math.abs(event.deltaY)
+					? event.deltaX
+					: event.deltaY) *
 				(event.deltaMode === 1
 					? 16
 					: event.deltaMode === 2
 						? element.clientHeight
 						: 1);
+			if (event.metaKey && !event.shiftKey) {
+				const now = Date.now();
+				if (now - lastWheelAt > 400 || Math.sign(dayDelta) !== Math.sign(delta))
+					dayDelta = 0;
+				lastWheelAt = now;
+				dayDelta += delta;
+				// Preserve the remainder so small trackpad events add up evenly.
+				const steps = Math.trunc(dayDelta / 20);
+				if (steps !== 0) {
+					const days = Math.max(
+						1,
+						Math.min(7, latest.current.dayCount + steps),
+					);
+					dayDelta -= steps * 20;
+					if (days === 1 || days === 7) dayDelta = 0;
+					if (days !== latest.current.dayCount) {
+						latest.current.dayCount = days;
+						latest.current.onDayCountChange(days);
+					}
+				}
+				return;
+			}
+			dayDelta = 0;
 			zoom(
 				requestedHeight *
 					Math.exp(-Math.max(-300, Math.min(300, delta)) * 0.005),

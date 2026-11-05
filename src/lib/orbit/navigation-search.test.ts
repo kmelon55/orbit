@@ -67,3 +67,10 @@ test("malformed search input safely falls back instead of breaking rendering", (
 	assert.deepEqual(noteSearch({ note: ["id"] }), { note: undefined });
 	assert.deepEqual(noteSearch({ note: "note-1" }), { note: "note-1" });
 });
+
+test("calendar day zoom retains only whole counts from one through seven", () => {
+	for (const days of [1, 2, 3, 4, 5, 6, 7])
+		assert.equal(calendarSearch({ view: "week", days }).days, days);
+	for (const days of [0, 8, -1, 2.5, "3", null, [], {}, NaN])
+		assert.equal(calendarSearch({ days }).days, undefined);
+});

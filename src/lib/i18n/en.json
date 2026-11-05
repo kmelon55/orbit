@@ -82,6 +82,8 @@
 	"달": "month",
 	"다음 {0}": "Next {0}",
 	"일간": "Day",
+	"표시할 날짜 수": "Visible days",
+	"⌘ + 스크롤: 날짜 수 · ⌘ + Shift + 스크롤: 시간 높이": "⌘ + scroll: visible days · ⌘ + Shift + scroll: hour height",
 	"주간": "Week",
 	"월간": "Month",
 	"추가": "Add",

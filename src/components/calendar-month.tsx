@@ -694,10 +694,11 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 	const location = useSearch({ from: "/calendar" });
 	const navigate = useNavigate({ from: "/calendar" });
 	const view = location.view ?? "month";
+	const dayCount = location.days ?? (view === "day" ? 1 : 7);
 	const cursorKey = location.date ?? localDay ?? formatDayKey();
 	const cursor = useMemo(() => parseDayKey(cursorKey), [cursorKey]);
 	const viewportAnchor =
-		view === "week"
+		view === "week" && location.days === undefined
 			? formatDayKey(startOfWeek(cursor))
 			: view === "month"
 				? formatDayKey(startOfMonth(cursor))
@@ -717,6 +718,19 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 		},
 		[navigate],
 	);
+	const changeDayCount = (days: number) => {
+		updateCalendar({
+			days,
+			date:
+				view === "week" && location.days === undefined
+					? viewportAnchor
+					: cursorKey,
+		});
+	};
+	const isViewSelected = (value: CalendarView) =>
+		value === "month"
+			? view === "month"
+			: view !== "month" && dayCount === (value === "day" ? 1 : 7);
 	const chooseView = useCallback(
 		(next: CalendarView) => {
 			const date = formatDayKey();
@@ -724,7 +738,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 			setVisibleDate(
 				next === "week" ? formatDayKey(startOfWeek(parseDayKey(date))) : date,
 			);
-			updateCalendar({ view: next, date, selected: date });
+			updateCalendar({ view: next, days: undefined, date, selected: date });
 		},
 		[updateCalendar],
 	);
@@ -886,21 +900,21 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 			if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
 				event.preventDefault();
 				const amount = event.key === "ArrowLeft" ? -1 : 1;
+				setNavigationVersion((version) => version + 1);
 				const next =
-					view === "day"
-						? addDays(cursor, amount)
-						: view === "week"
-							? addDays(visibleCursor, amount * 7)
-							: addMonths(visibleCursor, amount);
+					view !== "month"
+						? addDays(visibleCursor, amount * dayCount)
+						: addMonths(visibleCursor, amount);
 				updateCalendar({
 					date: formatDayKey(next),
+					...(view !== "month" ? { days: dayCount } : {}),
 					selected: formatDayKey(next),
 				});
 			}
 		};
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [cursor, visibleCursor, selectedDate, view, updateCalendar, chooseView]);
+	}, [visibleCursor, selectedDate, view, dayCount, updateCalendar, chooseView]);
 	const today = localDay ?? formatDayKey();
 	const dated = useMemo(
 		() =>
@@ -989,22 +1003,20 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 	}
 
 	function selectDate(date: string) {
+		setNavigationVersion((version) => version + 1);
 		updateCalendar({ selected: date, date });
 	}
 
 	function move(amount: number) {
 		const next =
-			view === "day"
-				? addDays(cursor, amount)
-				: view === "week"
-					? addDays(visibleCursor, amount * 7)
-					: addMonths(visibleCursor, amount);
+			view === "month"
+				? addMonths(visibleCursor, amount)
+				: addDays(visibleCursor, amount * dayCount);
+		setNavigationVersion((version) => version + 1);
 		updateCalendar({
 			date: formatDayKey(next),
-			selected:
-				view === "week"
-					? formatDayKey(addDays(parseDayKey(selectedDate), amount * 7))
-					: formatDayKey(next),
+			selected: formatDayKey(next),
+			...(view !== "month" ? { days: dayCount } : {}),
 		});
 	}
 
@@ -1267,11 +1279,7 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 								size="icon-sm"
 								onClick={() => move(-1)}
 								aria-label={t("이전 {0}", [
-									view === "day"
-										? t("날")
-										: view === "week"
-											? t("주")
-											: t("달"),
+									view === "month" ? t("달") : t("{0}일", [dayCount]),
 								])}
 							>
 								<ChevronLeft />
@@ -1281,22 +1289,18 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 								size="icon-sm"
 								onClick={() => move(1)}
 								aria-label={t("다음 {0}", [
-									view === "day"
-										? t("날")
-										: view === "week"
-											? t("주")
-											: t("달"),
+									view === "month" ? t("달") : t("{0}일", [dayCount]),
 								])}
 							>
 								<ChevronRight />
 							</Button>
 						</div>
 						<h2 className="min-w-0 flex-1 truncate px-1 text-base font-semibold tracking-tight sm:text-lg">
-							{view === "day"
-								? dayLabel(cursor, intlLocale)
-								: view === "week"
-									? weekLabel(visibleCursor, true, intlLocale)
-									: monthLabel(visibleCursor, intlLocale)}
+							{view === "month"
+								? monthLabel(visibleCursor, intlLocale)
+								: dayCount === 1
+									? dayLabel(visibleCursor, intlLocale)
+									: `${shortDayLabel(visibleDate, intlLocale)} – ${shortDayLabel(formatDayKey(addDays(visibleCursor, dayCount - 1)), intlLocale)}`}
 						</h2>
 						<div className="hidden rounded-lg bg-muted/80 p-0.5 sm:flex">
 							{(["day", "week", "month"] as const).map((value, index) => (
@@ -1307,10 +1311,10 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 									size="sm"
 									className={cn(
 										"h-7 px-2.5",
-										view === value &&
+										isViewSelected(value) &&
 											"bg-background shadow-sm hover:bg-background",
 									)}
-									aria-pressed={view === value}
+									aria-pressed={isViewSelected(value)}
 									onClick={() => chooseView(value)}
 								>
 									{value === "day"
@@ -1324,6 +1328,21 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 								</Button>
 							))}
 						</div>
+						{view !== "month" ? (
+							<select
+								aria-label={t("표시할 날짜 수")}
+								title={t("⌘ + 스크롤: 날짜 수 · ⌘ + Shift + 스크롤: 시간 높이")}
+								className="h-7 rounded-md border border-border bg-background px-1.5 text-xs"
+								value={dayCount}
+								onChange={(event) => changeDayCount(Number(event.target.value))}
+							>
+								{[1, 2, 3, 4, 5, 6, 7].map((count) => (
+									<option key={count} value={count}>
+										{t("{0}일", [count])}
+									</option>
+								))}
+							</select>
+						) : null}
 						<ScheduleDisplayMenu {...displayOptions} />
 						<Button
 							size="sm"
@@ -1339,8 +1358,8 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 								key={value}
 								variant="ghost"
 								size="sm"
-								className={cn(view === value && "bg-muted")}
-								aria-pressed={view === value}
+								className={cn(isViewSelected(value) && "bg-muted")}
+								aria-pressed={isViewSelected(value)}
 								onClick={() => chooseView(value)}
 							>
 								{value === "day"
@@ -1383,7 +1402,11 @@ function CalendarContent({ snapshot }: { snapshot: OrbitSnapshot }) {
 									key={`${navigationVersion}:${view}:${view === "week" ? formatDayKey(startOfWeek(cursor)) : cursorKey}`}
 									onVisibleDate={setVisibleDate}
 									cursor={cursor}
-									dayCount={view === "day" ? 1 : 7}
+									anchorAtWeekStart={
+										view === "week" && location.days === undefined
+									}
+									dayCount={dayCount}
+									onDayCountChange={changeDayCount}
 									dragGrabOffset={dragGrabOffset}
 									byDay={byDay}
 									today={today}
@@ -1745,6 +1768,8 @@ function WeekView({
 	cursor,
 	onVisibleDate,
 	dayCount,
+	onDayCountChange,
+	anchorAtWeekStart,
 	byDay: suppliedByDay,
 	today,
 	selectedDate,
@@ -1767,7 +1792,9 @@ function WeekView({
 	onHeaderCollapsedChange: (collapsed: boolean) => void;
 	cursor: Date;
 	onVisibleDate: (date: string) => void;
-	dayCount: 1 | 7;
+	dayCount: number;
+	onDayCountChange: (days: number) => void;
+	anchorAtWeekStart: boolean;
 	byDay: Map<string, OrbitItem[]>;
 	today: string;
 	selectedDate: string;
@@ -1855,6 +1882,8 @@ function WeekView({
 		headerRef,
 		hourHeight,
 		onHourHeightChange,
+		dayCount,
+		onDayCountChange,
 		onGestureStart: () => {
 			selectionRef.current = null;
 			setSelection(null);
@@ -1869,10 +1898,7 @@ function WeekView({
 	} | null>(null);
 	const [viewportWidth, setViewportWidth] = useState(0);
 	const [range, setRange] = useState({ start: -7, end: 13 });
-	const columnWidth =
-		dayCount === 1
-			? Math.max(0, viewportWidth - 56)
-			: Math.max(96, (viewportWidth - 56) / 7);
+	const columnWidth = Math.max(1, (viewportWidth - 56) / dayCount);
 	useLayoutEffect(() => {
 		const element = scrollRef.current;
 		if (!element) return;
@@ -1885,7 +1911,7 @@ function WeekView({
 	const previousColumnWidth = useRef(columnWidth);
 	useLayoutEffect(() => {
 		const element = scrollRef.current;
-		if (!element || viewportWidth === 0 || dayCount === 1) return;
+		if (!element || viewportWidth === 0) return;
 		if (
 			pendingShift.current?.start === range.start &&
 			pendingShift.current.end === range.end
@@ -1904,7 +1930,7 @@ function WeekView({
 			`${element.scrollLeft}px`,
 		);
 		previousColumnWidth.current = columnWidth;
-	}, [columnWidth, viewportWidth, dayCount, range.start, range.end]);
+	}, [columnWidth, viewportWidth, range.start, range.end]);
 	const [headerHeight, setHeaderHeight] = useState(80);
 	useLayoutEffect(() => {
 		const header = headerRef.current;
@@ -1916,20 +1942,18 @@ function WeekView({
 		observer.observe(header);
 		return () => observer.disconnect();
 	}, []);
-	const start = dayCount === 1 ? new Date(cursor) : startOfWeek(cursor);
-	start.setHours(0, 0, 0, 0);
+	const start = useMemo(() => {
+		const date = anchorAtWeekStart ? startOfWeek(cursor) : new Date(cursor);
+		date.setHours(0, 0, 0, 0);
+		return date;
+	}, [anchorAtWeekStart, cursor]);
 	const startTime = start.getTime();
 	const days = useMemo(
 		() =>
-			Array.from(
-				{ length: dayCount === 1 ? 1 : range.end - range.start + 1 },
-				(_, index) =>
-					addDays(
-						new Date(startTime),
-						dayCount === 1 ? 0 : range.start + index,
-					),
+			Array.from({ length: range.end - range.start + 1 }, (_, index) =>
+				addDays(new Date(startTime), range.start + index),
 			),
-		[startTime, dayCount, range.start, range.end],
+		[startTime, range.start, range.end],
 	);
 	const byDay = useRoutineDays(suppliedByDay, days);
 	const columns = days.length;
@@ -1970,6 +1994,7 @@ function WeekView({
 		<div
 			ref={scrollRef}
 			data-calendar-week-scroll
+			data-calendar-days={dayCount}
 			data-calendar-hour-height={hourHeight}
 			onClickCapture={(event) => {
 				if (suppressZoomClick()) {
@@ -1978,8 +2003,7 @@ function WeekView({
 				}
 			}}
 			onScroll={(event) => {
-				if (dayCount === 1 || !initialized.current || pendingShift.current)
-					return;
+				if (!initialized.current || pendingShift.current) return;
 				const element = event.currentTarget;
 				if (!CSS.supports("animation-timeline", "--calendar-week-x")) {
 					element.style.setProperty(

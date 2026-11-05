@@ -20,6 +20,7 @@ export function noteSearch(search: Record<string, unknown>): { note?: string } {
 
 export type CalendarSearch = {
 	view?: "day" | "week" | "month";
+	days?: number;
 	date?: string;
 	selected?: string;
 	hiddenCategories?: string[];
@@ -32,6 +33,11 @@ export function calendarSearch(
 			search.view === "day" || search.view === "week" || search.view === "month"
 				? search.view
 				: undefined,
+		...(Number.isInteger(search.days) &&
+		Number(search.days) >= 1 &&
+		Number(search.days) <= 7
+			? { days: Number(search.days) }
+			: {}),
 		date: day(search.date),
 		selected: day(search.selected),
 		...(Array.isArray(search.hiddenCategories)
