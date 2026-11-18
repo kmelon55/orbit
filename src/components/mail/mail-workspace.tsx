@@ -1099,7 +1099,7 @@ export function MailWorkspace({ demo = false }: { demo?: boolean }) {
 								key={selected}
 								source={{ kind: "mail", id: selected }}
 								mailState={classifications[selected] ?? { status: "pending" }}
-								showFolders={!demo}
+								showFolders={false}
 								revision={
 									detail?.id === selected
 										? `${detail.text}${detail.html}`

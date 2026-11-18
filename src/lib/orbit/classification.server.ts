@@ -23,6 +23,21 @@ const pending = new Map<string, Promise<Classification>>();
 const hash = (value: unknown) =>
 	createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
+const cacheKey = (source: ClassificationSource, snapshot: OrbitSnapshot) =>
+	`classification:${hash([snapshot.vaultPath, source])}`;
+
+// A message never changes, so its first result is final: no fingerprint, no expiry.
+async function cachedMail(
+	source: ClassificationSource,
+	snapshot?: OrbitSnapshot,
+) {
+	if (source.kind !== "mail") return null;
+	snapshot ??= await getOrbitSnapshot();
+	return (
+		mailStore().setting<CacheEntry>(cacheKey(source, snapshot))?.result ?? null
+	);
+}
+
 async function contextFor(
 	source: ClassificationSource,
 	fetchBody: boolean,
@@ -56,18 +71,21 @@ async function contextFor(
 			attachments: body?.attachments.map((a) => a.name).slice(0, 20),
 		};
 	}
-	const { folders, limited } = classificationFolders(
-		snapshot,
-		`${title} ${content.slice(0, 12000)}`,
-	);
+	// The opening of a message is enough to label it; notes need more to file.
+	const limit = source.kind === "mail" ? 2000 : 12000;
+	// Mail is labelled only; it is never filed into vault folders.
+	const { folders, limited } =
+		source.kind === "mail"
+			? { folders: [], limited: false }
+			: classificationFolders(snapshot, `${title} ${content.slice(0, 12000)}`);
 	const state = {
 		source: {
 			kind: source.kind,
 			title,
-			content: content.slice(0, 12000),
+			content: content.slice(0, limit),
 			metadata,
 			previewOnly,
-			truncated: content.length > 12000,
+			truncated: content.length > limit,
 		},
 		folders: folders.map(({ key, space, label, examples }) => ({
 			key,
@@ -83,7 +101,7 @@ async function contextFor(
 		questions,
 		folders,
 		limited,
-		cacheKey: `classification:${hash([snapshot.vaultPath, source])}`,
+		cacheKey: cacheKey(source, snapshot),
 		fingerprint: hash([
 			VERSION,
 			CLASSIFICATION_MODEL,
@@ -98,6 +116,7 @@ export async function cachedClassification(
 	source: ClassificationSource,
 	snapshot?: OrbitSnapshot,
 ): Promise<Classification | null> {
+	if (source.kind === "mail") return cachedMail(source, snapshot);
 	const context = await contextFor(source, false, snapshot);
 	const cached = mailStore().setting<CacheEntry>(context.cacheKey);
 	return cached?.fingerprint === context.fingerprint &&
@@ -111,6 +130,8 @@ export async function classifySource(
 ): Promise<Classification> {
 	const key = gatewayApiKey();
 	if (!key) throw new Error("설정 → AI에서 Gateway API 키를 저장해 주세요.");
+	const mail = await cachedMail(source);
+	if (mail) return mail;
 	const context = await contextFor(source, true);
 	const store = mailStore();
 	const cached = store.setting<CacheEntry>(context.cacheKey);

@@ -353,6 +353,32 @@ test("mail classification includes the selected body and never unrelated Inbox n
 	assert.equal(store.message(detail.id).unread, true);
 });
 
+test("mail is never filed into folders and is classified only once", async () => {
+	const note = await noteFixture();
+	const detail = mailFixture();
+	const first = await classifySource({ kind: "mail", id: detail.id });
+	assert.equal(calls.length, 1);
+	assert.equal(calls[0].questions.folder, undefined);
+	assert.doesNotMatch(JSON.stringify(calls[0]), /결제 개선/);
+	assert.deepEqual(first.folders, []);
+	await updateOrbitNote(note.id, {
+		title: "바뀐 제목",
+		body: "바뀐 본문",
+		tags: [],
+	});
+	await createOrbitFolder({ space: "area", name: "재정" });
+	mailStore().saveBody(
+		detail.id,
+		{ ...detail, text: "다른 본문" },
+		{ ...detail, text: "다른 본문" },
+	);
+	const again = await classifySource({ kind: "mail", id: detail.id });
+	const cached = await cachedClassification({ kind: "mail", id: detail.id });
+	assert.equal(again.createdAt, first.createdAt);
+	assert.equal(cached?.createdAt, first.createdAt);
+	assert.equal(calls.length, 1);
+});
+
 test("rejects invented destinations, bad distributions and missing probabilities", () => {
 	const folders = [
 		{

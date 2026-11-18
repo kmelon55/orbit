@@ -7,7 +7,10 @@ import type {
 	FolderCandidate,
 	MailClassificationState,
 } from "#/lib/orbit/classification";
-import { classifyOrbitSource } from "#/lib/orbit/classification-functions";
+import {
+	classifyOrbitSource,
+	loadClassification,
+} from "#/lib/orbit/classification-functions";
 import { cn } from "#/lib/utils";
 import { useI18n } from "./locale-provider";
 import { MailClassificationBadges } from "./mail/mail-classification-badges";
@@ -47,14 +50,16 @@ export function ClassificationSuggestions({
 	const { t, errorText } = useI18n();
 	const panel = placement === "panel";
 	const [noteResult, setResult] = useState<Classification | null>(null);
-	const [noteBusy, setBusy] = useState(true);
+	const [noteBusy, setBusy] = useState(false);
 	const [moving, setMoving] = useState<string>();
 	const [noteError, setError] = useState("");
 	const generation = useRef(0);
 	const callbacks = useRef({ beforeClassify });
 	callbacks.current = { beforeClassify };
 	const { kind, id } = source;
-	const [retry, setRetry] = useState(0);
+	// A press applies only to the draft revision it was made on.
+	const [asked, setAsked] = useState<{ revision: string; count: number }>();
+	const requested = asked?.revision === revision ? asked.count : 0;
 	const result = kind === "mail" ? mailState?.result : noteResult;
 	const busy =
 		kind === "mail" ? !mailState || mailState.status === "pending" : noteBusy;
@@ -63,49 +68,69 @@ export function ClassificationSuggestions({
 		const current = ++generation.current;
 		setResult(null);
 		setError("");
-		setBusy(!disabled);
+		setBusy(false);
 		if (disabled || kind === "mail") return;
-		// Wait for typing to settle, then save before classifying. The editor and
-		// organize panel share one request for the same draft revision.
-		const timer = setTimeout(() => {
-			const key = JSON.stringify([kind, id, revision, retry]);
-			let request = requests.get(key);
-			if (!request) {
-				request = (async () => {
-					await callbacks.current.beforeClassify?.();
-					return classifyOrbitSource({ data: { kind, id } });
-				})();
-				requests.set(key, request);
-				const clear = () => {
-					if (requests.get(key) === request) requests.delete(key);
-				};
-				void request.then(clear, clear);
-			}
-			void request
-				.then((next) => {
-					if (
-						generation.current === current &&
-						next.sourceRevision === revision
-					)
-						setResult(next);
-				})
-				.catch((reason: unknown) => {
-					if (generation.current === current)
-						setError(
-							reason instanceof Error
-								? reason.message
-								: "분류하지 못했어요. 잠시 후 다시 시도해 주세요.",
-						);
-				})
-				.finally(() => {
-					if (generation.current === current) setBusy(false);
-				});
-		}, 900);
+		// Only a button press spends credits. Otherwise, once typing settles, show
+		// a saved result that still matches this draft.
+		const timer = setTimeout(
+			() => {
+				if (!requested) {
+					void loadClassification({ data: { kind, id } })
+						.then((next) => {
+							if (
+								generation.current === current &&
+								next?.sourceRevision === revision
+							)
+								setResult(next);
+						})
+						.catch(() => {});
+					return;
+				}
+				setBusy(true);
+				const key = JSON.stringify([kind, id, revision, requested]);
+				let request = requests.get(key);
+				if (!request) {
+					request = (async () => {
+						await callbacks.current.beforeClassify?.();
+						return classifyOrbitSource({ data: { kind, id } });
+					})();
+					requests.set(key, request);
+					const clear = () => {
+						if (requests.get(key) === request) requests.delete(key);
+					};
+					void request.then(clear, clear);
+				}
+				void request
+					.then((next) => {
+						if (
+							generation.current === current &&
+							next.sourceRevision === revision
+						)
+							setResult(next);
+					})
+					.catch((reason: unknown) => {
+						if (generation.current === current)
+							setError(
+								reason instanceof Error
+									? reason.message
+									: "분류하지 못했어요. 잠시 후 다시 시도해 주세요.",
+							);
+					})
+					.finally(() => {
+						if (generation.current === current) setBusy(false);
+					});
+			},
+			requested ? 0 : 900,
+		);
 		return () => {
 			clearTimeout(timer);
 			generation.current++;
 		};
-	}, [kind, id, revision, disabled, retry]);
+	}, [kind, id, revision, disabled, requested]);
+
+	function ask() {
+		setAsked({ revision, count: requested + 1 });
+	}
 
 	async function move(folder: Classification["folders"][number]) {
 		if (!onMove || moving) return;
@@ -138,6 +163,17 @@ export function ClassificationSuggestions({
 			>
 				{kind === "mail" ? (
 					<MailClassificationBadges state={mailState} />
+				) : !busy && !result && !error ? (
+					<Button
+						variant="ghost"
+						size="sm"
+						className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+						disabled={disabled}
+						onClick={ask}
+					>
+						<Sparkles className="size-3.5" />
+						{t("폴더 추천")}
+					</Button>
 				) : (
 					<span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
 						{busy ? (
@@ -153,7 +189,7 @@ export function ClassificationSuggestions({
 						variant="ghost"
 						size="sm"
 						className="h-7 px-2 text-xs"
-						onClick={() => setRetry((value) => value + 1)}
+						onClick={ask}
 					>
 						{t("다시 시도")}
 					</Button>
